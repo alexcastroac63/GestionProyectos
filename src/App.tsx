@@ -19,7 +19,8 @@ import {
   MockupComponent,
   MockupConnection,
   WorkItemStatus,
-  WorkItemType
+  WorkItemType,
+  TransitionRule
 } from './types';
 import {
   INITIAL_USERS,
@@ -38,7 +39,8 @@ import {
   INITIAL_MOCKUP_CONNECTIONS,
   INITIAL_COMMITS,
   INITIAL_PRS,
-  INITIAL_GITHUB_CONNECTION
+  INITIAL_GITHUB_CONNECTION,
+  DEFAULT_TRANSITION_RULES
 } from './data';
 
 // Component Imports
@@ -223,14 +225,25 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isProjectsMenuOpen, setIsProjectsMenuOpen] = useState<boolean>(true);
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('proj-1');
   const [selectedSprintId, setSelectedSprintId] = useState<string>('sprint-2'); // default Sprint 2 is active/en curso
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
   // Sub-tabs state inside detailed Project View
   const [projectSubTab, setProjectSubTab] = useState<'wbs' | 'costs'>('wbs');
+  // Sub-tabs state inside central configuration view
+  const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules'>('smtp');
   // Floating Modal for Registering a Cost Support Document
   const [isRegisterCostModalOpen, setIsRegisterCostModalOpen] = useState(false);
+
+  // Custom confirmation modal state to bypass iframe window.confirm blocks
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Floating Modal for project creation
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
@@ -282,6 +295,13 @@ export default function App() {
   const [smtpPort, setSmtpPort] = useState(() => {
     return localStorage.getItem('gcp_smtp_port') || '587';
   });
+
+  // SMTP Test States
+  const [smtpTestStatus, setSmtpTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [smtpTestMessage, setSmtpTestMessage] = useState<string>('');
+  const [smtpTestDetails, setSmtpTestDetails] = useState<string>('');
+  const [scrumRulesUpdateTrigger, setScrumRulesUpdateTrigger] = useState<number>(0);
+  const [scrumRulesViewMode, setScrumRulesViewMode] = useState<'flowchart' | 'table' | 'both'>('both');
 
   // Dynamic Clients & Sponsors Lists
   const [clientsList, setClientsList] = useState<string[]>(() => {
@@ -444,18 +464,48 @@ export default function App() {
     setShowEditUserModal(false);
   };
 
-  const triggerPasswordResetEmailSimulation = (u: User) => {
+  const triggerPasswordResetEmailSimulation = async (u: User) => {
     setPasswordResetUser(u);
     setSimulatedNewPassword('');
     setIsResetSuccess(false);
     setSimulatedMailSendSuccess(false);
     setShowResetEmailModal(true);
     
-    // Simulate immediate sending indicator
-    setTimeout(() => {
-      setSimulatedMailSendSuccess(true);
-      addLog('Sistema Autenticación', `Se disparó email simulado de restablecimiento de contraseña a ${u.email}`);
-    }, 1000);
+    if (smtpHost.trim() && smtpPort.trim() && smtpAccount.trim() && smtpPassword.trim()) {
+      try {
+        const res = await fetch('/api/send-recovery', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            host: smtpHost.trim(),
+            port: smtpPort.trim(),
+            username: smtpAccount.trim(),
+            password: smtpPassword.trim(),
+            emailToFind: u.email
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSimulatedMailSendSuccess(true);
+          addLog('Sistema Autenticación', `Se envió un correo de recuperación real de contraseña a ${u.email} desde ${smtpAccount}`);
+        } else {
+          setSimulatedMailSendSuccess(true); // show simulator anyway
+          console.warn('Real SMTP recovery send failed', data.message);
+          addLog('Fallo de Envío SMTP', `Se intentó enviar el correo real a ${u.email} pero falló: ${data.message}`);
+        }
+      } catch (err: any) {
+        setSimulatedMailSendSuccess(true);
+        console.warn('Real SMTP recovery send failed with exception', err.message);
+      }
+    } else {
+      // Simulate immediate sending indicator
+      setTimeout(() => {
+        setSimulatedMailSendSuccess(true);
+        addLog('Sistema Autenticación', `Se disparó email simulado de restablecimiento de contraseña a ${u.email}`);
+      }, 1000);
+    }
   };
 
   const handleExecuteSimulatedChangePassword = (e: React.FormEvent) => {
@@ -607,7 +657,16 @@ export default function App() {
   };
 
   const handleDeleteCost = (id: string) => {
-    setCosts(prev => prev.filter(c => c.id !== id));
+    const costItem = costs.find(c => c.id === id);
+    const costDesc = costItem ? `"${costItem.description}" (-$${costItem.amount} USD)` : 'este documento';
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Anular Documento de Costo',
+      message: `¿Está seguro de que desea anular/eliminar el registro de costo de ${costDesc}?`,
+      onConfirm: () => {
+        setCosts(prev => prev.filter(c => c.id !== id));
+      }
+    });
   };
 
   // Add Activity (Gantt)
@@ -631,7 +690,16 @@ export default function App() {
   };
 
   const handleDeleteActivity = (id: string) => {
-    setActivities(prev => prev.filter(a => a.id !== id));
+    const act = activities.find(a => a.id === id);
+    const actName = act ? `"${act.name}"` : 'esta actividad';
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Fase de Trabajo',
+      message: `¿Está seguro de que desea eliminar permanentemente la fase de planificación ${actName}?`,
+      onConfirm: () => {
+        setActivities(prev => prev.filter(a => a.id !== id));
+      }
+    });
   };
 
   // Backlog and Sprint Assignment
@@ -849,13 +917,31 @@ export default function App() {
   };
 
   const handleDeleteMockComponent = (id: string) => {
-    setMockComponents(prev => prev.filter(c => c.id !== id));
+    const comp = mockComponents.find(c => c.id === id);
+    const compName = comp ? `"${comp.type}"` : 'este componente';
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Componente Visual',
+      message: `¿Está seguro de que desea eliminar el componente visual ${compName}?`,
+      onConfirm: () => {
+        setMockComponents(prev => prev.filter(c => c.id !== id));
+      }
+    });
   };
 
   const handleDeleteMockScreen = (id: string) => {
-    setMockScreens(prev => prev.filter(s => s.id !== id));
-    // Orphan screen components are wiped
-    setMockComponents(prev => prev.filter(c => c.screen_id !== id));
+    const scr = mockScreens.find(s => s.id === id);
+    const scrName = scr ? `"${scr.name}"` : 'esta pantalla';
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Pantalla del Mockup',
+      message: `¿Está seguro de que desea eliminar la pantalla ${scrName}? Se eliminarán todos sus componentes visuales y conexiones relacionadas de forma irreversible.`,
+      onConfirm: () => {
+        setMockScreens(prev => prev.filter(s => s.id !== id));
+        // Orphan screen components are wiped
+        setMockComponents(prev => prev.filter(c => c.screen_id !== id));
+      }
+    });
   };
 
   const handleAddMockConnection = (conn: Omit<MockupConnection, 'id'>) => {
@@ -865,7 +951,14 @@ export default function App() {
   };
 
   const handleDeleteMockConnection = (id: string) => {
-    setMockConnections(prev => prev.filter(c => c.id !== id));
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Conexión del Prototipo',
+      message: '¿Está seguro de que desea eliminar esta conexión de interacción entre pantallas?',
+      onConfirm: () => {
+        setMockConnections(prev => prev.filter(c => c.id !== id));
+      }
+    });
   };
 
   // Common utils
@@ -926,9 +1019,17 @@ export default function App() {
         { id: 'mockup', label: 'Lienzo Mockups Visuales', icon: Monitor },
       ]
     },
-    { id: 'teams', label: 'Directorio de Equipos', icon: Users2 },
     { id: 'devops', label: 'DevOps & CI/CD Pipelines', icon: Cpu },
-    { id: 'settings', label: 'Configuración Central', icon: Settings },
+    {
+      id: 'settings_group',
+      label: 'Configuración Central',
+      icon: Settings,
+      isGroup: true,
+      children: [
+        { id: 'teams', label: 'Directorio de Equipos', icon: Users2 },
+        { id: 'settings', label: 'Configuración de Plataforma', icon: Settings },
+      ]
+    }
   ];
 
   if (!loggedInUser) {
@@ -1031,24 +1132,56 @@ export default function App() {
                       setIsSendingForgotPassword(true);
                       setForgotPasswordStatus(null);
                       
-                      setTimeout(() => {
-                        setIsSendingForgotPassword(false);
-                        
-                        // Check SMTP validity as requested:
-                        if (!smtpAccount.trim() || !smtpPassword.trim()) {
+                      (async () => {
+                        try {
+                          if (!smtpAccount.trim() || !smtpPassword.trim()) {
+                            setIsSendingForgotPassword(false);
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: `⚠️ CONFIGURACIÓN REQUERIDA (SMTP NO CONFIGURADO)\n\nFallo de envío del correo hacia: ${emailToFind}.\n\nNo se detectó cuenta de envío de notificaciones ni contraseña.\n\nSolución:\n1. Inicie sesión temporalmente con un usuario de Acceso Rápido.\n2. Vaya al menú "Configuración Central" en el panel lateral y proporcione su cuenta de correo y credenciales SMTP.`
+                            });
+                            addLog('Fallo de Envío SMTP', `Se intentó enviar un enlace de recuperación de contraseña a ${emailToFind}, pero la cuenta SMTP no está configurada.`);
+                            return;
+                          }
+
+                          const res = await fetch('/api/send-recovery', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                              host: smtpHost.trim(),
+                              port: smtpPort.trim(),
+                              username: smtpAccount.trim(),
+                              password: smtpPassword.trim(),
+                              emailToFind: emailToFind
+                            })
+                          });
+
+                          const data = await res.json();
+                          setIsSendingForgotPassword(false);
+
+                          if (res.ok && data.success) {
+                            setForgotPasswordStatus({
+                              type: 'success',
+                              message: `✅ ¡EMAIL DE RECUPERACIÓN ENVIADO CON ÉXITO!\n\nServidor SMTP: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\nDestinatario: ${emailToFind}\n\n${data.message}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Puede verificar los detalles en la bitácora del sistema.`
+                            });
+                            addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} desde la cuenta SMTP configurada: ${smtpAccount}`);
+                          } else {
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: `❌ ERROR EN SERVIDOR DE ALERTAS SMTP:\n\n${data.message || 'Error técnico desconocido.'}\n\nPor favor, revise que la Cuenta y contraseña de SMTP ubicadas en "Configuración Central" sean válidas para el Host ${smtpHost}.`
+                            });
+                            addLog('Fallo de Envío SMTP', `Error de despacho SMTP a ${emailToFind}: ${data.message || 'Fallo desconocido'}`);
+                          }
+                        } catch (err: any) {
+                          setIsSendingForgotPassword(false);
                           setForgotPasswordStatus({
                             type: 'error',
-                            message: `⚠️ CONFIGURACIÓN REQUERIDA (SMTP NO CONFIGURADO)\n\nFallo de envío del correo hacia: ${emailToFind}.\n\nNo se detectó cuenta de envío de notificaciones ni contraseña.\n\nSolución:\n1. Inicie sesión temporalmente con un usuario de Acceso Rápido.\n2. Valla al menú "Configuración Central" en el panel lateral y proporcione su cuenta y contraseña de SMTP.`
+                            message: `⚠️ Error de comunicación con la plataforma: ${err.message || 'Fallo general de red.'}`
                           });
-                          addLog('Fallo de Envío SMTP', `Se intentó enviar un enlace de recuperación de contraseña a ${emailToFind}, pero la cuenta SMTP no está configurada.`);
-                        } else {
-                          setForgotPasswordStatus({
-                            type: 'success',
-                            message: `✅ ¡EMAIL DE RECUPERACIÓN ENVIADO CON ÉXITO!\n\nServidor: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\nDestinatario: ${emailToFind}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Puede verificar los detalles en la bitácora del sistema.`
-                          });
-                          addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} desde la cuenta SMTP configurada: ${smtpAccount}`);
                         }
-                      }, 1500);
+                      })();
                     }}
                     className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
                   >
@@ -1242,13 +1375,19 @@ export default function App() {
             if (item.isGroup) {
               const Icon = item.icon;
               const isAnyChildActive = item.children?.some(child => activeTab === child.id);
+              const isGroupOpen = item.id === 'projects_group' ? isProjectsMenuOpen : isSettingsMenuOpen;
+              const toggleGroup = () => {
+                if (item.id === 'projects_group') {
+                  setIsProjectsMenuOpen(prev => !prev);
+                } else {
+                  setIsSettingsMenuOpen(prev => !prev);
+                }
+              };
               
               return (
                 <div key={item.id} className="space-y-1">
                   <button
-                    onClick={() => {
-                      setIsProjectsMenuOpen(prev => !prev);
-                    }}
+                    onClick={toggleGroup}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold tracking-tight transition-all text-left cursor-pointer ${
                       isAnyChildActive
                         ? 'text-blue-400 bg-slate-800/30'
@@ -1259,14 +1398,14 @@ export default function App() {
                       <Icon className="w-3.5 h-3.5" />
                       <span>{item.label}</span>
                     </div>
-                    {isProjectsMenuOpen ? (
+                    {isGroupOpen ? (
                       <ChevronDown className="w-3.5 h-3.5" />
                     ) : (
                       <ChevronRight className="w-3.5 h-3.5" />
                     )}
                   </button>
                   
-                  {isProjectsMenuOpen && (
+                  {isGroupOpen && (
                     <div className="pl-3.5 space-y-1.5 border-l border-slate-800 ml-4 mt-1">
                       {item.children?.map(child => {
                         const ChildIcon = child.icon;
@@ -1284,7 +1423,7 @@ export default function App() {
                                 : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
                             }`}
                           >
-                            <ChildIcon className="w-3 h-3" />
+                            <ChildIcon className="w-3" />
                             <span>{child.label}</span>
                           </button>
                         );
@@ -3008,7 +3147,7 @@ export default function App() {
                           <div className="bg-slate-950 border border-slate-850 rounded-xl overflow-hidden shadow-inner">
                             {/* Email headers */}
                             <div className="bg-slate-900 px-4 py-3 border-b border-slate-850 text-[11px] text-slate-400 space-y-1 font-mono">
-                              <div><span className="text-slate-500">De:</span> core-security@platform.enterprise.com</div>
+                              <div><span className="text-slate-500">De:</span> {smtpAccount || 'core-security@platform.enterprise.com'}</div>
                               <div><span className="text-slate-500">Para:</span> {passwordResetUser.email}</div>
                               <div><span className="text-slate-500 font-bold">Asunto:</span> 🔒 Restablecer tu contraseña de acceso corporativo</div>
                               <div className="border-t border-slate-850/60 pt-1 mt-1 text-[9px] text-emerald-400 flex items-center gap-1 font-medium">
@@ -3145,55 +3284,101 @@ export default function App() {
           {activeTab === 'settings' && (
             <div className="space-y-6 animate-fadeIn text-slate-800" id="tab-settings">
               <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-6">
-                  <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
-                    <Settings className="w-5 h-5" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                      <Settings className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-slate-900 font-bold text-base">Configuración Central de la Plataforma</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Gestione el servidor de alertas por correo, sponsors autorizados y catálogos de clientes corporativos.</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-slate-900 font-bold text-base">Configuración Central de la Plataforma</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Modifique sponsors, clientes autorizados y credenciales SMTP para el envío de notificaciones.</p>
+                  
+                  {/* Sub-tab selection bar inside Configuration tab */}
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl self-start md:self-auto shrink-0 border border-slate-200/60">
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSubTab('smtp')}
+                      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        settingsSubTab === 'smtp'
+                          ? 'bg-white text-blue-600 shadow-xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>SMTP Alertas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSubTab('clients')}
+                      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        settingsSubTab === 'clients'
+                          ? 'bg-white text-emerald-605 text-emerald-600 shadow-xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Briefcase className="w-3.5 h-3.5" />
+                      <span>Clientes & Sponsors</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSubTab('scrum_rules')}
+                      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        settingsSubTab === 'scrum_rules'
+                          ? 'bg-white text-violet-600 shadow-xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>Reglas Scrum</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Column 1: SMTP Server Config */}
-                  <div className="space-y-4 border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-                    <div className="flex items-center gap-2 border-b border-slate-150 pb-2 mb-2">
-                      <Mail className="w-4 h-4 text-blue-500" />
-                      <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Servidor de Alertas SMTP</span>
+                {settingsSubTab === 'smtp' && (
+                  <div className="max-w-2xl mx-auto border border-slate-150 rounded-2xl p-6 bg-slate-50/50 animate-fadeIn">
+                    <div className="flex items-center gap-2.5 border-b border-slate-200 pb-3 mb-5">
+                      <Mail className="w-5 h-5 text-blue-500" />
+                      <div>
+                        <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wider block">Servidor de Alertas SMTP</span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Establezca los parámetros de host y credenciales para el envío masivo de notificaciones de riesgo.</p>
+                      </div>
                     </div>
 
-                    <div className="space-y-3.5">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Servidor SMTP (Host)</label>
-                        <input
-                          type="text"
-                          value={smtpHost}
-                          onChange={(e) => {
-                            setSmtpHost(e.target.value);
-                            localStorage.setItem('gcp_smtp_host', e.target.value);
-                          }}
-                          placeholder="smtp.gmail.com"
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none transition"
-                        />
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Servidor SMTP (Host)</label>
+                          <input
+                            type="text"
+                            value={smtpHost}
+                            onChange={(e) => {
+                              setSmtpHost(e.target.value);
+                              localStorage.setItem('gcp_smtp_host', e.target.value);
+                            }}
+                            placeholder="smtp.gmail.com"
+                            className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Puerto SMTP</label>
+                          <input
+                            type="text"
+                            value={smtpPort}
+                            onChange={(e) => {
+                              setSmtpPort(e.target.value);
+                              localStorage.setItem('gcp_smtp_port', e.target.value);
+                            }}
+                            placeholder="587"
+                            className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
+                          />
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puerto SMTP</label>
-                        <input
-                          type="text"
-                          value={smtpPort}
-                          onChange={(e) => {
-                            setSmtpPort(e.target.value);
-                            localStorage.setItem('gcp_smtp_port', e.target.value);
-                          }}
-                          placeholder="587"
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none transition font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cuenta de Correo (SMTP User)</label>
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Cuenta de Correo (SMTP User Sender)</label>
                         <input
                           type="email"
                           value={smtpAccount}
@@ -3202,12 +3387,12 @@ export default function App() {
                             localStorage.setItem('gcp_smtp_account', e.target.value);
                           }}
                           placeholder="proyectosticampestre@gmail.com"
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none transition"
+                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition shadow-xs"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Clave de Correo (App Password / Credentials)</label>
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Clave de Correo (App Password / Credentials)</label>
                         <input
                           type="password"
                           value={smtpPassword}
@@ -3216,196 +3401,706 @@ export default function App() {
                             localStorage.setItem('gcp_smtp_password', e.target.value);
                           }}
                           placeholder="Ingrese contraseña o app password..."
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none transition font-mono pr-8"
+                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
                         />
-                        <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                          Por seguridad, las credenciales se almacenan localmente de forma cifrada en su sesión de navegador.
+                        <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
+                          Por razones de seguridad de la infraestructura de Lifecycle PM, las credenciales se almacenan localmente en la sesión activa del navegador de forma segura.
                         </p>
+
+                        <div className="mt-3.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed shadow-xs">
+                          <div className="flex items-start gap-2.5">
+                            <span className="text-sm shrink-0">💡</span>
+                            <div className="flex-1 space-y-1">
+                              <p className="font-extrabold text-amber-950">¿Gmail u Outlook reportan "Error 535: Invalid login"?</p>
+                              <p className="text-[11px] text-slate-600">
+                                Los servidores SMTP modernos de Gmail u Outlook <span className="font-semibold text-rose-700">no aceptan tu contraseña habitual</span> por motivos de seguridad corporativa.
+                              </p>
+                              <div className="pt-1.5 pl-3 border-l-2 border-amber-300 space-y-1 text-[10.5px]">
+                                <p><strong>Paso 1:</strong> Habilita la "Verificación en dos pasos" en tu cuenta de correo.</p>
+                                <p><strong>Paso 2:</strong> Ve a <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline font-bold text-blue-700 hover:text-blue-800 flex inline-flex items-center gap-0.5">Contraseñas de Aplicaciones de Google<ExternalLink className="w-2.5 h-2.5 inline" /></a>.</p>
+                                <p><strong>Paso 3:</strong> Genera una clave exclusiva de 16 caracteres para "Correo" y copia el código sin espacios en esta casilla.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 mt-3">
-                        <span className="text-[10px] font-extrabold text-blue-800 uppercase block mb-1">Prueba de Conexión</span>
-                        <p className="text-[10.5px] text-blue-700 leading-normal mb-2.5">
-                          Verifique que su configuración SMTP sea correcta simulando un envío.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!smtpAccount.trim() || !smtpPassword.trim()) {
-                              alert("Error: Por favor complete la Cuenta y Clave de Correo SMTP para realizar la prueba.");
-                              return;
-                            }
-                            alert(`Enviando alerta de prueba SMTP...\n\nHost: ${smtpHost}\nPuerto: ${smtpPort}\nDe: ${smtpAccount}\nPara: proyectosticampestre@gmail.com\n\n¡Simulado con Éxito sin errores de autenticación!`);
-                            addLog('Prueba SMTP', `Envío de prueba exitoso a proyectosticampestre@gmail.com desde ${smtpAccount}`);
-                          }}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] py-1.5 px-3 rounded-lg transition active:scale-[0.98] cursor-pointer"
-                        >
-                          Probar Envío de Alerta ✉️
-                        </button>
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-5">
+                        <div className="flex items-start gap-3">
+                          <span className="text-lg">✉️</span>
+                          <div className="flex-1">
+                            <span className="text-[11px] font-extrabold text-blue-800 uppercase block mb-1">Prueba Dinámica de Envío</span>
+                            <p className="text-[11px] text-blue-700 leading-normal mb-3">
+                              Verifique que la plataforma de correo alerte correctamente de desviaciones y métricas críticas de presupuesto de Lifecycle PM.
+                            </p>
+                            <button
+                              type="button"
+                              disabled={smtpTestStatus === 'loading'}
+                              onClick={async () => {
+                                if (!smtpHost.trim() || !smtpPort.trim()) {
+                                  setSmtpTestStatus('error');
+                                  setSmtpTestMessage('Por favor configure el Servidor SMTP (Host) y el Puerto.');
+                                  setSmtpTestDetails('La configuración de host y puerto es mandatoria.');
+                                  return;
+                                }
+                                if (!smtpAccount.trim() || !smtpPassword.trim()) {
+                                  setSmtpTestStatus('error');
+                                  setSmtpTestMessage('Por favor complete la Cuenta de Correo y la Contraseña de Alertas antes de probar.');
+                                  setSmtpTestDetails('Las credenciales de correo emisor no pueden estar vacías.');
+                                  return;
+                                }
+
+                                setSmtpTestStatus('loading');
+                                setSmtpTestMessage('Conectando con el servidor SMTP...');
+                                setSmtpTestDetails('Estableciendo conexión por socket de red...');
+
+                                try {
+                                  const res = await fetch('/api/test-smtp', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                      host: smtpHost.trim(),
+                                      port: smtpPort.trim(),
+                                      username: smtpAccount.trim(),
+                                      password: smtpPassword.trim()
+                                    })
+                                  });
+
+                                  const data = await res.json();
+                                  if (res.ok && data.success) {
+                                    setSmtpTestStatus('success');
+                                    setSmtpTestMessage(data.message || '¡Conexión SMTP exitosa!');
+                                    setSmtpTestDetails(data.banner || '');
+                                    addLog('Prueba SMTP', `Envío de prueba exitoso a ${smtpHost}:${smtpPort} desde ${smtpAccount}`);
+                                  } else {
+                                    setSmtpTestStatus('error');
+                                    setSmtpTestMessage(data.message || 'Error al conectar con el servidor.');
+                                    setSmtpTestDetails(data.code ? `Código de error: ${data.code}` : 'Verifique sus credenciales, puertos y bloqueos de seguridad del host.');
+                                    addLog('Prueba SMTP', `Fallo de conexión SMTP a ${smtpHost}:${smtpPort}: ${data.message || 'Error desconocido'}`);
+                                  }
+                                } catch (err: any) {
+                                  setSmtpTestStatus('error');
+                                  setSmtpTestMessage('No se pudo establecer comunicación con el servidor local/remoto.');
+                                  setSmtpTestDetails(err.message || 'Fallo general de red o servicio de pruebas inactivo.');
+                                }
+                              }}
+                              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-xs py-2 px-4 rounded-xl transition active:scale-[0.98] cursor-pointer shadow-sm shadow-blue-500/10 flex items-center gap-1.5"
+                            >
+                              {smtpTestStatus === 'loading' ? (
+                                <>
+                                  <Cpu className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Probando Conexión...</span>
+                                </>
+                              ) : (
+                                <span>Probar Envío de Alerta Ahora</span>
+                              )}
+                            </button>
+
+                            {smtpTestStatus !== 'idle' && (
+                              <div className={`mt-3.5 p-3.5 rounded-xl border text-xs leading-relaxed animate-fadeIn ${
+                                smtpTestStatus === 'loading' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+                                smtpTestStatus === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                                'bg-rose-50 border-rose-200 text-rose-800'
+                              }`}>
+                                <div className="flex items-start gap-2.5">
+                                  <span className="text-sm shrink-0">
+                                    {smtpTestStatus === 'loading' && '⏳'}
+                                    {smtpTestStatus === 'success' && '✅'}
+                                    {smtpTestStatus === 'error' && '❌'}
+                                  </span>
+                                  <div className="flex-1 space-y-1">
+                                    <p className="font-extrabold">{smtpTestMessage}</p>
+                                    {smtpTestDetails && (
+                                      <p className="text-[10.5px] opacity-95 font-mono bg-white/60 p-2 rounded border border-slate-200/50 break-all select-all mt-1">
+                                        {smtpTestDetails}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  {/* Column 2: Clients management */}
-                  <div className="space-y-4 border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-                    <div className="flex items-center justify-between border-b border-slate-150 pb-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <Briefcase className="w-4 h-4 text-emerald-500" />
-                        <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Clientes (Sponsor Empresas)</span>
+                {settingsSubTab === 'clients' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
+                    {/* Management box for Clients Category */}
+                    <div className="space-y-4 border border-slate-150 rounded-2xl p-5 bg-slate-50/50">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4.5 h-4.5 text-emerald-500" />
+                          <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">Clientes (Sponsor Empresas)</span>
+                        </div>
+                        <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full font-mono">Total: {clientsList.length}</span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-slate-400">Total: {clientsList.length}</span>
-                    </div>
 
-                    {/* Add Client Form */}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        id="new-client-input"
-                        placeholder="Nuevo Cliente..."
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = (e.target as HTMLInputElement).value.trim();
+                      {/* Add Client Form */}
+                      <div className="flex gap-2.5">
+                        <input
+                          type="text"
+                          id="new-client-input"
+                          placeholder="Nombre del nuevo cliente corporativo..."
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = (e.target as HTMLInputElement).value.trim();
+                              if (val) {
+                                if (!clientsList.includes(val)) {
+                                  const updated = [...clientsList, val];
+                                  setClientsList(updated);
+                                  localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
+                                  (e.target as HTMLInputElement).value = '';
+                                  addLog('Configuración', `Agregó cliente al catálogo: ${val}`);
+                                } else {
+                                  alert("El cliente ya se encuentra en el catálogo.");
+                                }
+                              }
+                            }
+                          }}
+                          className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-emerald-500 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('new-client-input') as HTMLInputElement;
+                            const val = input?.value.trim();
                             if (val) {
                               if (!clientsList.includes(val)) {
                                 const updated = [...clientsList, val];
                                 setClientsList(updated);
                                 localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                                (e.target as HTMLInputElement).value = '';
+                                input.value = '';
                                 addLog('Configuración', `Agregó cliente al catálogo: ${val}`);
                               } else {
                                 alert("El cliente ya se encuentra en el catálogo.");
                               }
                             }
-                          }
-                        }}
-                        className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const input = document.getElementById('new-client-input') as HTMLInputElement;
-                          const val = input?.value.trim();
-                          if (val) {
-                            if (!clientsList.includes(val)) {
-                              const updated = [...clientsList, val];
-                              setClientsList(updated);
-                              localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                              input.value = '';
-                              addLog('Configuración', `Agregó cliente al catálogo: ${val}`);
-                            } else {
-                              alert("El cliente ya se encuentra en el catálogo.");
-                            }
-                          }
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 rounded-lg transition shrink-0 cursor-pointer"
-                      >
-                        Añadir
-                      </button>
-                    </div>
-
-                    <div className="border border-slate-150 rounded-xl bg-white max-h-[300px] overflow-y-auto divide-y divide-slate-100">
-                      {clientsList.map((client, idx) => (
-                        <div key={idx} className="p-3 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-700 transition">
-                          <span className="font-semibold break-all">{client}</span>
-                          <button
-                            onClick={() => {
-                              if (confirm(`¿Está seguro de eliminar el cliente "${client}"?`)) {
-                                const updated = clientsList.filter(c => c !== client);
-                                setClientsList(updated);
-                                localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                                addLog('Configuración', `Eliminó cliente del catálogo: ${client}`);
-                              }
-                            }}
-                            className="text-rose-500 hover:text-rose-700 p-1 font-bold rounded cursor-pointer shrink-0 ml-2"
-                            title="Eliminar cliente"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Column 3: Sponsors management */}
-                  <div className="space-y-4 border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-                    <div className="flex items-center justify-between border-b border-slate-150 pb-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <Users2 className="w-4 h-4 text-purple-500" />
-                        <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Sponsors (Líderes Firmas)</span>
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 rounded-xl transition shrink-0 cursor-pointer shadow-sm shadow-emerald-500/10"
+                        >
+                          Añadir
+                        </button>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-slate-400">Total: {sponsorsList.length}</span>
+
+                      <div className="border border-slate-200 rounded-xl bg-white max-h-[350px] overflow-y-auto divide-y divide-slate-100 shadow-xs">
+                        {clientsList.map((client, idx) => (
+                          <div key={idx} className="p-3.5 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-705 text-slate-700 transition">
+                            <span className="font-semibold break-all text-slate-800">{client}</span>
+                            <button
+                              onClick={() => {
+                                setDeleteConfirmState({
+                                  isOpen: true,
+                                  title: 'Eliminar Cliente',
+                                  message: `¿Está seguro de que desea eliminar al cliente "${client}" del catálogo corporativo?`,
+                                  onConfirm: () => {
+                                    const updated = clientsList.filter(c => c !== client);
+                                    setClientsList(updated);
+                                    localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
+                                    addLog('Configuración', `Eliminó cliente del catálogo: ${client}`);
+                                  }
+                                });
+                              }}
+                              className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded transition cursor-pointer shrink-0 ml-2 animate-fadeIn"
+                              title="Eliminar cliente"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Add Sponsor Form */}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        id="new-sponsor-input"
-                        placeholder="Nuevo Sponsor..."
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = (e.target as HTMLInputElement).value.trim();
+                    {/* Management box for Sponsors */}
+                    <div className="space-y-4 border border-slate-150 rounded-2xl p-5 bg-slate-50/50">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Users2 className="w-4.5 h-4.5 text-purple-500" />
+                          <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">Sponsors (Líderes Firmas)</span>
+                        </div>
+                        <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full font-mono">Total: {sponsorsList.length}</span>
+                      </div>
+
+                      {/* Add Sponsor Form */}
+                      <div className="flex gap-2.5">
+                        <input
+                          type="text"
+                          id="new-sponsor-input"
+                          placeholder="Nombre del nuevo líder de firma / sponsor..."
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = (e.target as HTMLInputElement).value.trim();
+                              if (val) {
+                                if (!sponsorsList.includes(val)) {
+                                  const updated = [...sponsorsList, val];
+                                  setSponsorsList(updated);
+                                  localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
+                                  (e.target as HTMLInputElement).value = '';
+                                  addLog('Configuración', `Agregó sponsor al catálogo: ${val}`);
+                                } else {
+                                  alert("El sponsor ya se encuentra en el catálogo.");
+                                }
+                              }
+                            }
+                          }}
+                          className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-purple-500 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('new-sponsor-input') as HTMLInputElement;
+                            const val = input?.value.trim();
                             if (val) {
                               if (!sponsorsList.includes(val)) {
                                 const updated = [...sponsorsList, val];
                                 setSponsorsList(updated);
                                 localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                                (e.target as HTMLInputElement).value = '';
+                                input.value = '';
                                 addLog('Configuración', `Agregó sponsor al catálogo: ${val}`);
                               } else {
                                 alert("El sponsor ya se encuentra en el catálogo.");
                               }
                             }
-                          }
-                        }}
-                        className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const input = document.getElementById('new-sponsor-input') as HTMLInputElement;
-                          const val = input?.value.trim();
-                          if (val) {
-                            if (!sponsorsList.includes(val)) {
-                              const updated = [...sponsorsList, val];
-                              setSponsorsList(updated);
-                              localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                              input.value = '';
-                              addLog('Configuración', `Agregó sponsor al catálogo: ${val}`);
-                            } else {
-                              alert("El sponsor ya se encuentra en el catálogo.");
-                            }
-                          }
-                        }}
-                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-3 rounded-lg transition shrink-0 cursor-pointer"
-                      >
-                        Añadir
-                      </button>
-                    </div>
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 rounded-xl transition shrink-0 cursor-pointer shadow-sm shadow-purple-500/10"
+                        >
+                          Añadir
+                        </button>
+                      </div>
 
-                    <div className="border border-slate-150 rounded-xl bg-white max-h-[300px] overflow-y-auto divide-y divide-slate-100">
-                      {sponsorsList.map((sponsor, idx) => (
-                        <div key={idx} className="p-3 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-700 transition">
-                          <span className="font-semibold break-all">{sponsor}</span>
-                          <button
-                            onClick={() => {
-                              if (confirm(`¿Está seguro de eliminar el sponsor "${sponsor}"?`)) {
-                                const updated = sponsorsList.filter(s => s !== sponsor);
-                                setSponsorsList(updated);
-                                localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                                addLog('Configuración', `Eliminó sponsor del catálogo: ${sponsor}`);
-                              }
-                            }}
-                            className="text-rose-500 hover:text-rose-700 p-1 font-bold rounded cursor-pointer shrink-0 ml-2"
-                            title="Eliminar sponsor"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                      <div className="border border-slate-200 rounded-xl bg-white max-h-[350px] overflow-y-auto divide-y divide-slate-100 shadow-xs">
+                        {sponsorsList.map((sponsor, idx) => (
+                          <div key={idx} className="p-3.5 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-700 transition">
+                            <span className="font-semibold break-all text-slate-800">{sponsor}</span>
+                            <button
+                              onClick={() => {
+                                setDeleteConfirmState({
+                                  isOpen: true,
+                                  title: 'Eliminar Sponsor',
+                                  message: `¿Está seguro de que desea eliminar al sponsor "${sponsor}" del catálogo corporativo?`,
+                                  onConfirm: () => {
+                                    const updated = sponsorsList.filter(s => s !== sponsor);
+                                    setSponsorsList(updated);
+                                    localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
+                                    addLog('Configuración', `Eliminó sponsor del catálogo: ${sponsor}`);
+                                  }
+                                });
+                              }}
+                                className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded transition cursor-pointer shrink-0 ml-2 animate-fadeIn"
+                                title="Eliminar sponsor"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+                    </div>
+                )}
+
+                {settingsSubTab === 'scrum_rules' && (
+                  <div className="space-y-6 animate-fadeIn text-slate-800">
+                    <div className="border border-slate-150 rounded-2xl p-6 bg-slate-50/50">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-4">
+                        <div className="flex items-center gap-2.5">
+                          <CheckSquare className="w-5 h-5 text-violet-600" />
+                          <div>
+                            <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wider block">Reglas de Transición Scrum Board</span>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Gestione las validaciones semánticas, de Definition of Ready (DOR) y Definition of Done (DOD) para las Historias de Usuario.</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteConfirmState({
+                              isOpen: true,
+                              title: 'Restablecer Reglas',
+                              message: '¿Está seguro de que desea restablecer todas las reglas de transición a su estado habilitado por defecto?',
+                              onConfirm: () => {
+                                localStorage.removeItem('scrum_transition_rules');
+                                setScrumRulesUpdateTrigger(prev => prev + 1);
+                                addLog('Configuración', 'Restableció todas las reglas de transición de HU a sus valores por defecto.');
+                              }
+                            });
+                          }}
+                          className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1.5 rounded-lg transition shrink-0 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                          Restablecer por Defecto
+                        </button>
+                      </div>
+
+                      {/* Info Alert info badge */}
+                      <div className="bg-violet-50 border border-violet-100/70 text-violet-950 p-3.5 rounded-xl text-xs flex gap-2.5 leading-normal mb-5">
+                        <span className="text-base shrink-0">🛡️</span>
+                        <div>
+                          <strong className="font-extrabold text-violet-900 block mb-0.5">Control de Calidad del Proceso (QMS)</strong>
+                          Las reglas que deshabilite aquí <span className="font-semibold text-rose-700">se omitirán automáticamente</span> en el tablero Scrum de desarrollo al arrastrar o transicionar las tarjetas, dándole total flexibilidad cuando ejecute fases ágiles aceleradas.
+                        </div>
+                      </div>
+
+                      {/* Rules visual manager container */}
+                      <div className="space-y-4">
+                        {(() => {
+                          const savedRulesStr = localStorage.getItem('scrum_transition_rules');
+                          let activeRules: TransitionRule[] = [];
+                          try {
+                            activeRules = savedRulesStr ? JSON.parse(savedRulesStr) : DEFAULT_TRANSITION_RULES;
+                          } catch (e) {
+                            activeRules = DEFAULT_TRANSITION_RULES;
+                          }
+
+                          // Group rules by category for an ultra-structured clean overview!
+                          const categories = Array.from(new Set(activeRules.map(r => r.category)));
+
+                          const handleToggleRule = (ruleId: string) => {
+                            const updated = activeRules.map(r => {
+                              if (r.id === ruleId) {
+                                const newval = !r.enabled;
+                                addLog('Configuración', `${newval ? 'Habilitó' : 'Deshabilitó'} regla Scrum: "${r.name}"`);
+                                return { ...r, enabled: newval };
+                              }
+                              return r;
+                            });
+                            localStorage.setItem('scrum_transition_rules', JSON.stringify(updated));
+                            setScrumRulesUpdateTrigger(prev => prev + 1);
+                          };
+
+                          const handleUpdateRuleDesc = (ruleId: string, newDesc: string) => {
+                            const updated = activeRules.map(r => {
+                              if (r.id === ruleId) {
+                                return { ...r, desc: newDesc };
+                              }
+                              return r;
+                            });
+                            localStorage.setItem('scrum_transition_rules', JSON.stringify(updated));
+                            setScrumRulesUpdateTrigger(prev => prev + 1);
+                          };
+
+                          const flowchartSteps = [
+                            { id: 'no_iniciados', label: 'No Iniciado', icon: 'Layers', color: 'slate', col: 'NO_INICIADO', ruleIds: ['no_iniciados_prioridad', 'no_iniciados_responsable'] },
+                            { id: 'en_analisis', label: 'En Análisis', icon: 'BookOpen', color: 'blue', col: 'EN_ANALISIS', ruleIds: ['en_analisis_descripcion', 'en_analisis_responsable'] },
+                            { id: 'en_desarrollo', label: 'En Desarrollo', icon: 'Cpu', color: 'amber', col: 'EN_DESARROLLO', ruleIds: ['en_desarrollo_criteria', 'en_desarrollo_sp', 'en_desarrollo_unblocked'] },
+                            { id: 'code_review', label: 'Code Review', icon: 'Eye', color: 'teal', col: 'CODE_REVIEW', ruleIds: ['code_review_criteria'] },
+                            { id: 'listo_para_qa', label: 'Listo para QA', icon: 'CheckSquare', color: 'indigo', col: 'LISTO_PARA_QA', ruleIds: ['listo_qa_no_crit_bugs'] },
+                            { id: 'en_qa', label: 'En QA', icon: 'Server', color: 'violet', col: 'EN_QA', ruleIds: ['en_qa_sprint_active'] },
+                            { id: 'devuelto_qa', label: 'Devuelto QA 🔄', icon: 'RefreshCw', color: 'rose', col: 'DEVUELTO_QA', ruleIds: ['devuelto_qa_require_bug'] },
+                            { id: 'aprobado_qa', label: 'Aprobado QA ✔', icon: 'CheckCircle', color: 'emerald', col: 'APROBADO_QA', ruleIds: ['aprobado_qa_has_cases', 'aprobado_qa_cases_passed', 'aprobado_qa_no_bugs', 'aprobado_qa_criteria_ok'] },
+                            { id: 'aprobado_po', label: 'Aprobado PO', icon: 'UserCheck', color: 'cyan', col: 'APROBADO_FUNCIONAL', ruleIds: ['aprobado_po_all_passed'] },
+                            { id: 'finalizado', label: 'Finalizado', icon: 'Lock', color: 'fuchsia', col: 'FINALIZADO', ruleIds: ['finalizado_evidence', 'finalizado_no_crit_bugs'] }
+                          ];
+
+                          const renderStepIcon = (iconName: string) => {
+                            switch (iconName) {
+                              case 'Layers': return <Layers className="w-4 h-4 text-slate-500 font-bold" />;
+                              case 'BookOpen': return <BookOpen className="w-4 h-4 text-blue-500 font-bold" />;
+                              case 'Cpu': return <Cpu className="w-4 h-4 text-amber-500 font-bold" />;
+                              case 'Eye': return <Eye className="w-4 h-4 text-teal-600 font-bold" />;
+                              case 'CheckSquare': return <CheckSquare className="w-4 h-4 text-indigo-500 font-bold" />;
+                              case 'Server': return <Server className="w-4 h-4 text-violet-500 font-bold" />;
+                              case 'RefreshCw': return <RefreshCw className="w-4 h-4 text-rose-500 font-bold inline-block" />;
+                              case 'CheckCircle': return <CheckCircle className="w-4 h-4 text-emerald-500 font-bold" />;
+                              case 'UserCheck': return <UserCheck className="w-4 h-4 text-cyan-600 font-bold" />;
+                              case 'Lock': return <Lock className="w-4 h-4 text-purple-500 font-bold" />;
+                              default: return <CheckSquare className="w-4 h-4" />;
+                            }
+                          };
+
+                          const getStepBg = (color: string) => {
+                            switch (color) {
+                              case 'slate': return 'border-slate-200 bg-slate-50/70 text-slate-800 hover:border-slate-300';
+                              case 'blue': return 'border-blue-200 bg-blue-50/40 text-blue-900 hover:border-blue-300';
+                              case 'amber': return 'border-amber-200 bg-amber-50/40 text-amber-900 hover:border-amber-300';
+                              case 'teal': return 'border-teal-200 bg-teal-50/40 text-teal-900 hover:border-teal-300';
+                              case 'indigo': return 'border-indigo-200 bg-indigo-50/40 text-indigo-900 hover:border-indigo-300';
+                              case 'violet': return 'border-violet-200 bg-violet-50/40 text-violet-900 hover:border-violet-300';
+                              case 'rose': return 'border-rose-200 bg-rose-50/40 text-rose-900 hover:border-rose-300';
+                              case 'emerald': return 'border-emerald-200 bg-emerald-50/40 text-emerald-900 hover:border-emerald-300';
+                              case 'cyan': return 'border-cyan-200 bg-cyan-50/40 text-cyan-900 hover:border-cyan-300';
+                              case 'fuchsia': return 'border-purple-200 bg-purple-50/40 text-purple-900 hover:border-purple-300';
+                              default: return 'border-slate-200 bg-slate-50 text-slate-800';
+                            }
+                          };
+
+                          const getStepColorBadge = (color: string) => {
+                            switch (color) {
+                              case 'slate': return 'bg-slate-500 text-white';
+                              case 'blue': return 'bg-blue-600 text-white';
+                              case 'amber': return 'bg-amber-600 text-white';
+                              case 'teal': return 'bg-teal-600 text-white';
+                              case 'indigo': return 'bg-indigo-600 text-white';
+                              case 'violet': return 'bg-violet-600 text-white';
+                              case 'rose': return 'bg-rose-600 text-white';
+                              case 'emerald': return 'bg-emerald-600 text-white';
+                              case 'cyan': return 'bg-cyan-600 text-white';
+                              case 'fuchsia': return 'bg-purple-600 text-white';
+                              default: return 'bg-slate-500 text-white';
+                            }
+                          };
+
+                          return (
+                            <div className="space-y-6">
+                              {/* Sub-tab view selector */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-150 shadow-2xs">
+                                <span className="text-[11px] font-black tracking-wider text-slate-500 uppercase flex items-center gap-1.5 pl-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                                  Modo de visualización de reglas:
+                                </span>
+                                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-205 shrink-0 select-none">
+                                  <button
+                                    type="button"
+                                    onClick={() => setScrumRulesViewMode('both')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                      scrumRulesViewMode === 'both'
+                                        ? 'bg-white text-violet-700 shadow-3xs font-extrabold border border-slate-200/50'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    🔗 Vista Dual
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setScrumRulesViewMode('flowchart')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                      scrumRulesViewMode === 'flowchart'
+                                        ? 'bg-white text-violet-700 shadow-3xs font-extrabold border border-slate-200/50'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    🗺️ Esquema Gráfico
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setScrumRulesViewMode('table')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                      scrumRulesViewMode === 'table'
+                                        ? 'bg-white text-violet-700 shadow-3xs font-extrabold border border-slate-200/50'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    📝 Lista Editable
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Flowchart Schematic Map */}
+                              {scrumRulesViewMode !== 'table' && (
+                                <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-5 shadow-3xs relative overflow-hidden animate-fadeIn">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-3 border-b border-slate-200 gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        <span className="flex h-2.5 w-2.5 relative">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-violet-600"></span>
+                                        </span>
+                                        Mapa de Transición Scrum Board & Quality Gates (DOR y DOD)
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-600 font-mono font-bold bg-white px-2 py-0.5 border border-slate-200 rounded-lg">
+                                      {activeRules.filter(r => r.enabled).length} de {activeRules.length} Reglas Habilitadas
+                                    </div>
+                                  </div>
+
+                                  {/* Step nodes rendering */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                                    {flowchartSteps.map((step, idx) => {
+                                      const stepRules = activeRules.filter(r => step.ruleIds.includes(r.id));
+                                      const rulesCount = stepRules.length;
+                                      const enabledRulesCount = stepRules.filter(r => r.enabled).length;
+                                      const allOk = enabledRulesCount === rulesCount;
+
+                                      return (
+                                        <div key={step.id} className="relative group">
+                                          {/* Step Node Card */}
+                                          <div className={`p-4 rounded-xl border flex flex-col justify-between h-full min-h-[175px] transition-all duration-300 shadow-2xs hover:shadow-xs ${getStepBg(step.color)}`}>
+                                            <div>
+                                              {/* Node Header */}
+                                              <div className="flex items-center justify-between gap-2 border-b border-dashed border-slate-200/80 pb-2 mb-2 w-full">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                  {renderStepIcon(step.icon)}
+                                                  <span className="font-extrabold text-[12px] text-slate-800 truncate">
+                                                    {step.label}
+                                                  </span>
+                                                </div>
+                                                <span className={`text-[9px] font-black font-mono shrink-0 px-1.5 py-0.5 rounded-full ${getStepColorBadge(step.color)}`}>
+                                                  0{idx + 1}
+                                                </span>
+                                              </div>
+
+                                              {/* Target Column Identifier */}
+                                              <div className="text-[9px] text-slate-400 font-bold tracking-wider uppercase mb-3 flex items-center justify-between">
+                                                <span>Destino:</span>
+                                                <span className="font-mono text-slate-600 bg-white border border-slate-100 rounded px-1">{step.col}</span>
+                                              </div>
+
+                                              {/* Validation Rules Cards */}
+                                              <div className="space-y-1.5">
+                                                {rulesCount === 0 ? (
+                                                  <div className="text-[10px] text-slate-400 italic py-2 text-center">
+                                                    Sin validación restrictiva
+                                                  </div>
+                                                ) : (
+                                                  stepRules.map(rule => (
+                                                    <button
+                                                      key={rule.id}
+                                                      type="button"
+                                                      onClick={() => handleToggleRule(rule.id)}
+                                                      title={`${rule.desc} (Haz clic para alternar)`}
+                                                      className={`w-full text-left p-1.5 rounded-lg border text-[10px] transition duration-200 cursor-pointer flex items-start gap-1 hover:border-slate-350 select-none ${
+                                                        rule.enabled
+                                                          ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold'
+                                                          : 'bg-slate-100/60 border-slate-205 text-slate-400 line-through'
+                                                      }`}
+                                                    >
+                                                      <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${
+                                                        rule.enabled ? 'bg-violet-500 animate-pulse' : 'bg-slate-300'
+                                                      }`} />
+                                                      <span className="truncate leading-tight flex-1">
+                                                        {rule.name}
+                                                      </span>
+                                                      <span className="text-[9px] text-slate-400 font-bold shrink-0 ml-1 font-mono">
+                                                        {rule.enabled ? '✓' : '✕'}
+                                                      </span>
+                                                    </button>
+                                                  ))
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Footer count flag */}
+                                            {rulesCount > 0 && (
+                                              <div className="mt-3 pt-2 border-t border-slate-150 flex items-center justify-between text-[10px] text-slate-500 font-bold w-full">
+                                                <span>Restricciones:</span>
+                                                <span className={allOk ? 'text-emerald-600' : 'text-slate-500'}>
+                                                  {enabledRulesCount}/{rulesCount} activas
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Legend */}
+                                  <div className="mt-4 pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-550">
+                                    <span className="flex items-center gap-1 text-slate-600">
+                                      💡 <strong>Interactividad Ágil:</strong> Pulse directamente sobre cualquier regla en el mapa para habilitar/omitir la validación de transición.
+                                    </span>
+                                    <div className="flex items-center gap-4 shrink-0 font-extrabold text-[11px]">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded bg-violet-650 inline-block" />
+                                        Habilitada
+                                      </span>
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded bg-slate-300 inline-block" />
+                                        Omitida (Inactiva)
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Rule Category Details List Panel */}
+                              {scrumRulesViewMode !== 'flowchart' && (
+                                <div className="space-y-4 animate-fadeIn">
+                                  {categories.map(cat => {
+                                    const catRules = activeRules.filter(r => r.category === cat);
+                                    return (
+                                      <div key={cat} className="bg-white border border-slate-200/70 rounded-xl overflow-hidden shadow-2xs">
+                                        {/* Header of category table */}
+                                        <div className="bg-slate-50 border-b border-slate-200/80 px-4 py-2.5 flex items-center justify-between">
+                                          <span className="font-black text-[11px] tracking-wider text-slate-600 uppercase flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+                                            {cat}
+                                          </span>
+                                          <span className="text-[10px] text-slate-500 font-bold font-mono">
+                                            {catRules.filter(r => r.enabled).length} de {catRules.length} activas
+                                          </span>
+                                        </div>
+
+                                        {/* Rules rows */}
+                                        <div className="divide-y divide-slate-100">
+                                          {catRules.map(rule => (
+                                            <div key={rule.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/50 transition duration-155">
+                                              <div className="flex-1 space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-extrabold text-slate-800 text-xs">
+                                                    {rule.name}
+                                                  </span>
+                                                  <span className="bg-slate-105 border border-slate-200 text-slate-600 text-[9px] font-bold font-mono tracking-wider px-1.5 py-0.5 rounded uppercase">
+                                                    ➔ {rule.targetCol}
+                                                  </span>
+                                                </div>
+
+                                                {/* Inline Description Editor */}
+                                                <div className="flex items-center gap-2 w-full max-w-2xl bg-white border border-slate-200 hover:border-slate-300 rounded-lg py-1 px-2 transition-all">
+                                                  <span className="text-[10.5px] text-slate-400 font-bold shrink-0">Mensaje de error:</span>
+                                                  <input
+                                                    type="text"
+                                                    defaultValue={rule.desc}
+                                                    onBlur={(e) => {
+                                                      const val = e.target.value.trim();
+                                                      if (val && val !== rule.desc) {
+                                                        handleUpdateRuleDesc(rule.id, val);
+                                                        addLog('Configuración', `Actualizó advertencia para "${rule.name}" a "${val}"`);
+                                                      }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        const target = e.target as HTMLInputElement;
+                                                        const val = target.value.trim();
+                                                        if (val) {
+                                                          handleUpdateRuleDesc(rule.id, val);
+                                                          addLog('Configuración', `Actualizó advertencia para "${rule.name}" a "${val}"`);
+                                                          target.blur();
+                                                        }
+                                                      }
+                                                    }}
+                                                    placeholder="Ingrese advertencia personalizada..."
+                                                    className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder-slate-400 font-medium"
+                                                  />
+                                                </div>
+                                              </div>
+
+                                              <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className={`text-[10px] font-black uppercase ${rule.enabled ? 'text-violet-700' : 'text-slate-400'}`}>
+                                                    {rule.enabled ? 'Activa' : 'Inactiva'}
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleToggleRule(rule.id)}
+                                                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                      rule.enabled ? 'bg-violet-600' : 'bg-slate-200'
+                                                    }`}
+                                                  >
+                                                    <span
+                                                      className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out translate-x-0"
+                                                      style={{ transform: rule.enabled ? 'translateX(16px)' : 'translateX(0px)' }}
+                                                    />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
               </div>
             </div>
@@ -3702,6 +4397,41 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {deleteConfirmState && deleteConfirmState.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center z-[999999] p-4 text-slate-805 text-slate-800 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-100 overflow-hidden">
+            <div className="p-5">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
+                ⚠️ {deleteConfirmState.title}
+              </h3>
+              <p className="text-xs text-slate-650 mt-2.5 leading-normal">
+                {deleteConfirmState.message}
+              </p>
+            </div>
+            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmState(null)}
+                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-105 hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmState.onConfirm();
+                  setDeleteConfirmState(null);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100 hover:shadow-md"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

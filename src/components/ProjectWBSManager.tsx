@@ -493,20 +493,25 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   // Selected item for the right-side detail drawer
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   
-  // Custom View Tabs (Cuadrícula, Gráfico de Gantt, Documentación Funcional)
-  const [wbsTab, setWbsTab] = useState<'grid' | 'gantt' | 'docs'>('grid');
+  // Custom View Tabs (Cuadrícula, Gráfico de Gantt)
+  const [wbsTab, setWbsTab] = useState<'grid' | 'gantt'>('grid');
   
   // Custom Gantt Chart Scale (Días, Semanas, Meses)
   const [ganttScale, setGanttScale] = useState<'dias' | 'semanas' | 'meses'>('dias');
-  
-  // Sub-tabs inside documentation/consulting section
-  const [docsTab, setDocsTab] = useState<'functional' | 'api' | 'security' | 'roadmap'>('functional');
 
   // Drawer auxiliary states
   const [newCommentText, setNewCommentText] = useState('');
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Custom confirmation modal state to bypass iframe window.confirm blocks
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Drag and drop states
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
@@ -952,10 +957,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         if (subtasks.length > 0) {
           const sumProg = subtasks.reduce((sum, current) => sum + current.progress, 0);
           task.progress = Math.round(sumProg / subtasks.length);
-          
-          // Auto-adjust status based on math
-          if (task.progress === 100) task.status = 'COMPLETADA';
-          else if (task.progress > 0 && task.status === 'PENDIENTE') task.status = 'EN_CURSO';
         }
       }
     });
@@ -967,9 +968,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         if (tasks.length > 0) {
           const sumProg = tasks.reduce((sum, current) => sum + current.progress, 0);
           mod.progress = Math.round(sumProg / tasks.length);
-
-          if (mod.progress === 100) mod.status = 'COMPLETADA';
-          else if (mod.progress > 0 && mod.status === 'PENDIENTE') mod.status = 'EN_CURSO';
         }
       }
     });
@@ -981,10 +979,18 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         if (children.length > 0) {
           const sumProg = children.reduce((sum, current) => sum + current.progress, 0);
           phase.progress = Math.round(sumProg / children.length);
-
-          if (phase.progress === 100) phase.status = 'COMPLETADA';
-          else if (phase.progress > 0 && phase.status === 'PENDIENTE') phase.status = 'EN_CURSO';
         }
+      }
+    });
+
+    // Step 4: Enforce statuses for all items based on their current progress
+    updated.forEach(it => {
+      if (it.progress === 0) {
+        it.status = 'PENDIENTE';
+      } else if (it.progress >= 1 && it.progress <= 99) {
+        it.status = 'EN_CURSO';
+      } else if (it.progress === 100) {
+        it.status = 'COMPLETADA';
       }
     });
 
@@ -1055,7 +1061,28 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     setItems(prev => {
       const copy = prev.map(it => {
         if (it.id === id) {
-          return { ...it, [field]: value };
+          const updatedItem = { ...it, [field]: value };
+          if (field === 'status') {
+            if (value === 'COMPLETADA') {
+              updatedItem.progress = 100;
+            } else if (value === 'PENDIENTE') {
+              updatedItem.progress = 0;
+            } else if (value === 'EN_CURSO') {
+              if (it.progress === 0 || it.progress === 100) {
+                updatedItem.progress = 50;
+              }
+            }
+          } else if (field === 'progress') {
+            const val = Number(value) || 0;
+            if (val === 0) {
+              updatedItem.status = 'PENDIENTE';
+            } else if (val >= 1 && val <= 99) {
+              updatedItem.status = 'EN_CURSO';
+            } else if (val === 100) {
+              updatedItem.status = 'COMPLETADA';
+            }
+          }
+          return updatedItem;
         }
         return it;
       });
@@ -1118,28 +1145,38 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return;
     }
     
-    // Recursive search to delete all children nested deeper
-    const getIdsToDelete = (targetId: string): string[] => {
-      const ids = [targetId];
-      const children = items.filter(it => it.parentId === targetId);
-      children.forEach(c => {
-        ids.push(...getIdsToDelete(c.id));
-      });
-      return ids;
-    };
-
-    const targetIds = getIdsToDelete(id);
+    const targetItem = items.find(it => it.id === id);
+    const targetName = targetItem ? targetItem.title : 'este elemento';
     
-    setItems(prev => {
-      const filtered = prev.filter(it => !targetIds.includes(it.id));
-      return handleRecalculateProgress(filtered);
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Elemento de WBS',
+      message: `¿Está totalmente seguro de eliminar "${targetName}" y todas sus sub-tareas/hijos asociados? Esta acción no se puede deshacer.`,
+      onConfirm: () => {
+        // Recursive search to delete all children nested deeper
+        const getIdsToDelete = (targetId: string): string[] => {
+          const ids = [targetId];
+          const children = items.filter(it => it.parentId === targetId);
+          children.forEach(c => {
+            ids.push(...getIdsToDelete(c.id));
+          });
+          return ids;
+        };
+
+        const targetIds = getIdsToDelete(id);
+        
+        setItems(prev => {
+          const filtered = prev.filter(it => !targetIds.includes(it.id));
+          return handleRecalculateProgress(filtered);
+        });
+
+        if (activeItemId && targetIds.includes(activeItemId)) {
+          setActiveItemId(null);
+        }
+
+        addLog('Carlos Pérez (PM)', `Eliminó elemento del gestor de tareas junto a sus sub-elementos filiales (${targetIds.length} eliminados).`);
+      }
     });
-
-    if (activeItemId && targetIds.includes(activeItemId)) {
-      setActiveItemId(null);
-    }
-
-    addLog('Carlos Pérez (PM)', `Eliminó elemento del gestor de tareas junto a sus sub-elementos filiales (${targetIds.length} eliminados).`);
   };
 
   // Collapse/Expand toggle
@@ -1199,10 +1236,19 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       alert('Eliminación de Línea Base bloqueada en base a privilegios de Desarrollo.');
       return;
     }
-    setBaselines(prev => prev.filter(b => b.id !== id));
-    if (selectedBaselineId === id) {
-      setSelectedBaselineId('');
-    }
+    const baseline = baselines.find(b => b.id === id);
+    const label = baseline ? baseline.savedAt : 'esta línea base';
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Línea Base',
+      message: `¿Está seguro de que desea eliminar la línea base "${label}"?`,
+      onConfirm: () => {
+        setBaselines(prev => prev.filter(b => b.id !== id));
+        if (selectedBaselineId === id) {
+          setSelectedBaselineId('');
+        }
+      }
+    });
   };
 
   // Clear tasks to default dummy data
@@ -1211,10 +1257,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       alert('Restaurar planificación bloqueado en base a privilegios de Desarrollo.');
       return;
     }
-    if (confirm("¿Está seguro de reiniciar toda la planificación al árbol de tareas por defecto?")) {
-      setItems(handleRecalculateProgress(getInitialWBSItems(projectId)));
-      addLog('Sistema', 'Reinició la planificación del proyecto al estado estándar recomendado.');
-    }
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Reiniciar Planificación',
+      message: '¿Está seguro de reiniciar toda la planificación al árbol de tareas por defecto? Esto descartará todos tus cambios de progreso y tareas nuevas.',
+      onConfirm: () => {
+        setItems(handleRecalculateProgress(getInitialWBSItems(projectId)));
+        addLog('Sistema', 'Reinició la planificación del proyecto al estado estándar recomendado.');
+      }
+    });
   };
 
   // --- Calculations and Indicators ---
@@ -1410,16 +1461,28 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return;
     }
     if (!activeItemId) return;
-    setItems(prev => {
-      return prev.map(it => {
-        if (it.id === activeItemId) {
-          return {
-            ...it,
-            evidenceFiles: it.evidenceFiles.filter(ev => ev.id !== evId)
-          };
-        }
-        return it;
-      });
+
+    const activeItem = items.find(it => it.id === activeItemId);
+    const ev = activeItem?.evidenceFiles.find(e => e.id === evId);
+    const evName = ev ? ev.name : 'este archivo de evidencia';
+
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Evidencia de Soporte',
+      message: `¿Está seguro de que desea eliminar la evidencia de soporte "${evName}" de forma permanente?`,
+      onConfirm: () => {
+        setItems(prev => {
+          return prev.map(it => {
+            if (it.id === activeItemId) {
+              return {
+                ...it,
+                evidenceFiles: it.evidenceFiles.filter(ev => ev.id !== evId)
+              };
+            }
+            return it;
+          });
+        });
+      }
     });
   };
 
@@ -1552,6 +1615,163 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     setIsExportingPDF(true);
     addLog('Carlos Pérez (PM)', 'Inició la exportación del Diagrama Gantt en formato PDF.');
 
+    // Inner helper functions for oklch and oklab support
+    const oklchToRgb = (lStr: string, cStr: string, hStr: string, alphaStr?: string): string => {
+      let L = parseFloat(lStr);
+      let C = parseFloat(cStr);
+      let H = parseFloat(hStr);
+      let alpha = alphaStr ? parseFloat(alphaStr) : 1;
+
+      if (lStr.includes('%')) L = parseFloat(lStr) / 100;
+      if (cStr.includes('%')) C = parseFloat(cStr) / 100;
+      if (hStr.includes('%')) H = (parseFloat(hStr) / 100) * 360;
+
+      if (hStr.endsWith('deg')) H = parseFloat(hStr);
+      else if (hStr.endsWith('rad')) H = parseFloat(hStr) * (180 / Math.PI);
+      else if (hStr.endsWith('grad')) H = parseFloat(hStr) * 0.9;
+      else if (hStr.endsWith('turn')) H = parseFloat(hStr) * 360;
+
+      const hRad = (H * Math.PI) / 180;
+      const aCoordVal = C * Math.cos(hRad);
+      const bCoordVal = C * Math.sin(hRad);
+
+      const l_ = L + 0.3963377774 * aCoordVal + 0.2158037573 * bCoordVal;
+      const m_ = L - 0.1055613458 * aCoordVal - 0.0638541167 * bCoordVal;
+      const s_ = L - 0.0894841775 * aCoordVal - 1.2914855480 * bCoordVal;
+
+      const l_lms = Math.pow(Math.max(0, l_), 3);
+      const m_lms = Math.pow(Math.max(0, m_), 3);
+      const s_lms = Math.pow(Math.max(0, s_), 3);
+
+      const r_l = +4.0767416621 * l_lms - 3.3077115913 * m_lms + 0.2309699292 * s_lms;
+      const g_l = -1.2684380046 * l_lms + 2.6097574011 * m_lms - 0.3413193965 * s_lms;
+      const b_l = -0.0041960863 * l_lms - 0.7034186147 * m_lms + 1.7076147010 * s_lms;
+
+      const gamma = (c: number) => {
+        const clamped = Math.max(0, Math.min(1, c));
+        return clamped <= 0.0031308 
+          ? 12.92 * clamped 
+          : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+      };
+
+      const rVal = Math.round(gamma(r_l) * 255);
+      const gVal = Math.round(gamma(g_l) * 255);
+      const bVal = Math.round(gamma(b_l) * 255);
+
+      return alpha === 1 ? `rgb(${rVal}, ${gVal}, ${bVal})` : `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`;
+    };
+
+    const oklabToRgb = (lStr: string, aStr: string, bStr: string, alphaStr?: string): string => {
+      let L = parseFloat(lStr);
+      let aCoordVal = parseFloat(aStr);
+      let bCoordVal = parseFloat(bStr);
+      let alpha = alphaStr ? parseFloat(alphaStr) : 1;
+
+      if (lStr.includes('%')) L = parseFloat(lStr) / 100;
+      if (aStr.includes('%')) aCoordVal = parseFloat(aStr) / 100;
+      if (bStr.includes('%')) bCoordVal = parseFloat(bStr) / 100;
+
+      const l_ = L + 0.3963377774 * aCoordVal + 0.2158037573 * bCoordVal;
+      const m_ = L - 0.1055613458 * aCoordVal - 0.0638541167 * bCoordVal;
+      const s_ = L - 0.0894841775 * aCoordVal - 1.2914855480 * bCoordVal;
+
+      const l_lms = Math.pow(Math.max(0, l_), 3);
+      const m_lms = Math.pow(Math.max(0, m_), 3);
+      const s_lms = Math.pow(Math.max(0, s_), 3);
+
+      const r_l = +4.0767416621 * l_lms - 3.3077115913 * m_lms + 0.2309699292 * s_lms;
+      const g_l = -1.2684380046 * l_lms + 2.6097574011 * m_lms - 0.3413193965 * s_lms;
+      const b_l = -0.0041960863 * l_lms - 0.7034186147 * m_lms + 1.7076147010 * s_lms;
+
+      const gamma = (c: number) => {
+        const clamped = Math.max(0, Math.min(1, c));
+        return clamped <= 0.0031308 
+          ? 12.92 * clamped 
+          : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+      };
+
+      const rVal = Math.round(gamma(r_l) * 255);
+      const gVal = Math.round(gamma(g_l) * 255);
+      const bVal = Math.round(gamma(b_l) * 255);
+
+      return alpha === 1 ? `rgb(${rVal}, ${gVal}, ${bVal})` : `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`;
+    };
+
+    const replaceOklStyleText = (text: string): string => {
+      if (!text) return text;
+      
+      // 1. Replace oklch comma-separated format
+      let result = text.replace(/oklch\(\s*([^,\/)]+)\s*,\s*([^,\/)]+)\s*,\s*([^,\/)]+)(?:\s*,\s*([^)]+))?\s*\)/g, (match, l, c, h, a) => {
+        try {
+          return oklchToRgb(l, c, h, a);
+        } catch (e) {
+          return 'rgb(128, 128, 128)';
+        }
+      });
+
+      // Space/slash-separated format: oklch(0.9 0.02 240 / 0.5)
+      result = result.replace(/oklch\(\s*([^\/\s]+)\s+([^\/\s]+)\s+([^\/\s]+)(?:\s*\/\s*([^)]+))?\s*\)/g, (match, l, c, h, a) => {
+        try {
+          return oklchToRgb(l, c, h, a);
+        } catch (e) {
+          return 'rgb(128, 128, 128)';
+        }
+      });
+
+      // 2. Replace oklab comma-separated format
+      result = result.replace(/oklab\(\s*([^,\/)]+)\s*,\s*([^,\/)]+)\s*,\s*([^,\/)]+)(?:\s*,\s*([^)]+))?\s*\)/g, (match, l, aCoord, bCoord, a) => {
+        try {
+          return oklabToRgb(l, aCoord, bCoord, a);
+        } catch (e) {
+          return 'rgb(128, 128, 128)';
+        }
+      });
+
+      // Space-separated format
+      result = result.replace(/oklab\(\s*([^\/\s]+)\s+([^\/\s]+)\s+([^\/\s]+)(?:\s*\/\s*([^)]+))?\s*\)/g, (match, l, aCoord, bCoord, a) => {
+        try {
+          return oklabToRgb(l, aCoord, bCoord, a);
+        } catch (e) {
+          return 'rgb(128, 128, 128)';
+        }
+      });
+
+      // Defensive cleanup of any remaining oklch or oklab calls that didn't match the regexes
+      if (result && (result.includes('oklch') || result.includes('oklab'))) {
+        result = result.replace(/oklch\([^)]+\)/g, 'rgb(128, 128, 128)');
+        result = result.replace(/oklab\([^)]+\)/g, 'rgb(128, 128, 128)');
+      }
+
+      return result;
+    };
+
+    // Override main window getComputedStyle during html2canvas capture
+    const originalGetComputedStyle = window.getComputedStyle;
+    window.getComputedStyle = function (elt, pseudoElt) {
+      const style = originalGetComputedStyle.call(window, elt, pseudoElt);
+      return new Proxy(style, {
+        get(target, prop) {
+          if (prop === 'getPropertyValue') {
+            return function(propertyName: string) {
+              const val = target.getPropertyValue(propertyName);
+              if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab'))) {
+                return replaceOklStyleText(val);
+              }
+              return val;
+            };
+          }
+          const val = Reflect.get(target, prop);
+          if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab'))) {
+            return replaceOklStyleText(val);
+          }
+          if (typeof val === 'function') {
+            return val.bind(target);
+          }
+          return val;
+        }
+      });
+    };
+
     try {
       const canvas = await html2canvas(element, {
         scale: 2, // Better resolution
@@ -1561,129 +1781,35 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         width: element.scrollWidth,
         height: element.scrollHeight,
         onclone: (clonedDoc) => {
-          // Inner helper functions for oklch and oklab support
-          const oklchToRgb = (lStr: string, cStr: string, hStr: string, alphaStr?: string): string => {
-            let L = parseFloat(lStr);
-            let C = parseFloat(cStr);
-            let H = parseFloat(hStr);
-            let alpha = alphaStr ? parseFloat(alphaStr) : 1;
-
-            if (lStr.includes('%')) L = parseFloat(lStr) / 100;
-            if (cStr.includes('%')) C = parseFloat(cStr) / 100;
-            if (hStr.includes('%')) H = (parseFloat(hStr) / 100) * 360;
-
-            if (hStr.endsWith('deg')) H = parseFloat(hStr);
-            else if (hStr.endsWith('rad')) H = parseFloat(hStr) * (180 / Math.PI);
-            else if (hStr.endsWith('grad')) H = parseFloat(hStr) * 0.9;
-            else if (hStr.endsWith('turn')) H = parseFloat(hStr) * 360;
-
-            const hRad = (H * Math.PI) / 180;
-            const aCoordVal = C * Math.cos(hRad);
-            const bCoordVal = C * Math.sin(hRad);
-
-            const l_ = L + 0.3963377774 * aCoordVal + 0.2158037573 * bCoordVal;
-            const m_ = L - 0.1055613458 * aCoordVal - 0.0638541167 * bCoordVal;
-            const s_ = L - 0.0894841775 * aCoordVal - 1.2914855480 * bCoordVal;
-
-            const l_lms = Math.pow(Math.max(0, l_), 3);
-            const m_lms = Math.pow(Math.max(0, m_), 3);
-            const s_lms = Math.pow(Math.max(0, s_), 3);
-
-            const r_l = +4.0767416621 * l_lms - 3.3077115913 * m_lms + 0.2309699292 * s_lms;
-            const g_l = -1.2684380046 * l_lms + 2.6097574011 * m_lms - 0.3413193965 * s_lms;
-            const b_l = -0.0041960863 * l_lms - 0.7034186147 * m_lms + 1.7076147010 * s_lms;
-
-            const gamma = (c: number) => {
-              const clamped = Math.max(0, Math.min(1, c));
-              return clamped <= 0.0031308 
-                ? 12.92 * clamped 
-                : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+          // Override cloned window getComputedStyle as well
+          const clonedWindow = clonedDoc.defaultView;
+          if (clonedWindow) {
+            const originalClonedGetComputedStyle = clonedWindow.getComputedStyle;
+            clonedWindow.getComputedStyle = function (elt, pseudoElt) {
+              const style = originalClonedGetComputedStyle.call(clonedWindow, elt, pseudoElt);
+              return new Proxy(style, {
+                get(target, prop) {
+                  if (prop === 'getPropertyValue') {
+                    return function(propertyName: string) {
+                      const val = target.getPropertyValue(propertyName);
+                      if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab'))) {
+                        return replaceOklStyleText(val);
+                      }
+                      return val;
+                    };
+                  }
+                  const val = Reflect.get(target, prop);
+                  if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab'))) {
+                    return replaceOklStyleText(val);
+                  }
+                  if (typeof val === 'function') {
+                    return val.bind(target);
+                  }
+                  return val;
+                }
+              });
             };
-
-            const rVal = Math.round(gamma(r_l) * 255);
-            const gVal = Math.round(gamma(g_l) * 255);
-            const bVal = Math.round(gamma(b_l) * 255);
-
-            return alpha === 1 ? `rgb(${rVal}, ${gVal}, ${bVal})` : `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`;
-          };
-
-          const oklabToRgb = (lStr: string, aStr: string, bStr: string, alphaStr?: string): string => {
-            let L = parseFloat(lStr);
-            let aCoordVal = parseFloat(aStr);
-            let bCoordVal = parseFloat(bStr);
-            let alpha = alphaStr ? parseFloat(alphaStr) : 1;
-
-            if (lStr.includes('%')) L = parseFloat(lStr) / 100;
-            if (aStr.includes('%')) aCoordVal = parseFloat(aStr) / 100;
-            if (bStr.includes('%')) bCoordVal = parseFloat(bStr) / 100;
-
-            const l_ = L + 0.3963377774 * aCoordVal + 0.2158037573 * bCoordVal;
-            const m_ = L - 0.1055613458 * aCoordVal - 0.0638541167 * bCoordVal;
-            const s_ = L - 0.0894841775 * aCoordVal - 1.2914855480 * bCoordVal;
-
-            const l_lms = Math.pow(Math.max(0, l_), 3);
-            const m_lms = Math.pow(Math.max(0, m_), 3);
-            const s_lms = Math.pow(Math.max(0, s_), 3);
-
-            const r_l = +4.0767416621 * l_lms - 3.3077115913 * m_lms + 0.2309699292 * s_lms;
-            const g_l = -1.2684380046 * l_lms + 2.6097574011 * m_lms - 0.3413193965 * s_lms;
-            const b_l = -0.0041960863 * l_lms - 0.7034186147 * m_lms + 1.7076147010 * s_lms;
-
-            const gamma = (c: number) => {
-              const clamped = Math.max(0, Math.min(1, c));
-              return clamped <= 0.0031308 
-                ? 12.92 * clamped 
-                : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
-            };
-
-            const rVal = Math.round(gamma(r_l) * 255);
-            const gVal = Math.round(gamma(g_l) * 255);
-            const bVal = Math.round(gamma(b_l) * 255);
-
-            return alpha === 1 ? `rgb(${rVal}, ${gVal}, ${bVal})` : `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`;
-          };
-
-          const replaceOklStyleText = (text: string): string => {
-            if (!text) return text;
-            
-            // 1. Replace oklch comma-separated format
-            let result = text.replace(/oklch\(\s*([^,\/)]+)\s*,\s*([^,\/)]+)\s*,\s*([^,\/)]+)(?:\s*,\s*([^)]+))?\s*\)/g, (match, l, c, h, a) => {
-              try {
-                return oklchToRgb(l, c, h, a);
-              } catch (e) {
-                return 'rgb(128, 128, 128)';
-              }
-            });
-
-            // Space/slash-separated format: oklch(0.9 0.02 240 / 0.5)
-            result = result.replace(/oklch\(\s*([^\/\s]+)\s+([^\/\s]+)\s+([^\/\s]+)(?:\s*\/\s*([^)]+))?\s*\)/g, (match, l, c, h, a) => {
-              try {
-                return oklchToRgb(l, c, h, a);
-              } catch (e) {
-                return 'rgb(128, 128, 128)';
-              }
-            });
-
-            // 2. Replace oklab comma-separated format
-            result = result.replace(/oklab\(\s*([^,\/)]+)\s*,\s*([^,\/)]+)\s*,\s*([^,\/)]+)(?:\s*,\s*([^)]+))?\s*\)/g, (match, l, aCoord, bCoord, a) => {
-              try {
-                return oklabToRgb(l, aCoord, bCoord, a);
-              } catch (e) {
-                return 'rgb(128, 128, 128)';
-              }
-            });
-
-            // Space-separated format
-            result = result.replace(/oklab\(\s*([^\/\s]+)\s+([^\/\s]+)\s+([^\/\s]+)(?:\s*\/\s*([^)]+))?\s*\)/g, (match, l, aCoord, bCoord, a) => {
-              try {
-                return oklabToRgb(l, aCoord, bCoord, a);
-              } catch (e) {
-                return 'rgb(128, 128, 128)';
-              }
-            });
-
-            return result;
-          };
+          }
 
           // Sanitize style tags
           const clonedStyles = clonedDoc.querySelectorAll('style');
@@ -1707,6 +1833,30 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
               }
             }
           });
+
+          // Sanitize nested dynamic CSS Rules inside stylesheets
+          try {
+            Array.from(clonedDoc.styleSheets).forEach((sheet: any) => {
+              try {
+                const rules = sheet.cssRules || sheet.rules;
+                if (!rules) return;
+                for (let i = 0; i < rules.length; i++) {
+                  const rule = rules[i];
+                  if (rule.style) {
+                    for (let j = 0; j < rule.style.length; j++) {
+                      const prop = rule.style[j];
+                      const val = rule.style.getPropertyValue(prop);
+                      if (val && (val.includes('oklch') || val.includes('oklab'))) {
+                        rule.style.setProperty(prop, replaceOklStyleText(val));
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                // cross-origin styleSheet rules cannot be read, safe to ignore
+              }
+            });
+          } catch (e) {}
         }
       });
 
@@ -1732,7 +1882,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(14);
       pdf.setTextColor(255, 255, 255);
-      pdf.text(`CRONOGRAMA GANTT COMPARATIVO`, margin, 11);
+      pdf.text(`CRONOGRAMA GANTT`, margin, 11);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
@@ -1761,19 +1911,20 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(10);
           pdf.setTextColor(255, 255, 255);
-          pdf.text(`CRONOGRAMA GANTT COMPARATIVO - Pág. ${pageNum}`, margin, 10);
+          pdf.text(`CRONOGRAMA GANTT - Pág. ${pageNum}`, margin, 10);
 
           pdf.addImage(imgData, 'PNG', margin, startY, imgWidth, maxPrintHeight);
           heightLeft -= maxPrintHeight;
         }
       }
 
-      pdf.save(`diagrama_gantt_proyecto_${projectId}.pdf`);
+      pdf.save(`Cronograma Gantt.pdf`);
       addLog('Carlos Pérez (PM)', 'Se completó la exportación del Diagrama Gantt de forma exitosa.');
     } catch (error) {
       console.error('Error generating PDF:', error);
       addLog('Carlos Pérez (PM)', 'Falló la exportación del Diagrama Gantt a PDF.');
     } finally {
+      window.getComputedStyle = originalGetComputedStyle;
       setIsExportingPDF(false);
     }
   };
@@ -2067,7 +2218,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           )}
         </div>
 
-        {/* Visualizer Mode tabs (Cuadrícula / Gantt / Documentación) */}
+        {/* Visualizer Mode tabs (Cuadrícula / Gantt) */}
         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg shrink-0 w-full lg:w-auto font-mono">
           <button
             onClick={() => setWbsTab('grid')}
@@ -2080,12 +2231,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             className={`flex-1 lg:flex-none text-[11px] font-bold px-3.5 py-1.5 rounded-md transition-all cursor-pointer ${wbsTab === 'gantt' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-600 hover:text-slate-950'}`}
           >
             📊 Gantt Integrado
-          </button>
-          <button
-            onClick={() => setWbsTab('docs')}
-            className={`flex-1 lg:flex-none text-[11px] font-bold px-3.5 py-1.5 rounded-md transition-all cursor-pointer ${wbsTab === 'docs' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-600 hover:text-slate-950'}`}
-          >
-            📚 Consultoría / Docs
           </button>
         </div>
 
@@ -2116,24 +2261,23 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       </div>
 
       {/* 3. INTERACTIVE SEARCH & FILTERS */}
-      {wbsTab !== 'docs' && (
-        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">
-          <div>
-            <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wide mb-1 font-mono">Buscar Tarea</label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Nombre de tarea / módulo..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            </div>
+      <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">
+        <div>
+          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wide mb-1 font-mono">Buscar Tarea</label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Nombre de tarea / módulo..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800"
+            />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           </div>
+        </div>
 
-          <div>
-            <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wide mb-1 font-mono">Prioridad</label>
+        <div>
+          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wide mb-1 font-mono">Prioridad</label>
             <select
               value={filterPriority}
               onChange={e => setFilterPriority(e.target.value)}
@@ -2177,7 +2321,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             </select>
           </div>
         </div>
-      )}
 
       {/* 4. MAIN WORKSPACE */}
 
@@ -2541,9 +2684,12 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           <div className="overflow-x-auto">
             <div id="wbs-gantt-chart-container" className="min-w-[900px] border border-slate-200 rounded-xl p-4 bg-slate-50/50">
               {/* Timeline headers */}
-              <div className="flex border-b border-slate-200 pb-2.5 font-bold text-slate-500 uppercase tracking-wide text-[10px] font-mono select-none">
-                <div className="w-2/5">Estructura de Tarea / Fase</div>
-                <div className="w-3/5 relative flex justify-between px-2 text-[9px] whitespace-nowrap">
+              <div className="flex border-b border-slate-300 pb-3 pt-1 font-bold text-slate-500 uppercase tracking-wide text-[10px] font-mono select-none items-center">
+                <div className="w-2/5 flex justify-between pr-4 items-center">
+                  <span>Estructura de Tareas</span>
+                  <span className="text-right">Fechas / Duración</span>
+                </div>
+                <div className="w-3/5 relative flex justify-between px-2 text-[9px] whitespace-nowrap items-center">
                   {getGanttHeaderLabels().map((lbl, idx) => (
                     <span key={idx} className="shrink-0">{lbl}</span>
                   ))}
@@ -2551,23 +2697,14 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
               </div>
 
               {/* Rows */}
-              <div className="divide-y divide-slate-150 mt-4 space-y-3">
+              <div className="mt-3 flex flex-col gap-1">
                 {items.map(it => {
                   const realPos = getBarPosition(it.startDate, it.endDate);
-                  
-                  // Read baseline position
-                  let bsPos = null;
-                  if (activeBaseline) {
-                    const bsItem = activeBaseline.itemsSnapshot.find(snap => snap.id === it.id);
-                    if (bsItem && bsItem.startDate && bsItem.endDate) {
-                      bsPos = getBarPosition(bsItem.startDate, bsItem.endDate);
-                    }
-                  }
 
                   const indentClass = 
-                    it.level === 'MODULO' ? 'pl-4' : 
-                    it.level === 'TAREA' ? 'pl-8' : 
-                    it.level === 'SUBTAREA' ? 'pl-12' : '';
+                  it.level === 'MODULO' ? 'pl-4' : 
+                  it.level === 'TAREA' ? 'pl-8' : 
+                  it.level === 'SUBTAREA' ? 'pl-12' : '';
 
                   const barBgColor = 
                     it.level === 'FASE' ? 'bg-blue-600' :
@@ -2575,53 +2712,40 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                     it.level === 'TAREA' ? 'bg-violet-500' : 'bg-slate-400';
 
                   return (
-                    <div key={it.id} className="flex items-center py-2 hover:bg-slate-50 transition duration-150">
+                    <div key={it.id} className="flex items-center py-1 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition duration-150">
                       {/* Meta left info */}
-                      <div className="w-2/5 pr-4 flex flex-col justify-center select-none">
-                        <div className={`flex items-center gap-1.5 ${indentClass}`}>
-                          <span className={`text-[8px] font-black px-1.5 py-0.2 rounded border ${
+                      <div className="w-2/5 pr-4 flex items-center select-none py-0">
+                        {/* Column 1: Task structure & name */}
+                        <div className={`flex items-center ${indentClass} min-w-0 flex-1`} style={{ flex: '1 1 auto', minWidth: 0 }}>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${
                             it.level === 'FASE' ? 'bg-blue-105 border-blue-200 text-blue-800' :
                             it.level === 'MODULO' ? 'bg-slate-100 border-slate-200 text-slate-650' :
                             'bg-indigo-50 border-indigo-150 text-indigo-700'
-                          }`}>
+                          }`} style={{ marginRight: '8px', flexShrink: 0 }}>
                             {it.level}
                           </span>
-                          <span className="font-bold text-slate-800 truncate max-w-[190px]" title={it.name}>
+                          <span className="font-bold text-slate-800 text-[11px] truncate" title={it.name} style={{ flexShrink: 1, minWidth: 0 }}>
                             {it.name}
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-500 font-mono block pl-2 mt-0.5">
-                          {it.startDate} al {it.endDate} ({it.durationDays}d) • {it.progress}%
-                        </span>
+                        {/* Column 2: Date & duration (single line) */}
+                        <div className="text-[9px] text-slate-500 font-mono font-bold text-right whitespace-nowrap" style={{ flexShrink: 0, marginLeft: '12px' }}>
+                          <span>{it.startDate} al {it.endDate} ({it.durationDays}d)</span>
+                        </div>
                       </div>
 
                       {/* Bar graphical mapping */}
-                      <div className="w-3/5 h-16 relative bg-white border border-slate-200/40 rounded-lg p-2 flex flex-col justify-between">
+                      <div className="w-3/5 h-6 relative bg-white border border-slate-200/40 rounded p-0.5 flex items-center">
                         {/* 1. Real Current progress bar */}
                         <div className="h-4 relative w-full">
                           <div
-                            className={`absolute h-3.5 rounded-full ${barBgColor} text-white text-[9px] font-black font-mono flex items-center justify-center`}
+                            className={`absolute top-0 h-full rounded-full ${barBgColor} flex items-center justify-center text-white text-[8px] font-extrabold font-mono select-none overflow-hidden whitespace-nowrap`}
                             style={{ left: realPos.left, width: realPos.width }}
-                            title={`Real: ${it.startDate} a ${it.endDate}`}
+                            title={`Real: ${it.startDate} a ${it.endDate} (${it.progress}% completado)`}
                           >
-                            <span className="truncate px-1 select-none">{it.progress}%</span>
+                            <span className="px-1 select-none leading-none">{it.progress}%</span>
                           </div>
                         </div>
-
-                        {/* 2. Baseline comparison bar */}
-                        {bsPos ? (
-                          <div className="h-3 relative w-full border-t border-dashed border-slate-200 mt-1">
-                            <div
-                              className="absolute h-2.5 rounded-full bg-slate-200 border border-slate-400/80"
-                              style={{ left: bsPos.left, width: bsPos.width }}
-                              title={`Línea Base: ${it.startDate} a ${it.endDate}`}
-                            />
-                          </div>
-                        ) : (
-                          <div className="text-[9px] text-slate-400 font-mono mt-1 text-right select-none pr-2">
-                            Sin Línea Base fijada
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
@@ -2632,183 +2756,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         </div>
       )}
 
-      {/* --- TAB VIEW 3: Consulting & Regulatory Documentation --- */}
-      {wbsTab === 'docs' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm animate-fadeIn">
-          {/* Documentation sub-menu */}
-          <div className="flex border-b border-slate-200 gap-6 mb-6 overflow-x-auto select-none">
-            <button
-              onClick={() => setDocsTab('functional')}
-              className={`pb-2 text-xs font-bold transition-all cursor-pointer ${docsTab === 'functional' ? 'text-blue-600 border-b-2 border-blue-600 font-black' : 'text-slate-400 hover:text-slate-800'}`}
-            >
-              📋 Diseño Funcional & Modelo DDBB
-            </button>
-            <button
-              onClick={() => setDocsTab('api')}
-              className={`pb-2 text-xs font-bold transition-all cursor-pointer ${docsTab === 'api' ? 'text-blue-600 border-b-2 border-blue-600 font-black' : 'text-slate-400 hover:text-slate-800'}`}
-            >
-              ⚡ Contrato de API REST
-            </button>
-            <button
-              onClick={() => setDocsTab('security')}
-              className={`pb-2 text-xs font-bold transition-all cursor-pointer ${docsTab === 'security' ? 'text-blue-600 border-b-2 border-blue-600 font-black' : 'text-slate-400 hover:text-slate-800'}`}
-            >
-              🔒 Reglas de Negocio & Seguridad
-            </button>
-            <button
-              onClick={() => setDocsTab('roadmap')}
-              className={`pb-2 text-xs font-bold transition-all cursor-pointer ${docsTab === 'roadmap' ? 'text-blue-600 border-b-2 border-blue-600 font-black' : 'text-slate-400 hover:text-slate-800'}`}
-            >
-              🏁 Casos de Uso & Roadmap
-            </button>
-          </div>
-
-          {/* Sub-tab: Functional design & schema outline */}
-          {docsTab === 'functional' && (
-            <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
-              <h4 className="text-sm font-bold text-slate-900">1. Arquitectura de Jerarquía y Modelo de Datos Relacional</h4>
-              <p>
-                El sistema de administración WBS se integra con una base de datos PostgreSQL mediante el ORM Drizzle. 
-                Cada registro conserva la herencia estructural mediante llaves foráneas reflexivas (`parent_id`) para modelar árboles de profundidad arbitraria.
-              </p>
-
-              <div className="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-[10.5px] overflow-x-auto">
-                {`-- Esquema DDL SQL para PostgreSQL / Drizzle
-CREATE TABLE wbs_items (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  parent_id VARCHAR(50) REFERENCES wbs_items(id) ON DELETE CASCADE,
-  level VARCHAR(20) NOT NULL, -- 'FASE' | 'MODULO' | 'TAREA' | 'SUBTAREA'
-  name VARCHAR(255) NOT NULL,
-  assigned_to_id VARCHAR(50) REFERENCES users(id),
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  duration_days INT NOT NULL,
-  progress INT DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
-  priority VARCHAR(15) DEFAULT 'MEDIA',
-  status VARCHAR(20) DEFAULT 'PENDIENTE',
-  depends_on_id VARCHAR(50) REFERENCES wbs_items(id),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);`}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg">
-                  <h5 className="font-bold text-slate-900 mb-1">Cálculo de Progreso Ponderado</h5>
-                  <p>
-                    Las fases y módulos no aceptan porcentajes manuales. Su progreso se calcula recursivamente 
-                    mediante el promedio aritmético ponderado (o simple) de su conjunto directo de descendientes. Esto asegura la coherencia sistémica del proyecto general.
-                  </p>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg">
-                  <h5 className="font-bold text-slate-900 mb-1">Evidencias Multi-tenant Almacenadas de forma Segura</h5>
-                  <p>
-                    Los adjuntos se transmiten de manera segura mediante la API REST y se almacenan en directorios privados con prefijos estructurados de seguridad `/projects/[id]/wbs/evidences/`.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sub-tab: REST API specs */}
-          {docsTab === 'api' && (
-            <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
-              <h4 className="text-sm font-bold text-slate-900">2. Documentación del API REST (Contrato OpenAPI Simplificado)</h4>
-              <p>
-                Endpoints provistos en la API del servidor Express para habilitar la persistencia de cronogramas y sincronización multi-usuario ágil:
-              </p>
-
-              <div className="space-y-3 font-mono text-[11px]">
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg">
-                  <span className="font-extrabold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">GET</span>
-                  <span className="font-bold text-slate-800 ml-2">/api/wbs/projects/:projectId/items</span>
-                  <p className="text-[10px] text-slate-500 mt-1 font-sans">Retorna el árbol de requerimientos jerárquico estructurado con comentarios de apoyo.</p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg">
-                  <span className="font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">POST</span>
-                  <span className="font-bold text-slate-800 ml-2">/api/wbs/projects/:projectId/items</span>
-                  <p className="text-[10px] text-slate-500 mt-1 font-sans">Registra una nueva fase, módulo, tarea o subtarea asignada a un responsable.</p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg">
-                  <span className="font-extrabold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">PUT</span>
-                  <span className="font-bold text-slate-800 ml-2">/api/wbs/items/:itemId</span>
-                  <p className="text-[10px] text-slate-500 mt-1 font-sans">Actualización inline de fechas, progreso, responsable, estado o dependencias de hito.</p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg">
-                  <span className="font-extrabold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">POST</span>
-                  <span className="font-bold text-slate-800 ml-2">/api/wbs/baselines/save</span>
-                  <p className="text-[10px] text-slate-500 mt-1 font-sans">Almacena la instantánea ("Freeze Snapshot") de planificación para contraste y auditorías.</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sub-tab: Business Rules & Access Level Control */}
-          {docsTab === 'security' && (
-            <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
-              <h4 className="text-sm font-bold text-slate-900">3. Reglas de Negocio Estrictas y Permisos por Roles</h4>
-              <p>
-                Para mantener la consistencia de los datos ágiles en la gestión de tareas, se aplican las siguientes reglas:
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl space-y-2">
-                  <span className="font-extrabold text-[10px] text-indigo-600 font-mono tracking-wide block uppercase">1. Consistencia de Fechas</span>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Las fechas de inicio y fin de una Phase o Módulo se ajustan automáticamente al valor extremo de sus tareas. 
-                    Ninguna subtarea puede empezar antes de la fecha de inicio de su Fase contenedora.
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl space-y-2">
-                  <span className="font-extrabold text-[10px] text-indigo-600 font-mono tracking-wide block uppercase">2. Dependencias Duras</span>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Si una tarea A depende de B, el sistema arroja una Alerta visual de bloqueo si la fecha de inicio de A es anterior a la fecha de finalización real estimada de B.
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl space-y-2">
-                  <span className="font-extrabold text-[10px] text-indigo-600 font-mono tracking-wide block uppercase">3. Roles & Seguridad</span>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    <strong>Administrador / PM:</strong> Control de escritura total y congelamiento de Líneas Base.<br />
-                    <strong>Developers / QA:</strong> Permitido solo actualizar progreso % y subir evidencias de soporte.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sub-tab: Cases of use & Roadmap */}
-          {docsTab === 'roadmap' && (
-            <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
-              <h4 className="text-sm font-bold text-slate-900">4. Casos de Uso del Módulo y Roadmap de Despliegue</h4>
-              
-              <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                <span className="font-bold text-slate-900">Roadmap de Despliegue en Cloud Run (Q3 2026)</span>
-                <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-4 text-center">
-                  <div className="bg-white p-2.5 rounded border border-slate-205 flex-1 w-full">
-                    <span className="block font-black text-blue-650 font-mono text-[11px]">Sprint 1-2</span>
-                    <p className="text-[10px] text-slate-500 mt-1">Sincronización de Base de Datos PostgreSQL con ORM Drizzle.</p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-350 hidden sm:block shrink-0" />
-                  <div className="bg-white p-2.5 rounded border border-slate-205 flex-1 w-full">
-                    <span className="block font-black text-indigo-650 font-mono text-[11px]">Sprint 3-4</span>
-                    <p className="text-[10px] text-slate-500 mt-1">Sincronización en la nube y subida de evidencia con Drag & Drop.</p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-350 hidden sm:block shrink-0" />
-                  <div className="bg-white p-2.5 rounded border border-slate-205 flex-1 w-full">
-                    <span className="block font-black text-emerald-650 font-mono text-[11px]">Sprint 5</span>
-                    <p className="text-[10px] text-slate-500 mt-1">Habilitar exportación nativa a PDF y gráficos interactivos con D3.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 5. RIGHT DRAWER DETAILS SIDE PANEL */}
       {activeItemId && selectedItem && (
@@ -3303,8 +3250,10 @@ CREATE TABLE wbs_items (
                         handleUpdateDraftField('progress', val);
                         if (val === 100) {
                           handleUpdateDraftField('status', 'COMPLETADA');
-                        } else if (val > 0 && draftSubtask.status === 'PENDIENTE') {
+                        } else if (val >= 1 && val <= 99) {
                           handleUpdateDraftField('status', 'EN_CURSO');
+                        } else if (val === 0) {
+                          handleUpdateDraftField('status', 'PENDIENTE');
                         }
                       }}
                       className="w-full accent-violet-600 h-2 bg-slate-100 rounded-lg cursor-pointer animate-none"
@@ -3320,8 +3269,10 @@ CREATE TABLE wbs_items (
                         handleUpdateDraftField('progress', val);
                         if (val === 100) {
                           handleUpdateDraftField('status', 'COMPLETADA');
-                        } else if (val > 0 && draftSubtask.status === 'PENDIENTE') {
+                        } else if (val >= 1 && val <= 99) {
                           handleUpdateDraftField('status', 'EN_CURSO');
+                        } else if (val === 0) {
+                          handleUpdateDraftField('status', 'PENDIENTE');
                         }
                       }}
                       className="w-12 bg-slate-50 border border-slate-200 rounded text-center py-0.5 text-xs font-bold font-mono"
@@ -3340,6 +3291,10 @@ CREATE TABLE wbs_items (
                         handleUpdateDraftField('progress', 100);
                       } else if (stat === 'PENDIENTE') {
                         handleUpdateDraftField('progress', 0);
+                      } else if (stat === 'EN_CURSO') {
+                        if (draftSubtask.progress === 0 || draftSubtask.progress === 100) {
+                          handleUpdateDraftField('progress', 50);
+                        }
                       }
                     }}
                     className="w-full bg-slate-50 border border-slate-250 focus:bg-white rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-bold"
@@ -3387,6 +3342,41 @@ CREATE TABLE wbs_items (
           </div>
         </div>
       )}
+
+      {deleteConfirmState && deleteConfirmState.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 text-slate-800 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-100 overflow-hidden">
+            <div className="p-5">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
+                ⚠️ {deleteConfirmState.title}
+              </h3>
+              <p className="text-xs text-slate-600 mt-2.5 leading-normal">
+                {deleteConfirmState.message}
+              </p>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmState(null)}
+                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmState.onConfirm();
+                  setDeleteConfirmState(null);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

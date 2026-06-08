@@ -163,6 +163,14 @@ export default function MockupCanvas({
   // Standard selected project data
   const currentProject = projects.find(p => p.id === selectedProjectId) || projects[0];
 
+  // Custom confirmation modal state to bypass iframe window.confirm blocks
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   // Persistent mockups database by project ID
   const [projectData, setProjectData] = useState<{ [projId: string]: ProjectDivision[] }>(() => {
     const saved = localStorage.getItem('gcp_mockup_divisions_v2');
@@ -260,8 +268,8 @@ export default function MockupCanvas({
     }
   }, [showFullscreenModal]);
 
-  const handleFsZoomIn = () => setFsScale(s => Math.min(s + 0.15, 5.0));
-  const handleFsZoomOut = () => setFsScale(s => Math.max(s - 0.15, 0.15));
+  const handleFsZoomIn = () => setFsScale(s => Math.min(s + 1.0, 10.0));
+  const handleFsZoomOut = () => setFsScale(s => Math.max(s - 1.0, 1.0));
   const handleFsZoomReset = () => {
     setFsScale(1);
     setFsOffset({ x: 0, y: 0 });
@@ -288,11 +296,11 @@ export default function MockupCanvas({
 
   const handleFsWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const zoomFactor = 0.05;
+    const zoomFactor = 1.0;
     if (e.deltaY < 0) {
-      setFsScale(s => Math.min(s + zoomFactor, 5.0));
+      setFsScale(s => Math.min(s + zoomFactor, 10.0));
     } else {
-      setFsScale(s => Math.max(s - zoomFactor, 0.15));
+      setFsScale(s => Math.max(s - zoomFactor, 1.0));
     }
   };
 
@@ -348,8 +356,8 @@ export default function MockupCanvas({
   }, [showFullscreenModal]);
 
   // Zoom manipulation actions
-  const handleZoomIn = () => setScale(s => Math.min(s + 0.15, 3.5));
-  const handleZoomOut = () => setScale(s => Math.max(s - 0.15, 0.25));
+  const handleZoomIn = () => setScale(s => Math.min(s + 1.0, 10.0));
+  const handleZoomOut = () => setScale(s => Math.max(s - 1.0, 1.0));
   const handleZoomReset = () => {
     setScale(1);
     setOffset({ x: 0, y: 0 });
@@ -392,11 +400,11 @@ export default function MockupCanvas({
   // Wheel zoom helper
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const zoomFactor = 0.05;
+    const zoomFactor = 1.0;
     if (e.deltaY < 0) {
-      setScale(s => Math.min(s + zoomFactor, 3.5));
+      setScale(s => Math.min(s + zoomFactor, 10.0));
     } else {
-      setScale(s => Math.max(s - zoomFactor, 0.25));
+      setScale(s => Math.max(s - zoomFactor, 1.0));
     }
   };
 
@@ -543,31 +551,41 @@ export default function MockupCanvas({
   const handleDeleteVersion = (verId: string) => {
     if (!activeDivision) return;
 
-    const filtered = activeDivision.versions.filter(v => v.id !== verId);
-    let nextActiveId = activeDivision.activeVersionId;
+    const version = activeDivision.versions.find(v => v.id === verId);
+    const verNumber = version ? `v${version.version}` : '';
 
-    // Adjust active pointer if we deleted the current active item
-    if (activeDivision.activeVersionId === verId) {
-      nextActiveId = filtered.length > 0 ? filtered[0].id : null;
-    }
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Versión del Mockup',
+      message: `¿Está seguro de que desea eliminar la versión ${verNumber} del historial de mockups de forma permanente?`,
+      onConfirm: () => {
+        const filtered = activeDivision.versions.filter(v => v.id !== verId);
+        let nextActiveId = activeDivision.activeVersionId;
 
-    const updatedDivs = activeDivisions.map(d => {
-      if (d.id === selectedDivisionId) {
-        return {
-          ...d,
-          activeVersionId: nextActiveId,
-          versions: filtered
-        };
+        // Adjust active pointer if we deleted the current active item
+        if (activeDivision.activeVersionId === verId) {
+          nextActiveId = filtered.length > 0 ? filtered[0].id : null;
+        }
+
+        const updatedDivs = activeDivisions.map(d => {
+          if (d.id === selectedDivisionId) {
+            return {
+              ...d,
+              activeVersionId: nextActiveId,
+              versions: filtered
+            };
+          }
+          return d;
+        });
+
+        setProjectData(prev => ({
+          ...prev,
+          [selectedProjectId]: updatedDivs
+        }));
+
+        setFeedbackMsg({ type: 'success', text: 'Versión del historial eliminada.' });
       }
-      return d;
     });
-
-    setProjectData(prev => ({
-      ...prev,
-      [selectedProjectId]: updatedDivs
-    }));
-
-    setFeedbackMsg({ type: 'success', text: 'Versión del historial eliminada.' });
   };
 
   return (
@@ -767,9 +785,26 @@ export default function MockupCanvas({
                   PANTALLA COMPLETA
                 </button>
               )}
-              <span className="text-[10px] text-slate-400 bg-slate-850 px-2 py-0.5 rounded border border-slate-800 select-none font-mono">
-                Escala: {Math.round(scale * 100)}%
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500 font-mono hidden sm:inline">Escala:</span>
+                <select
+                  value={Math.round(scale)}
+                  onChange={(e) => setScale(Number(e.target.value))}
+                  className="text-[10.5px] font-bold text-slate-200 bg-slate-850 hover:bg-slate-800 border border-slate-800 px-2 py-0.5 rounded outline-none cursor-pointer transition focus:ring-1 focus:ring-indigo-500 font-mono [&>option]:bg-slate-900"
+                  title="Configurar porcentaje de Escala"
+                >
+                  <option value={1}>100% (1:1)</option>
+                  <option value={2}>200% (2:1)</option>
+                  <option value={3}>300% (3:1)</option>
+                  <option value={4}>400% (4:1)</option>
+                  <option value={5}>500% (5:1)</option>
+                  <option value={6}>600% (6:1)</option>
+                  <option value={7}>700% (7:1)</option>
+                  <option value={8}>800% (8:1)</option>
+                  <option value={9}>900% (9:1)</option>
+                  <option value={10}>1000% (10:1)</option>
+                </select>
+              </div>
               <button
                 onClick={() => setShowGrid(!showGrid)}
                 className={`text-[10.5px] font-bold px-2.5 py-0.5 rounded border transition ${
@@ -1414,9 +1449,28 @@ export default function MockupCanvas({
 
             {/* FLOATING ZOOM & PAN OVERLAYS */}
             <div className="absolute bottom-6 right-6 z-25 flex flex-col gap-2.5 bg-slate-900/95 border border-slate-800 p-3.5 rounded-2xl shadow-2xl backdrop-blur-md">
-              <span className="text-[9px] text-slate-400 block font-mono font-bold tracking-wider uppercase border-b border-slate-800 pb-1 text-center">
-                Zoom FS: {Math.round(fsScale * 100)}%
-              </span>
+              <div className="border-b border-slate-800 pb-2 text-center">
+                <span className="text-[9px] text-slate-400 block font-mono font-bold tracking-wider uppercase mb-1">
+                  Escala Fullscreen:
+                </span>
+                <select
+                  value={Math.round(fsScale)}
+                  onChange={(e) => setFsScale(Number(e.target.value))}
+                  className="w-full text-[10.5px] font-bold text-slate-200 bg-slate-950 hover:bg-slate-900 border border-slate-850 px-2 py-1 rounded-lg outline-none cursor-pointer transition focus:ring-1 focus:ring-indigo-500 font-mono text-center [&>option]:bg-slate-900"
+                  title="Configurar escala de visualización Fullscreen"
+                >
+                  <option value={1}>100% (1:1)</option>
+                  <option value={2}>200% (2:1)</option>
+                  <option value={3}>300% (3:1)</option>
+                  <option value={4}>400% (4:1)</option>
+                  <option value={5}>500% (5:1)</option>
+                  <option value={6}>600% (6:1)</option>
+                  <option value={7}>700% (7:1)</option>
+                  <option value={8}>800% (8:1)</option>
+                  <option value={9}>900% (9:1)</option>
+                  <option value={10}>1000% (10:1)</option>
+                </select>
+              </div>
               
               {/* Zoom Controls */}
               <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2">
@@ -1518,6 +1572,41 @@ export default function MockupCanvas({
           </div>
         </div>
       )}
+
+      {deleteConfirmState && deleteConfirmState.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[999999] p-4 text-slate-800 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-100 overflow-hidden">
+            <div className="p-5">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
+                ⚠️ {deleteConfirmState.title}
+              </h3>
+              <p className="text-xs text-slate-600 mt-2.5 leading-normal">
+                {deleteConfirmState.message}
+              </p>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmState(null)}
+                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmState.onConfirm();
+                  setDeleteConfirmState(null);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

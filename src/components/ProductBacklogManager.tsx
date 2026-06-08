@@ -227,6 +227,14 @@ export default function ProductBacklogManager({
   // --- Simulating Roles ---
   const [currentRole, setCurrentRole] = useState<BacklogRole>('PROJECT_MANAGER');
   
+  // Custom dialog to bypass iframe window.confirm blocks
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+  
   // --- Persistent Local States ---
   const [stories, setStories] = useState<UserStory[]>(() => {
     const cached = localStorage.getItem('backlog_stories_advanced');
@@ -513,14 +521,6 @@ export default function ProductBacklogManager({
     }
 
     // 2. Business transition rules
-    if (newStatus === 'Ready') {
-      const dorPercent = getChecksPercent(story, 'dor');
-      if (dorPercent < 100) {
-        alert(`❌ Regla de Estado: No se puede transicionar a "Ready" porque el Definition of Ready está al ${dorPercent}%. Demanda 100% de cumplimiento.`);
-        return;
-      }
-    }
-
     if (newStatus === 'En desarrollo') {
       if (!story.technicalOwnerId) {
         alert('❌ Regla de Estado: El requerimiento no puede avanzar a "En desarrollo" sin un responsable técnico asignado.');
@@ -537,12 +537,6 @@ export default function ProductBacklogManager({
     }
 
     if (newStatus === 'Cerrada') {
-      const dodPercent = getChecksPercent(story, 'dod');
-      if (dodPercent < 100) {
-        const remaining = DEFAULT_DOD_ITEMS.filter(item => !story.dodChecklist?.[item]);
-        alert(`❌ Regla de Estado: No cumple el Definition of Done (DoD). Registra ${dodPercent}% de avance.\nFalta:\n- ${remaining.join('\n- ')}`);
-        return;
-      }
       if (story.dependencies.some(dep => {
         const dependent = stories.find(s => s.id === dep.targetStoryId);
         return dependent && dependent.status !== 'Cerrada' && dep.dependencyType === 'Depende de';
@@ -727,10 +721,16 @@ export default function ProductBacklogManager({
       alert('❌ Privilegio denegado: Solo el perfil corporativo "Administrador PMO" tiene autorizado eliminar requerimientos con trazabilidad de auditoría.');
       return;
     }
-    if (confirm(`¿Está totalmente seguro de ELIMINAR definitivamente la Historia de Usuario ${code}? Esta acción es irreversible.`)) {
-      setStories(prev => prev.filter(s => s.id !== id));
-      addLog('Administrador PMO', `Eliminó la historia de usuario ${code} del catálogo.`);
-    }
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Confirmar Eliminación',
+      message: `¿Está totalmente seguro de ELIMINAR definitivamente la Historia de Usuario ${code}? Esta acción es irreversible.`,
+      onConfirm: () => {
+        setStories(prev => prev.filter(s => s.id !== id));
+        addLog('Administrador PMO', `Eliminó la historia de usuario ${code} del catálogo.`);
+        setIsDetailOpen(false);
+      }
+    });
   };
 
   // --- Add Epic Handler ---
@@ -1322,8 +1322,6 @@ export default function ProductBacklogManager({
                     <th className="p-3">Código HU</th>
                     <th className="p-3">Título de Requerimiento</th>
                     <th className="p-3">Épica / Sprint</th>
-                    <th className="p-3 text-center">DoR %</th>
-                    <th className="p-3 text-center">DoD %</th>
                     <th className="p-3">Prioridad</th>
                     <th className="p-3 text-center font-mono">Story Points</th>
                     <th className="p-3">Fnal / Téc Owner</th>
@@ -1398,16 +1396,6 @@ export default function ProductBacklogManager({
                               🏃 {storySprint ? storySprint.name : 'En Product Backlog'}
                             </span>
                           </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`font-mono font-bold text-[10.5px] px-1.5 py-0.5 rounded ${dorVal === 100 ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {dorVal}%
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`font-mono font-bold text-[10.5px] px-1.5 py-0.5 rounded ${dodVal === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {dodVal}%
-                          </span>
                         </td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold ${
@@ -1839,12 +1827,6 @@ export default function ProductBacklogManager({
                 📋 General & Como/Quiero/Para
               </button>
               <button
-                onClick={() => setDetailTab('checks')}
-                className={`py-2 px-3 border-b-2 transition ${detailTab === 'checks' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
-              >
-                ⚙️ Definition of Ready/Done
-              </button>
-              <button
                 onClick={() => setDetailTab('accept')}
                 className={`py-2 px-3 border-b-2 transition ${detailTab === 'accept' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
               >
@@ -1928,60 +1910,7 @@ export default function ProductBacklogManager({
                 </div>
               )}
 
-              {/* TABS: DEFINITIONS CHECKS */}
-              {detailTab === 'checks' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Ready Checklist */}
-                  <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-xl space-y-4">
-                    <div className="flex justify-between items-center border-b pb-2">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase text-indigo-700">Definition of Ready Checklist (DoR)</h4>
-                      <span className="font-mono bg-indigo-50 font-bold px-2 py-0.5 rounded text-indigo-700 text-xs">
-                        {getChecksPercent(selectedStory, 'dor')}%
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {DEFAULT_DOR_ITEMS.map(dorItem => (
-                        <label key={dorItem} className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedStory.dorChecklist?.[dorItem] === true}
-                            disabled={currentRole === 'CONSULTA' || currentRole === 'DEVELOPER'}
-                            onChange={() => toggleCheckItem(selectedStory.id, 'dor', dorItem)}
-                            className="bg-white border text-teal-600"
-                          />
-                          <span>{dorItem}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Done Checklist */}
-                  <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-xl space-y-4">
-                    <div className="flex justify-between items-center border-b pb-2">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase text-emerald-700">Definition of Done Checklist (DoD)</h4>
-                      <span className="font-mono bg-emerald-50 font-bold px-2 py-0.5 rounded text-emerald-700 text-xs">
-                        {getChecksPercent(selectedStory, 'dod')}%
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 font-medium">
-                      {DEFAULT_DOD_ITEMS.map(dodItem => (
-                        <label key={dodItem} className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedStory.dodChecklist?.[dodItem] === true}
-                            disabled={currentRole === 'CONSULTA' || currentRole === 'PRODUCT_OWNER'}
-                            onChange={() => toggleCheckItem(selectedStory.id, 'dod', dodItem)}
-                            className="bg-white border text-teal-600"
-                          />
-                          <span>{dodItem}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* TABS: DEFINITIONS CHECKS REMOVED */}
 
               {/* TABS: ACCEPTANCE CRITERIA */}
               {detailTab === 'accept' && (
@@ -2280,6 +2209,40 @@ export default function ProductBacklogManager({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmState && deleteConfirmState.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-100 overflow-hidden text-slate-800">
+            <div className="p-5">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
+                ⚠️ {deleteConfirmState.title}
+              </h3>
+              <p className="text-xs text-slate-600 mt-2.5 leading-normal">
+                {deleteConfirmState.message}
+              </p>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmState(null)}
+                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmState.onConfirm();
+                  setDeleteConfirmState(null);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

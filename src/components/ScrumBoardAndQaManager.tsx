@@ -7,8 +7,10 @@ import {
   WorkItemStatus,
   TestSuite,
   TestCase,
-  TestRun
+  TestRun,
+  TransitionRule
 } from '../types';
+import { DEFAULT_TRANSITION_RULES } from '../data';
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -448,58 +450,82 @@ export default function ScrumBoardAndQaManager({
   const validateTransition = (story: WorkItem, targetCol: MainColumnStatus): { success: boolean; errors: string[] } => {
     const errors: string[] = [];
     
+    // Load rules from localStorage with fallback to defaults
+    const savedRulesStr = localStorage.getItem('scrum_transition_rules');
+    let activeRules = DEFAULT_TRANSITION_RULES;
+    if (savedRulesStr) {
+      try {
+        activeRules = JSON.parse(savedRulesStr);
+      } catch (e) {
+        // Fallback
+      }
+    }
+
+    const isRuleEnabled = (id: string) => {
+      const r = activeRules.find(x => x.id === id);
+      return r ? r.enabled : true;
+    };
+
+    const getRuleDesc = (id: string, defaultDesc: string) => {
+      const r = activeRules.find(x => x.id === id);
+      return r ? r.desc : defaultDesc;
+    };
+
     // BACKLOG_SPRINT -> NO_INICIADO
     if (targetCol === 'NO_INICIADO') {
-      if (!story.priority) errors.push('La historia debe tener prioridad estipulada.');
-      if (!story.assignee_id) errors.push('Debe asignarse un responsable técnico/funcional.');
+      if (isRuleEnabled('no_iniciados_prioridad') && !story.priority) {
+        errors.push(getRuleDesc('no_iniciados_prioridad', 'La historia debe tener prioridad estipulada.'));
+      }
+      if (isRuleEnabled('no_iniciados_responsable') && !story.assignee_id) {
+        errors.push(getRuleDesc('no_iniciados_responsable', 'Debe asignarse un responsable técnico/funcional.'));
+      }
     }
 
     // NO_INICIADO -> EN_ANALISIS
     if (targetCol === 'EN_ANALISIS') {
-      if (!story.description || story.description.length < 10) {
-        errors.push('Debe registrarse una descripción clara o analítica del requerimiento.');
+      if (isRuleEnabled('en_analisis_descripcion') && (!story.description || story.description.length < 10)) {
+        errors.push(getRuleDesc('en_analisis_descripcion', 'Debe registrarse una descripción clara o analítica del requerimiento.'));
       }
-      if (!story.assignee_id) errors.push('Responsable técnico/funcional no asignado.');
+      if (isRuleEnabled('en_analisis_responsable') && !story.assignee_id) {
+        errors.push(getRuleDesc('en_analisis_responsable', 'Responsable técnico/funcional no asignado.'));
+      }
     }
 
     // EN_ANALISIS -> EN_DESARROLLO (Definition of Ready)
     if (targetCol === 'EN_DESARROLLO') {
-      // Check Como / Quiero / Para
-      const text = `${story.title} ${story.description}`;
       const hasCriteria = criteria.some(cr => cr.user_story_id === story.id);
       
-      if (!hasCriteria) {
-        errors.push('DOR: Debe registrarse por lo menos 1 Criterio de Aceptación.');
+      if (isRuleEnabled('en_desarrollo_criteria') && !hasCriteria) {
+        errors.push(getRuleDesc('en_desarrollo_criteria', 'DOR: Debe registrarse por lo menos 1 Criterio de Aceptación.'));
       }
-      if (!story.story_points) {
-        errors.push('DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.');
+      if (isRuleEnabled('en_desarrollo_sp') && !story.story_points) {
+        errors.push(getRuleDesc('en_desarrollo_sp', 'DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.'));
       }
-      if ((story as any).blocked) {
-        errors.push('DOR BLOQUEADA: Desbloquee el requerimiento ingresando el motivo.');
+      if (isRuleEnabled('en_desarrollo_unblocked') && (story as any).blocked) {
+        errors.push(getRuleDesc('en_desarrollo_unblocked', 'DOR BLOQUEADA: Desbloquee el requerimiento ingresando el motivo.'));
       }
     }
 
     // EN_DESARROLLO -> CODE_REVIEW
     if (targetCol === 'CODE_REVIEW') {
-      // Developers can register progress
       const techCritCount = techCriteria.filter(tc => tc.user_story_id === story.id).length;
-      if (techCritCount === 0) {
-        errors.push('Debe documentar o seleccionar al menos un componente o Criterio Técnico.');
+      if (isRuleEnabled('code_review_criteria') && techCritCount === 0) {
+        errors.push(getRuleDesc('code_review_criteria', 'Debe documentar o seleccionar al menos un componente o Criterio Técnico.'));
       }
     }
 
     // CODE_REVIEW -> LISTO_PARA_QA
     if (targetCol === 'LISTO_PARA_QA') {
       const bgs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Crítica' || b.severity === 'Bloqueante'));
-      if (bgs.length > 0) {
-        errors.push('Existen bugs críticos o bloqueantes sin resolver en este ítem.');
+      if (isRuleEnabled('listo_qa_no_crit_bugs') && bgs.length > 0) {
+        errors.push(getRuleDesc('listo_qa_no_crit_bugs', 'Existen bugs críticos o bloqueantes sin resolver en este ítem.'));
       }
     }
 
     // LISTO_PARA_QA -> EN_QA
     if (targetCol === 'EN_QA') {
-      if (!currentSprint || ((currentSprint.status as any) !== 'EN_QA' && currentSprint.status !== 'EN_CURSO')) {
-        errors.push('El Sprint debe estar activo ("En Ejecución" o "En QA") para auditar pruebas.');
+      if (isRuleEnabled('en_qa_sprint_active') && (!currentSprint || ((currentSprint.status as any) !== 'EN_QA' && currentSprint.status !== 'EN_CURSO'))) {
+        errors.push(getRuleDesc('en_qa_sprint_active', 'El Sprint debe estar activo ("En Ejecución" o "En QA") para auditar pruebas.'));
       }
     }
 
@@ -509,8 +535,8 @@ export default function ScrumBoardAndQaManager({
       const testCasesForStory = testCases.filter(tc => tc.work_item_id === story.id);
       const hasFailed = testCasesForStory.some(tc => tc.status === 'FAILED');
       
-      if (activeBugs.length === 0 && !hasFailed) {
-        errors.push('Para devolver la historia debe reportarse al menos un Bug abierto o Caso fallido.');
+      if (isRuleEnabled('devuelto_qa_require_bug') && activeBugs.length === 0 && !hasFailed) {
+        errors.push(getRuleDesc('devuelto_qa_require_bug', 'Para devolver la historia debe reportarse al menos un Bug abierto o Caso fallido.'));
       }
     }
 
@@ -519,24 +545,24 @@ export default function ScrumBoardAndQaManager({
       const storyTests = testCases.filter(tc => tc.work_item_id === story.id);
       const openCriticalBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica' || b.severity === 'Alta'));
       
-      if (storyTests.length === 0) {
-        errors.push('Falta Casos: No se han configurado pruebas para este requerimiento.');
+      if (isRuleEnabled('aprobado_qa_has_cases') && storyTests.length === 0) {
+        errors.push(getRuleDesc('aprobado_qa_has_cases', 'Falta Casos: No se han configurado pruebas para este requerimiento.'));
       } else {
         const allCompleted = storyTests.every(t => t.status === 'PASSED');
-        if (!allCompleted) {
-          errors.push('Falta Ejecución: Todos los casos de prueba cargados deben marcarse APROBADO (PASSED).');
+        if (isRuleEnabled('aprobado_qa_cases_passed') && !allCompleted) {
+          errors.push(getRuleDesc('aprobado_qa_cases_passed', 'Falta Ejecución: Todos los casos de prueba cargados deben marcarse APROBADO (PASSED).'));
         }
       }
 
-      if (openCriticalBugs.length > 0) {
-        errors.push('Defectos Abiertos: No se puede aprobar si cuenta con bugs Críticos/Altos activos.');
+      if (isRuleEnabled('aprobado_qa_no_bugs') && openCriticalBugs.length > 0) {
+        errors.push(getRuleDesc('aprobado_qa_no_bugs', 'Defectos Abiertos: No se puede aprobar si cuenta con bugs Críticos/Altos activos.'));
       }
 
       // Check criteria validate
       const storyCriteria = criteria.filter(c => c.user_story_id === story.id);
       const allPassedCriteria = storyCriteria.every(c => c.status === 'No aplica' || c.status === 'Cumple');
-      if (storyCriteria.length > 0 && !allPassedCriteria) {
-        errors.push('Criterios Pendientes: Valide que todos los Criterios de Aceptación obligatorios marquen "Cumple" o "No Aplica".');
+      if (isRuleEnabled('aprobado_qa_criteria_ok') && storyCriteria.length > 0 && !allPassedCriteria) {
+        errors.push(getRuleDesc('aprobado_qa_criteria_ok', 'Criterios Pendientes: Valide que todos los Criterios de Aceptación obligatorios marquen "Cumple" o "No Aplica".'));
       }
     }
 
@@ -544,21 +570,21 @@ export default function ScrumBoardAndQaManager({
     if (targetCol === 'APROBADO_FUNCIONAL') {
       const storyTests = testCases.filter(tc => tc.work_item_id === story.id);
       const allPassed = storyTests.every(t => t.status === 'PASSED');
-      if (!allPassed) {
-        errors.push('No autorizado por PO: Es imperativo pasar al 100% las pruebas QA antes.');
+      if (isRuleEnabled('aprobado_po_all_passed') && !allPassed) {
+        errors.push(getRuleDesc('aprobado_po_all_passed', 'No autorizado por PO: Es imperativo pasar al 100% las pruebas QA antes.'));
       }
     }
 
     // APROBADO_FUNCIONAL -> FINALIZADO (Definition of Done Compliancy)
     if (targetCol === 'FINALIZADO') {
       const hasEv = evidences.some(ev => ev.entity_id === story.id && ev.entity_type === 'story');
-      if (!hasEv) {
-        errors.push('DOD INCUMPIDLO: Adjunte por lo menos una Captura/PDF de evidencia funcional antes de Cerrar.');
+      if (isRuleEnabled('finalizado_evidence') && !hasEv) {
+        errors.push(getRuleDesc('finalizado_evidence', 'DOD INCUMPIDLO: Adjunte por lo menos una Captura/PDF de evidencia funcional antes de Cerrar.'));
       }
       
       const openBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica'));
-      if (openBugs.length > 0) {
-        errors.push('DOD INCUMPLIDO: Sigue existiendo defectos críticos no solventados.');
+      if (isRuleEnabled('finalizado_no_crit_bugs') && openBugs.length > 0) {
+        errors.push(getRuleDesc('finalizado_no_crit_bugs', 'DOD INCUMPLIDO: Sigue existiendo defectos críticos no solventados.'));
       }
     }
 
@@ -2208,7 +2234,7 @@ export default function ScrumBoardAndQaManager({
 
               {/* Evidence attachments tab */}
               <div className="space-y-4 pt-4 border-t">
-                <span className="text-xs uppercase font-black text-slate-500 tracking-wider">Evidencias Adjuntas dadas por Definición de Terminado (DoD)</span>
+                <span className="text-xs uppercase font-black text-slate-500 tracking-wider">Evidencias Adjuntas (Documentación Técnica)</span>
                 
                 <div className="space-y-2">
                   {evidences.filter(ev => ev.entity_id === activeStory.id && ev.entity_type === 'story').map(ev => (

@@ -20,7 +20,8 @@ import {
   MockupConnection,
   GitHubConnection,
   GitCommit,
-  PullRequest
+  PullRequest,
+  TransitionRule
 } from './types';
 
 export const INITIAL_USERS: User[] = [
@@ -717,3 +718,34 @@ export const INITIAL_PRS: PullRequest[] = [
     created_at: '2026-05-24T11:20:00Z'
   }
 ];
+
+export const DEFAULT_TRANSITION_RULES: TransitionRule[] = [
+  { id: 'no_iniciados_prioridad', name: 'Prioridad estipulada', desc: 'La historia debe tener prioridad estipulada.', category: 'No Iniciado', targetCol: 'NO_INICIADO', enabled: true },
+  { id: 'no_iniciados_responsable', name: 'Responsable técnico asignado', desc: 'Debe asignarse un responsable técnico/funcional.', category: 'No Iniciado', targetCol: 'NO_INICIADO', enabled: true },
+  
+  { id: 'en_analisis_descripcion', name: 'Descripción clara', desc: 'Debe registrarse una descripción clara o analítica del requerimiento (>10 carac.).', category: 'En Análisis', targetCol: 'EN_ANALISIS', enabled: true },
+  { id: 'en_analisis_responsable', name: 'Responsable técnico asignado', desc: 'Responsable técnico/funcional no asignado.', category: 'En Análisis', targetCol: 'EN_ANALISIS', enabled: true },
+  
+  { id: 'en_desarrollo_criteria', name: 'Criterios de Aceptación (DOR)', desc: 'DOR: Debe registrarse por lo menos 1 Criterio de Aceptación.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
+  { id: 'en_desarrollo_sp', name: 'Story Points estimulados (DOR)', desc: 'DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
+  { id: 'en_desarrollo_unblocked', name: 'No Bloqueada (DOR)', desc: 'DOR BLOQUEADA: Desbloquee el requerimiento ingresando el motivo.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
+  
+  { id: 'code_review_criteria', name: 'Criterios técnicos', desc: 'Debe documentar o seleccionar al menos un componente o Criterio Técnico.', category: 'Code Review', targetCol: 'CODE_REVIEW', enabled: true },
+  
+  { id: 'listo_qa_no_crit_bugs', name: 'Sin Bugs Críticos/Bloqueantes', desc: 'Existen bugs críticos o bloqueantes sin resolver en este ítem.', category: 'Listo para QA', targetCol: 'LISTO_PARA_QA', enabled: true },
+  
+  { id: 'en_qa_sprint_active', name: 'Sprint Activo', desc: 'El Sprint debe estar activo ("En Ejecución" o "En QA") para auditar pruebas.', category: 'En QA', targetCol: 'EN_QA', enabled: true },
+  
+  { id: 'devuelto_qa_require_bug', name: 'Reportar al menos un Bug abierto/Caso fallido', desc: 'Para devolver la historia debe reportarse al menos un Bug abierto o Caso fallido.', category: 'Devuelto QA', targetCol: 'DEVUELTO_QA', enabled: true },
+  
+  { id: 'aprobado_qa_has_cases', name: 'Pruebas Configuradas', desc: 'Falta Casos: No se han configurado pruebas para este requerimiento.', category: 'Aprobado QA', targetCol: 'APROBADO_QA', enabled: true },
+  { id: 'aprobado_qa_cases_passed', name: '100% Casos Passed', desc: 'Falta Ejecución: Todos los casos de prueba cargados deben marcarse APROBADO (PASSED).', category: 'Aprobado QA', targetCol: 'APROBADO_QA', enabled: true },
+  { id: 'aprobado_qa_no_bugs', name: 'Sin Bugs Críticos/Altos', desc: 'Defectos Abiertos: No se puede aprobar si cuenta con bugs Críticos/Altos activos.', category: 'Aprobado QA', targetCol: 'APROBADO_QA', enabled: true },
+  { id: 'aprobado_qa_criteria_ok', name: 'Criterios Cumplidos', desc: 'Criterios Pendientes: Valide que todos los Criterios de Aceptación de la historia marquen "Cumple" o "No Aplica".', category: 'Aprobado QA', targetCol: 'APROBADO_QA', enabled: true },
+  
+  { id: 'aprobado_po_all_passed', name: 'Aprobación QA Previa', desc: 'No autorizado por PO: Es imperativo pasar al 100% las pruebas QA antes.', category: 'Aprobado PO', targetCol: 'APROBADO_FUNCIONAL', enabled: true },
+  
+  { id: 'finalizado_evidence', name: 'Evidencias funcionales (DOD)', desc: 'DOD INCUMPIDLO: Adjunte por lo menos una Captura/PDF de evidencia funcional antes de Cerrar.', category: 'Finalizado', targetCol: 'FINALIZADO', enabled: true },
+  { id: 'finalizado_no_crit_bugs', name: 'Sin Defectos Activos', desc: 'DOD INCUMPLIDO: Sigue existiendo defectos críticos no solventados.', category: 'Finalizado', targetCol: 'FINALIZADO', enabled: true }
+];
+

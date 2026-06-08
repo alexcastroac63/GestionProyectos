@@ -228,3 +228,13 @@ export interface PipelineStep {
   duration?: number;
   log?: string;
 }
+
+export interface TransitionRule {
+  id: string;
+  name: string;
+  desc: string;
+  category: string;
+  targetCol: string;
+  enabled: boolean;
+}
+

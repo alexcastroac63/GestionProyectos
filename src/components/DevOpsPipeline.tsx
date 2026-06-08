@@ -72,6 +72,14 @@ export default function DevOpsPipeline() {
   const [selectedAwsCodeTab, setSelectedAwsCodeTab] = useState<'nodejs' | 'terraform' | 'docker'>('nodejs');
   const [notification, setNotification] = useState<string | null>(null);
 
+  // Custom dialog state to bypass iframe window.confirm blocks
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const [steps, setSteps] = useState<PipelineLogStep[]>([
     {
       name: 'Checkout Código Fuente',
@@ -280,21 +288,27 @@ export default function DevOpsPipeline() {
   };
 
   const handleDeleteStorageObject = (id: string, name: string) => {
-    // If it is a custom file
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
     let custom = customLocal ? JSON.parse(customLocal) : [];
     
     if (custom.some((o: any) => o.id === id)) {
-      custom = custom.filter((o: any) => o.id !== id);
-      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
-      showToast(`✗ Archivo '${name}' eliminado del Repositorio de Almacenamiento`);
+      setDeleteConfirmState({
+        isOpen: true,
+        title: 'Eliminar Archivo de Almacenamiento',
+        message: `¿Está seguro de que desea eliminar el archivo '${name}' del Repositorio de Almacenamiento de forma permanente?`,
+        onConfirm: () => {
+          custom = custom.filter((o: any) => o.id !== id);
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+          showToast(`✗ Archivo '${name}' eliminado del Repositorio de Almacenamiento`);
+          loadStorageObjects();
+          if (selectedObject?.id === id) {
+            setSelectedObject(INITIAL_STORAGE_MOCKS[1]);
+          }
+        }
+      });
     } else {
       // If it comes from costs, warn that they must delete it from standard receipts
       showToast(`¡Aviso! '${name}' está vinculado a un documento de soporte. Anúlalo en la pestaña "Presupuesto y Gastos".`);
-    }
-    loadStorageObjects();
-    if (selectedObject?.id === id) {
-      setSelectedObject(INITIAL_STORAGE_MOCKS[1]);
     }
   };
 
@@ -879,6 +893,41 @@ curl -O http://localhost:9000/soporte-pmo-storage/uploads/roadmap_pmo_v2.pdf`}
           </div>
         </div>
       )}
+
+      {deleteConfirmState && deleteConfirmState.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 text-slate-800 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-100 overflow-hidden">
+            <div className="p-5">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
+                ⚠️ {deleteConfirmState.title}
+              </h3>
+              <p className="text-xs text-slate-600 mt-2.5 leading-normal">
+                {deleteConfirmState.message}
+              </p>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmState(null)}
+                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmState.onConfirm();
+                  setDeleteConfirmState(null);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

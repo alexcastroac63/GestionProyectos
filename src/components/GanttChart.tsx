@@ -683,7 +683,11 @@ export default function GanttChart({
                       className="w-16 accent-teal-600 cursor-pointer h-1.5 rounded-full"
                     />
                     <button
-                      onClick={() => onDeleteActivity(act.id)}
+                      onClick={() => {
+                        if (window.confirm(`¿Está seguro de que desea eliminar la actividad "${act.name}"?`)) {
+                          onDeleteActivity(act.id);
+                        }
+                      }}
                       className="text-slate-400 hover:text-red-500 p-1 rounded-md"
                       title="Eliminar actividad"
                     >
