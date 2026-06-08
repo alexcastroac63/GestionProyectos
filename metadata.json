@@ -1,0 +1,6 @@
+{
+  "name": "Gestor del Ciclo de Vida del Proyecto",
+  "description": "Plataforma SaaS integral para la gestión de proyectos, desde requerimientos hasta el despliegue, incluyendo tableros Kanban, Gantt, presupuestos, suites de QA, mockups, DBA y DevOps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
