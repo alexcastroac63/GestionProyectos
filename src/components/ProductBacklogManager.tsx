@@ -27,7 +27,8 @@ import {
   Eye,
   Check,
   Shield,
-  HelpCircle
+  HelpCircle,
+  Edit2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -125,6 +126,7 @@ export interface UserStory {
   role: string;
   want: string;
   benefit: string;
+  huUnified?: string;
   description: string;
   type: StoryType;
   priority: StoryPriority;
@@ -213,6 +215,8 @@ interface ProductBacklogManagerProps {
   sprints: any[];
   onSprintUpdate?: () => void;
   addLog: (user: string, action: string) => void;
+  workItems?: any[];
+  setWorkItems?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export default function ProductBacklogManager({
@@ -221,7 +225,9 @@ export default function ProductBacklogManager({
   projects,
   users,
   sprints,
-  addLog
+  addLog,
+  workItems,
+  setWorkItems
 }: ProductBacklogManagerProps) {
   
   // --- Simulating Roles ---
@@ -238,13 +244,27 @@ export default function ProductBacklogManager({
   // --- Persistent Local States ---
   const [stories, setStories] = useState<UserStory[]>(() => {
     const cached = localStorage.getItem('backlog_stories_advanced');
-    if (cached) return JSON.parse(cached);
+    if (cached && cached !== "undefined" && cached !== "null") {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse stories", e);
+      }
+    }
     return [];
   });
 
   const [epics, setEpics] = useState<Epic[]>(() => {
     const cached = localStorage.getItem('backlog_epics');
-    if (cached) return JSON.parse(cached);
+    if (cached && cached !== "undefined" && cached !== "null") {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse epics", e);
+      }
+    }
     return [
       {
         id: 'ep-1',
@@ -287,7 +307,10 @@ export default function ProductBacklogManager({
   const [epicForm, setEpicForm] = useState<Partial<Epic>>({});
   
   // Detail Modal tab
-  const [detailTab, setDetailTab] = useState<'general' | 'checks' | 'accept' | 'technical' | 'attachments' | 'trace'>('general');
+  const [detailTab, setDetailTab] = useState<'general' | 'accept' | 'trace'>('general');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<StoryAttachment | null>(null);
+  const [confirmDeleteCritIdx, setConfirmDeleteCritIdx] = useState<number | null>(null);
 
   // New Comment state
   const [newCommentText, setNewCommentText] = useState('');
@@ -298,10 +321,72 @@ export default function ProductBacklogManager({
   const [newCritType, setNewCritType] = useState<AcceptanceCriterion['type']>('Funcional');
   const [newCritExpected, setNewCritExpected] = useState('');
 
+  // Editing existing activity/criterion state
+  const [editingCritId, setEditingCritId] = useState<string | null>(null);
+  const [editCritDesc, setEditCritDesc] = useState('');
+  const [editCritType, setEditCritType] = useState<AcceptanceCriterion['type']>('Funcional');
+  const [editCritExpected, setEditCritExpected] = useState('');
+
   // Save states to local storage
   useEffect(() => {
     localStorage.setItem('backlog_stories_advanced', JSON.stringify(stories));
   }, [stories]);
+
+  // Synchronize backlog stories to the Scrum Board workItems
+  useEffect(() => {
+    if (!workItems || !setWorkItems) return;
+
+    setWorkItems(prev => {
+      // 1. Keep all items that are NOT HISTORIA_USUARIO (e.g. tasks/bugs/subtasks created on Scrum board directly)
+      const nonHUs = prev.filter(item => item.type !== 'HISTORIA_USUARIO');
+
+      // Helper status mapper
+      const mapStatus = (status: string): 'BACKLOG' | 'POR_HACER' | 'EN_CURSO' | 'QA' | 'FINALIZADO' => {
+        switch (status) {
+          case 'Borrador':
+          case 'En refinamiento':
+            return 'BACKLOG';
+          case 'Ready':
+            return 'POR_HACER';
+          case 'En desarrollo':
+            return 'EN_CURSO';
+          case 'En pruebas internas':
+          case 'En validación usuario':
+            return 'QA';
+          case 'Aprobada':
+          case 'Cerrada':
+            return 'FINALIZADO';
+          default:
+            return 'BACKLOG';
+        }
+      };
+
+      // 2. Map all current backlog user stories to WorkItems
+      const mappedHUs = stories.map(story => {
+        const existing = prev.find(item => item.id === story.id || item.key === story.code);
+        
+        return {
+          id: story.id,
+          project_id: story.project_id,
+          sprint_id: story.sprint_id || undefined,
+          key: story.code,
+          title: story.title,
+          description: story.description || '',
+          type: 'HISTORIA_USUARIO' as const,
+          status: existing ? existing.status : mapStatus(story.status),
+          priority: story.priority === 'Alta' || story.priority === 'Crítica' ? 'HIGH' : story.priority === 'Media' ? 'MEDIUM' : 'LOW',
+          story_points: story.storyPoints || 0,
+          assignee_id: story.technicalOwnerId || story.functionalOwnerId || existing?.assignee_id,
+          reporter_id: story.requesterId || existing?.reporter_id,
+          created_at: story.createdAt || new Date().toISOString().slice(0, 10),
+          parentId: story.epic_id || undefined
+        };
+      });
+
+      // 3. Merge lists
+      return [...nonHUs, ...mappedHUs];
+    });
+  }, [stories, setWorkItems]);
 
   useEffect(() => {
     localStorage.setItem('backlog_epics', JSON.stringify(epics));
@@ -614,27 +699,55 @@ export default function ProductBacklogManager({
 
     const activeUser = 'Carlos Pérez';
 
-    if (storyForm.id) {
+    const rawHU = (storyForm.huUnified || '').trim();
+    let parsedRole = '';
+    let parsedWant = rawHU;
+    let parsedBenefit = '';
+
+    if (rawHU) {
+      const matchFull = rawHU.match(/como\s+([\s\S]*?)\s+quiero\s+([\s\S]*?)\s+para\s+([\s\S]*)/i);
+      if (matchFull) {
+        parsedRole = matchFull[1].trim();
+        parsedWant = matchFull[2].trim();
+        parsedBenefit = matchFull[3].trim();
+      } else {
+        const matchSimple = rawHU.match(/como\s+([\s\S]*?)\s+quiero\s+([\s\S]*)/i);
+        if (matchSimple) {
+          parsedRole = matchSimple[1].trim();
+          parsedWant = matchSimple[2].trim();
+        }
+      }
+    }
+
+    // Prepare updated story form with parsed narrative segments
+    const finalStoryFormObj = {
+      ...storyForm,
+      role: parsedRole,
+      want: parsedWant,
+      benefit: parsedBenefit
+    };
+
+    if (finalStoryFormObj.id) {
       // Edit mode
       setStories(prev => prev.map(s => {
-        if (s.id === storyForm.id) {
+        if (s.id === finalStoryFormObj.id) {
           const modHistory = [...s.history];
           
-          if (s.priority !== storyForm.priority) {
+          if (s.priority !== finalStoryFormObj.priority) {
             modHistory.push({
               field: 'Prioridad',
               oldVal: s.priority,
-              newVal: storyForm.priority || 'Media',
+              newVal: finalStoryFormObj.priority || 'Media',
               by: activeUser,
               at: new Date().toISOString().replace('T', ' ').slice(0, 16)
             });
           }
 
-          if (s.sprint_id !== storyForm.sprint_id) {
+          if (s.sprint_id !== finalStoryFormObj.sprint_id) {
             modHistory.push({
               field: 'Sprint',
               oldVal: s.sprint_id || 'Backlog',
-              newVal: storyForm.sprint_id || 'Backlog',
+              newVal: finalStoryFormObj.sprint_id || 'Backlog',
               by: activeUser,
               at: new Date().toISOString().replace('T', ' ').slice(0, 16)
             });
@@ -642,53 +755,53 @@ export default function ProductBacklogManager({
 
           return {
             ...s,
-            ...storyForm,
+            ...finalStoryFormObj,
             history: modHistory
           } as UserStory;
         }
         return s;
       }));
-      addLog(activeUser, `Editó propiedades de la historia de usuario ${storyForm.code}`);
+      addLog(activeUser, `Editó propiedades de la historia de usuario ${finalStoryFormObj.code}`);
     } else {
       // Create mode
       const nextIdNum = stories.length + 42;
       const newStory: UserStory = {
         id: `story-custom-${Date.now()}`,
         project_id: selectedProjectId,
-        epic_id: storyForm.epic_id || undefined,
-        sprint_id: storyForm.sprint_id || undefined,
+        epic_id: finalStoryFormObj.epic_id || undefined,
+        sprint_id: finalStoryFormObj.sprint_id || undefined,
         code: `HU-${nextIdNum}`,
-        title: storyForm.title,
-        role: storyForm.role || '',
-        want: storyForm.want || '',
-        benefit: storyForm.benefit || '',
-        description: storyForm.description || '',
-        type: storyForm.type || 'Funcional',
-        priority: storyForm.priority || 'Media',
+        title: finalStoryFormObj.title,
+        role: finalStoryFormObj.role || '',
+        want: finalStoryFormObj.want || '',
+        benefit: finalStoryFormObj.benefit || '',
+        description: finalStoryFormObj.description || '',
+        type: finalStoryFormObj.type || 'Funcional',
+        priority: finalStoryFormObj.priority || 'Media',
         status: 'Borrador',
-        businessValue: Number(storyForm.businessValue) || 3,
-        risk: Number(storyForm.risk) || 3,
-        urgency: Number(storyForm.urgency) || 3,
-        moscow: storyForm.moscow || 'Should',
+        businessValue: Number(finalStoryFormObj.businessValue) || 3,
+        risk: Number(finalStoryFormObj.risk) || 3,
+        urgency: Number(finalStoryFormObj.urgency) || 3,
+        moscow: finalStoryFormObj.moscow || 'Should',
         backlogOrder: stories.length + 1,
-        storyPoints: Number(storyForm.storyPoints) || 3,
-        estimatedHours: storyForm.estimatedHours,
-        complexity: storyForm.complexity || 'Media',
-        uncertainty: storyForm.uncertainty || 'Media',
-        functionalOwnerId: storyForm.functionalOwnerId || 'u-2',
-        technicalOwnerId: storyForm.technicalOwnerId || undefined,
+        storyPoints: Number(finalStoryFormObj.storyPoints) || 3,
+        estimatedHours: finalStoryFormObj.estimatedHours,
+        complexity: finalStoryFormObj.complexity || 'Media',
+        uncertainty: finalStoryFormObj.uncertainty || 'Media',
+        functionalOwnerId: finalStoryFormObj.functionalOwnerId || 'u-2',
+        technicalOwnerId: finalStoryFormObj.technicalOwnerId || undefined,
         requesterId: 'u-2',
-        company: storyForm.company || 'Compañía Principal',
-        branch: storyForm.branch || '',
+        company: finalStoryFormObj.company || 'Compañía Principal',
+        branch: finalStoryFormObj.branch || '',
         createdAt: new Date().toISOString().slice(0, 10),
-        startDate: storyForm.startDate || new Date().toISOString().slice(0, 10),
-        dueDate: storyForm.dueDate || undefined,
+        startDate: finalStoryFormObj.startDate || new Date().toISOString().slice(0, 10),
+        dueDate: finalStoryFormObj.dueDate || undefined,
         dorChecklist: DEFAULT_DOR_ITEMS.reduce((acc, curr) => ({ ...acc, [curr]: false }), {}),
         dodChecklist: DEFAULT_DOD_ITEMS.reduce((acc, curr) => ({ ...acc, [curr]: false }), {}),
-        acceptanceCriteria: [],
+        acceptanceCriteria: finalStoryFormObj.acceptanceCriteria || [],
         dependencies: [],
         comments: [],
-        attachments: [],
+        attachments: finalStoryFormObj.attachments || [],
         history: [
           {
             field: 'Creado',
@@ -814,6 +927,86 @@ export default function ProductBacklogManager({
     addLog('Gestor Adjuntos', `Simuló la subida exitosa del archivo ${picked.name}`);
   };
 
+  // Dedicated real file drag-and-drop / selector handler
+  const handleFileDropOrSelect = (e: React.DragEvent<HTMLDivElement> | React.ChangeEvent<HTMLInputElement>, isCreationForm = false) => {
+    if ('preventDefault' in e) e.preventDefault();
+    setIsDragOver(false);
+
+    let files: FileList | null = null;
+    if ('dataTransfer' in e && e.dataTransfer) {
+      files = e.dataTransfer.files;
+    } else if ('target' in e && e.target && (e.target as HTMLInputElement).files) {
+      files = (e.target as HTMLInputElement).files;
+    }
+
+    if (!files || files.length === 0) return;
+
+    // Convert each file to base64 and append
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const newAttachment: StoryAttachment = {
+          id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          fileName: file.name,
+          fileType: file.type || 'application/octet-stream',
+          fileUrl: reader.result as string, // Base64 DataURL
+          uploadedBy: 'Carlos Pérez',
+          uploadedAt: new Date().toISOString().slice(0, 10)
+        };
+
+        // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
+        try {
+          const customLocal = localStorage.getItem('gcp_storage_custom_files');
+          const custom = customLocal ? JSON.parse(customLocal) : [];
+          
+          const sizeStr = file.size > 1024 * 1024 
+            ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+            : `${(file.size / 1024).toFixed(0)} KB`;
+            
+          let cleanKey = `backlog/story_${selectedStoryId || 'new'}/${file.name.trim().replace(/\s+/g, '_').toLowerCase()}`;
+          
+          const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+          let mime = file.type || 'application/octet-stream';
+
+          const newObject = {
+            id: `sim-backlog-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            key: cleanKey,
+            name: file.name,
+            size: sizeStr,
+            url: `http://localhost:9000/soporte-pmo-storage/${cleanKey}`,
+            uploadedAt: new Date().toISOString().substring(0, 10),
+            type: mime,
+            raw_base64: reader.result as string
+          };
+
+          custom.push(newObject);
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+        } catch (err) {
+          console.error("Error syncing story file with simulated storage bucket", err);
+        }
+
+        if (isCreationForm) {
+          setStoryForm(prev => ({
+            ...prev,
+            attachments: [...(prev.attachments || []), newAttachment]
+          }));
+        } else {
+          setStories(prev => prev.map(s => {
+            if (s.id === selectedStoryId) {
+              return {
+                ...s,
+                attachments: [...(s.attachments || []), newAttachment]
+              };
+            }
+            return s;
+          }));
+          addLog('Gestor Adjuntos', `Subió con éxito el archivo ${file.name} y lo sincronizó con el Docker de almacenamiento.`);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   // --- Add Acceptance Criterion ---
   const handleAddCrit = () => {
     if (!newCritDesc.trim() || !selectedStoryId) return;
@@ -839,6 +1032,54 @@ export default function ProductBacklogManager({
 
     setNewCritDesc('');
     setNewCritExpected('');
+  };
+
+  // --- Edit acceptance criterion in story edit form ---
+  const handleSaveEditCritInForm = (critId: string) => {
+    setStoryForm(prev => {
+      const updatedCriteria = (prev.acceptanceCriteria || []).map((cr, idx) => {
+        const idToCheck = cr.id || String(idx);
+        if (idToCheck === critId) {
+          return {
+            ...cr,
+            description: editCritDesc,
+            type: editCritType,
+            expectedResult: editCritExpected
+          };
+        }
+        return cr;
+      });
+      return {
+        ...prev,
+        acceptanceCriteria: updatedCriteria
+      };
+    });
+    setEditingCritId(null);
+  };
+
+  // --- Edit acceptance criterion in direct detail modal ---
+  const handleSaveEditCritDirectly = (storyId: string, critId: string) => {
+    setStories(prev => prev.map(s => {
+      if (s.id === storyId) {
+        return {
+          ...s,
+          acceptanceCriteria: s.acceptanceCriteria.map((cr, idx) => {
+            const idToCheck = cr.id || String(idx);
+            if (idToCheck === critId) {
+              return {
+                ...cr,
+                description: editCritDesc,
+                type: editCritType,
+                expectedResult: editCritExpected
+              };
+            }
+            return cr;
+          })
+        };
+      }
+      return s;
+    }));
+    setEditingCritId(null);
   };
 
   // --- Toggle acceptance criterion status ---
@@ -1055,7 +1296,11 @@ export default function ProductBacklogManager({
                 moscow: 'Should',
                 storyPoints: 3,
                 complexity: 'Media',
-                uncertainty: 'Media'
+                uncertainty: 'Media',
+                role: '',
+                want: '',
+                benefit: '',
+                huUnified: ''
               });
               setIsStoryFormOpen(true);
             }}
@@ -1321,7 +1566,8 @@ export default function ProductBacklogManager({
                   <tr>
                     <th className="p-3">Código HU</th>
                     <th className="p-3">Título de Requerimiento</th>
-                    <th className="p-3">Épica / Sprint</th>
+                    <th className="p-3 font-mono">Épica</th>
+                    <th className="p-3 font-mono">Sprint</th>
                     <th className="p-3">Prioridad</th>
                     <th className="p-3 text-center font-mono">Story Points</th>
                     <th className="p-3">Fnal / Téc Owner</th>
@@ -1348,7 +1594,10 @@ export default function ProductBacklogManager({
                         key={story.id} 
                         onDoubleClick={() => {
                           setSelectedStoryId(story.id);
-                          setStoryForm({ ...story });
+                          const initHU = story.role || story.benefit
+                            ? `Como ${story.role || ''} quiero ${story.want || ''} para ${story.benefit || ''}`.trim()
+                            : (story.want || '');
+                          setStoryForm({ ...story, huUnified: initHU });
                           setDetailTab('general');
                           setIsDetailOpen(true);
                         }}
@@ -1388,14 +1637,17 @@ export default function ProductBacklogManager({
                           </div>
                         </td>
                         <td className="p-3">
-                          <div className="space-y-0.5">
-                            <span className="text-[10.5px] font-semibold text-slate-600 block">
-                              🏙️ {storyEpic ? `${storyEpic.code} - ${storyEpic.name}` : 'Sin Épica'}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block">
-                              🏃 {storySprint ? storySprint.name : 'En Product Backlog'}
-                            </span>
-                          </div>
+                          <span className="text-[10.5px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 font-mono">
+                            {storyEpic ? storyEpic.code : '-'}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-[10.5px] font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-150 font-mono">
+                            {storySprint ? (() => {
+                              const match = storySprint.name.match(/\d+/);
+                              return match ? `SPRINT ${match[0]}` : storySprint.name.toUpperCase();
+                            })() : 'Backlog'}
+                          </span>
                         </td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold ${
@@ -1419,20 +1671,41 @@ export default function ProductBacklogManager({
                           </div>
                         </td>
                         <td className="p-3 text-right">
-                          <select
-                            value={story.status}
-                            onChange={e => transitionStoryStatus(story, e.target.value as StoryStatus)}
-                            className={`bg-slate-50 border text-[10px] uppercase rounded-full font-black px-2 py-1 focus:outline-none cursor-pointer ${
-                              story.status === 'Cerrada' ? 'bg-emerald-50 border-emerald-250 text-emerald-800' :
-                              story.status === 'Ready' ? 'bg-indigo-50 border-indigo-250 text-indigo-800' :
-                              story.status === 'En desarrollo' ? 'bg-blue-50 border-blue-250 text-blue-800' :
-                              story.status === 'Bloqueada' ? 'bg-red-55 border-red-250 text-red-800' : 'bg-slate-100 border-slate-200 text-slate-650'
-                            }`}
-                          >
-                            {storyStatusesEnum.map(st => (
-                              <option key={st} value={st}>{st}</option>
-                            ))}
-                          </select>
+                          <div className="flex items-center justify-end gap-2.5">
+                            <select
+                              value={story.status}
+                              onChange={e => transitionStoryStatus(story, e.target.value as StoryStatus)}
+                              className={`bg-slate-50 border text-[10px] uppercase rounded-full font-black px-2 py-1 focus:outline-none cursor-pointer ${
+                                story.status === 'Cerrada' ? 'bg-emerald-50 border-emerald-250 text-emerald-800' :
+                                story.status === 'Ready' ? 'bg-indigo-50 border-indigo-250 text-indigo-800' :
+                                story.status === 'En desarrollo' ? 'bg-blue-50 border-blue-250 text-blue-800' :
+                                story.status === 'Bloqueada' ? 'bg-red-55 border-red-250 text-red-800' : 'bg-slate-100 border-slate-200 text-slate-650'
+                              }`}
+                            >
+                              {storyStatusesEnum.map(st => (
+                                <option key={st} value={st}>{st}</option>
+                              ))}
+                            </select>
+
+                            {currentRole !== 'CONSULTA' && (
+                              <button
+                                type="button"
+                                title="Editar Historia de Usuario"
+                                onClick={(e) => {
+                                  e.stopPropagation(); // Evitamos que haga trigger del doubleClick de la fila
+                                  const initHU = story.role || story.benefit
+                                    ? `Como ${story.role || ''} quiero ${story.want || ''} para ${story.benefit || ''}`.trim()
+                                    : (story.want || '');
+                                  setStoryForm({ ...story, huUnified: initHU });
+                                  setIsStoryFormOpen(true);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-slate-100 rounded-lg transition"
+                                id={`edit-story-btn-${story.id}`}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1660,41 +1933,28 @@ export default function ProductBacklogManager({
 
               </div>
 
-              {/* Formato Ágil Como / Quiero / Para */}
-              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-4">
-                <h5 className="font-extrabold text-[10.5px] uppercase tracking-wider text-slate-500">Formato Estructurado de Historia de Usuario (HU)</h5>
+              {/* Formato Ágil Unificado: HU */}
+              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <h5 className="font-extrabold text-[10.5px] uppercase tracking-wider text-slate-500">Historia de Usuario (HU)</h5>
+                  <span className="text-[9px] font-mono bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-200 font-bold">Campo Unificado</span>
+                </div>
                 
-                <div className="flex flex-col gap-4 w-full">
-                  <div className="w-full">
-                    <span className="block text-[9.5px] font-bold text-teal-800 uppercase mb-1">COMO [Rol del Usuario]</span>
-                    <textarea
-                      rows={4}
-                      placeholder="Ej. Planificador de compras, Operador logístico..."
-                      value={storyForm.role || ''}
-                      onChange={e => setStoryForm(p => ({ ...p, role: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none resize-y"
-                    />
-                  </div>
-                  <div className="w-full">
-                    <span className="block text-[9.5px] font-bold text-teal-800 uppercase mb-1">QUIERO [Acción / Funcionalidad]</span>
-                    <textarea
-                      rows={4}
-                      placeholder="Ej. Visualizar el cálculo de la merma semanal en un tablero dinámico..."
-                      value={storyForm.want || ''}
-                      onChange={e => setStoryForm(p => ({ ...p, want: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none resize-y"
-                    />
-                  </div>
-                  <div className="w-full">
-                    <span className="block text-[9.5px] font-bold text-teal-800 uppercase mb-1">PARA [Beneficio / Valor Técnico]</span>
-                    <textarea
-                      rows={4}
-                      placeholder="Ej. Evitar desabastos, programar turnos de mantenimiento y optimizar recursos..."
-                      value={storyForm.benefit || ''}
-                      onChange={e => setStoryForm(p => ({ ...p, benefit: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none resize-y"
-                    />
-                  </div>
+                <div className="w-full">
+                  <label htmlFor="story-hu-textarea" className="block text-[9.5px] font-bold text-teal-800 uppercase mb-1">
+                    Descripción del Requerimiento en Formato Estándar Ágil
+                  </label>
+                  <textarea
+                    id="story-hu-textarea"
+                    rows={10}
+                    placeholder="Escriba aquí la definición completa de la HU. Ejemplo:&#10;&#10;COMO Planificador de compras&#10;QUIERO visualizar el cálculo de la merma semanal en un tablero dinámico&#10;PARA evitar desabastos y programar adecuadamente turnos de mantenimiento."
+                    value={storyForm.huUnified || ''}
+                    onChange={e => setStoryForm(p => ({ ...p, huUnified: e.target.value }))}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-3 text-xs text-slate-800 focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none leading-relaxed resize-y font-medium min-h-[160px]"
+                  />
+                  <p className="text-[9.5px] text-slate-400 mt-1.5 font-medium">
+                    💡 El sistema procesará el texto automáticamente para extraer y guardar los segmentos estructurados de "Como", "Quiero" y "Para".
+                  </p>
                 </div>
               </div>
 
@@ -1709,7 +1969,306 @@ export default function ProductBacklogManager({
                 />
               </div>
 
-              <div className="bg-slate-100/50 p-3 rounded-lg text-[10.5px] text-slate-500 font-mono">
+              {/* SECTION: ACTIVIDADES (Antes Criterios de Aceptación) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex justify-between items-center pb-2 border-b">
+                  <h5 className="font-extrabold text-[10.5px] uppercase tracking-wider text-slate-650">Actividades Asociadas a la HU</h5>
+                  <span className="font-mono text-[9px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-black">
+                    {(storyForm.acceptanceCriteria || []).length} Actividades
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {(storyForm.acceptanceCriteria || []).map((crit: any, idx: number) => {
+                    const isEditingThis = editingCritId === (crit.id || String(idx));
+                    return (
+                      <div key={crit.id || idx} className="bg-white border rounded p-2.5 flex flex-col gap-2 text-xs">
+                        {isEditingThis ? (
+                          <div className="space-y-2.5 w-full bg-teal-50/10 p-2 rounded border border-teal-200 animate-fadeIn">
+                            <span className="font-extrabold text-teal-850 text-[9px] uppercase">Editando Actividad #{idx + 1}</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[8.5px] font-bold text-slate-500 uppercase">Descripción de la Actividad</label>
+                                <textarea
+                                  rows={1}
+                                  value={editCritDesc}
+                                  onChange={e => {
+                                    setEditCritDesc(e.target.value);
+                                    e.target.style.height = 'auto';
+                                    e.target.style.height = `${e.target.scrollHeight}px`;
+                                  }}
+                                  style={{ height: editCritDesc ? undefined : 'auto' }}
+                                  className="w-full bg-white border border-slate-200 rounded px-2.5 py-1 text-xs outline-none resize-none overflow-hidden min-h-[26px] focus:border-teal-500 font-medium text-slate-800 transition-all"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[8.5px] font-bold text-slate-500 uppercase">Tipo</label>
+                                <select
+                                  value={editCritType}
+                                  onChange={e => setEditCritType(e.target.value as any)}
+                                  className="w-full bg-white border border-slate-200 rounded px-2.5 py-1 text-xs text-slate-850 focus:border-teal-500 font-medium"
+                                >
+                                  <option value="Funcional">Funcional</option>
+                                  <option value="Validación">Validación de Interfaz</option>
+                                  <option value="Cálculo">Cálculo Matemático</option>
+                                  <option value="Integración">Integración de Gateway</option>
+                                  <option value="Seguridad">Seguridad / Criptografía</option>
+                                  <option value="Reporte">Reporte de Consultoría</option>
+                                </select>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-[8.5px] font-bold text-slate-500 uppercase">Resultado esperado de validación técnica</label>
+                                <textarea
+                                  rows={1}
+                                  value={editCritExpected}
+                                  onChange={e => {
+                                    setEditCritExpected(e.target.value);
+                                    e.target.style.height = 'auto';
+                                    e.target.style.height = `${e.target.scrollHeight}px`;
+                                  }}
+                                  style={{ height: editCritExpected ? 'auto' : undefined }}
+                                  className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs outline-none resize-none overflow-hidden min-h-[30px] focus:border-teal-500 transition-all font-medium text-slate-800"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-1.5 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCritId(null);
+                                }}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-750 font-bold px-3 py-1 rounded text-[10px] cursor-pointer transition"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditCritInForm(crit.id || String(idx))}
+                                className="bg-teal-650 hover:bg-teal-700 text-white font-extrabold px-3 py-1 rounded text-[10px] cursor-pointer transition shadow-2xs"
+                              >
+                                Guardar Cambios
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-start gap-3 w-full">
+                            <div className="space-y-1">
+                              <span className="font-black text-teal-750 text-[9px] uppercase">Actividad #{idx + 1} - [{crit.type}]</span>
+                              <p className="text-slate-850 font-bold leading-normal">{crit.description}</p>
+                              {crit.expectedResult && (
+                                <p className="text-[10.5px] text-slate-500 leading-normal">
+                                  <strong>Resultado esperado:</strong> {crit.expectedResult}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCritId(crit.id || String(idx));
+                                  setEditCritDesc(crit.description);
+                                  setEditCritType(crit.type);
+                                  setEditCritExpected(crit.expectedResult || '');
+                                }}
+                                className="text-teal-600 hover:text-teal-800 hover:bg-teal-50 font-black px-1.5 py-0.5 rounded text-[10px] transition cursor-pointer"
+                              >
+                                Editar
+                              </button>
+                              {confirmDeleteCritIdx === idx ? (
+                                <div className="flex flex-col items-end gap-1 shrink-0 bg-red-50 p-2 rounded-lg border border-red-200 animate-fadeIn text-right">
+                                  <span className="text-[9px] text-red-700 font-extrabold uppercase">¿Remover actividad #{idx + 1}?</span>
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStoryForm(prev => ({
+                                          ...prev,
+                                          acceptanceCriteria: (prev.acceptanceCriteria || []).filter((_, i) => i !== idx)
+                                        }));
+                                        setConfirmDeleteCritIdx(null);
+                                      }}
+                                      className="bg-red-600 hover:bg-red-700 text-white font-black px-2 py-0.5 rounded text-[9px] cursor-pointer shadow-3xs transition"
+                                    >
+                                      Sí, remover
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteCritIdx(null)}
+                                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2 py-0.5 rounded text-[9px] cursor-pointer transition"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteCritIdx(idx)}
+                                  className="text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded text-[10px] hover:bg-red-50 transition cursor-pointer shrink-0"
+                                >
+                                  Remover
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(storyForm.acceptanceCriteria || []).length === 0 && (
+                    <p className="text-xs text-slate-400 italic text-center py-3">No se han registrado actividades aún para esta Historia de Usuario.</p>
+                  )}
+                </div>
+ 
+                {/* Formulario rápido para insertar actividades */}
+                <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-2.5">
+                  <span className="text-[9.5px] font-extrabold text-slate-500 block uppercase tracking-wider">Nueva Actividad para la HU</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[8.5px] font-bold text-slate-400 uppercase">Descripción de la Actividad</label>
+                      <textarea
+                        id="form-activity-desc"
+                        rows={1}
+                        placeholder="Ej. Realizar el mapeo de datos de la interfaz..."
+                        onChange={e => {
+                          e.target.style.height = 'auto';
+                          e.target.style.height = `${e.target.scrollHeight}px`;
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs outline-none resize-none overflow-hidden min-h-[26px] focus:bg-white focus:border-teal-500 transition-all font-medium text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[8.5px] font-bold text-slate-400 uppercase">Tipo</label>
+                      <select
+                        id="form-activity-type"
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800"
+                      >
+                        <option value="Funcional">Funcional</option>
+                        <option value="Validación">Validación de Interfaz</option>
+                        <option value="Cálculo">Cálculo Matemático</option>
+                        <option value="Integración">Integración de Gateway</option>
+                        <option value="Seguridad">Seguridad / Criptografía</option>
+                        <option value="Reporte">Reporte de Consultoría</option>
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[8.5px] font-bold text-slate-400 uppercase">Resultado esperado</label>
+                      <textarea
+                        id="form-activity-expected"
+                        rows={1}
+                        placeholder="Ej. Interfaz cargando listado correcto..."
+                        onChange={e => {
+                          e.target.style.height = 'auto';
+                          e.target.style.height = `${e.target.scrollHeight}px`;
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs outline-none resize-none overflow-hidden min-h-[26px] focus:bg-white focus:border-teal-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const descInput = document.getElementById('form-activity-desc') as HTMLTextAreaElement;
+                      const typeSelect = document.getElementById('form-activity-type') as HTMLSelectElement;
+                      const expectedInput = document.getElementById('form-activity-expected') as HTMLTextAreaElement;
+                      if (!descInput || !descInput.value.trim()) {
+                        alert('Por favor ingrese la descripción de la actividad.');
+                        return;
+                      }
+                      const newAct: any = {
+                        id: `act-${Date.now()}`,
+                        number: (storyForm.acceptanceCriteria || []).length + 1,
+                        description: descInput.value.trim(),
+                        type: typeSelect.value as any,
+                        expectedResult: expectedInput.value.trim(),
+                        status: 'Pendiente'
+                      };
+                      setStoryForm(prev => ({
+                        ...prev,
+                        acceptanceCriteria: [...(prev.acceptanceCriteria || []), newAct]
+                      }));
+                      descInput.value = '';
+                      descInput.style.height = 'auto'; // Reset height
+                      expectedInput.value = '';
+                      expectedInput.style.height = 'auto'; // Reset height
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px] px-3 py-1 rounded shadow-3xs cursor-pointer transition border border-transparent"
+                  >
+                    + Agregar Actividad
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION: IMAGES AND FILES DRAG AND DROP */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <span className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider">Adjuntar Imágenes y Archivos (General)</span>
+                
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => handleFileDropOrSelect(e, true)}
+                  className={`border-2 border-dashed rounded-xl p-5 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
+                    isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-slate-50'
+                  }`}
+                  onClick={() => document.getElementById('file-input-creation')?.click()}
+                >
+                  <Paperclip className="w-7 h-7 text-slate-400" />
+                  <p className="text-xs text-slate-600 font-bold">
+                    Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400">Archivos e imágenes se guardan de forma local</p>
+                  <input 
+                    type="file" 
+                    id="file-input-creation" 
+                    className="hidden" 
+                    multiple 
+                    onChange={(e) => handleFileDropOrSelect(e, true)} 
+                  />
+                </div>
+
+                {/* View attachments list in creation form */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
+                  {(storyForm.attachments || []).map((att: any) => (
+                    <div 
+                      key={att.id} 
+                      onClick={() => setPreviewAttachment(att)}
+                      className="bg-white border hover:border-teal-400 hover:bg-teal-50/10 cursor-pointer group rounded-xl p-3 flex items-center justify-between gap-3 text-xs shadow-3xs overflow-hidden transition-all duration-200"
+                      title="Haga clic para previsualizar o descargar"
+                    >
+                      <div className="flex items-center gap-3 truncate flex-1">
+                        {att.fileUrl && (att.fileUrl.startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
+                          <img src={att.fileUrl} className="w-9 h-9 object-cover rounded border shrink-0 bg-white group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
+                        ) : (
+                          <div className="w-9 h-9 bg-teal-500/10 text-teal-600 rounded flex items-center justify-center shrink-0 border border-teal-500/10 group-hover:bg-teal-500/20 transition">
+                            <Eye className="w-4 h-4 hidden group-hover:block text-teal-700 animate-pulse" />
+                            <FileText className="w-4 h-4 group-hover:hidden" />
+                          </div>
+                        )}
+                        <div className="truncate">
+                          <strong className="text-slate-700 group-hover:text-teal-700 block truncate font-bold" title={att.fileName}>{att.fileName}</strong>
+                          <span className="block text-[9.5px] text-slate-400 mt-0.5">{att.fileType.split('/')[1]?.toUpperCase() || 'Archivo'} | {att.uploadedAt}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStoryForm(prev => ({
+                            ...prev,
+                            attachments: (prev.attachments || []).filter((a: any) => a.id !== att.id)
+                          }));
+                        }}
+                        className="text-red-500 hover:text-red-700 font-extrabold text-xs p-1 hover:bg-red-50 rounded shrink-0 transition"
+                        title="Eliminar archivo"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-slate-150/50 p-3 rounded-lg text-[10.5px] text-slate-500 font-mono">
                 ℹ️ Todos los requerimientos nuevos se crean de manera automática en estado <strong>Borrador</strong>. Su avance estará supervisado por las reglas del Sprint actual.
               </div>
 
@@ -1823,30 +2382,21 @@ export default function ProductBacklogManager({
               <button
                 onClick={() => setDetailTab('general')}
                 className={`py-2 px-3 border-b-2 transition ${detailTab === 'general' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
+                id="tab-btn-general"
               >
-                📋 General & Como/Quiero/Para
+                📋 General, Adjuntos & Comentarios
               </button>
               <button
                 onClick={() => setDetailTab('accept')}
                 className={`py-2 px-3 border-b-2 transition ${detailTab === 'accept' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
+                id="tab-btn-actividades"
               >
-                ✔️ Criterios de Aceptación ({selectedStory.acceptanceCriteria.length})
-              </button>
-              <button
-                onClick={() => setDetailTab('technical')}
-                className={`py-2 px-3 border-b-2 transition ${detailTab === 'technical' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
-              >
-                💻 Datos Técnicos & Auditables
-              </button>
-              <button
-                onClick={() => setDetailTab('attachments')}
-                className={`py-2 px-3 border-b-2 transition ${detailTab === 'attachments' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
-              >
-                📎 Comentarios y Evidencias
+                ✔️ Actividades ({selectedStory.acceptanceCriteria.length})
               </button>
               <button
                 onClick={() => setDetailTab('trace')}
                 className={`py-2 px-3 border-b-2 transition ${detailTab === 'trace' ? 'border-teal-600 text-teal-700' : 'border-transparent'}`}
+                id="tab-btn-trazabilidad"
               >
                 🕒 Trazabilidad de Auditoría ({selectedStory.history.length})
               </button>
@@ -1857,17 +2407,17 @@ export default function ProductBacklogManager({
 
               {/* TABS: GENERAL */}
               {detailTab === 'general' && (
-                <div className="space-y-4">
+                <div className="space-y-6 animate-fadeIn">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-slate-50 p-3 rounded-lg">
+                    <div className="bg-slate-50 p-3 rounded-lg border">
                       <span className="block text-[8.5px] uppercase font-bold text-slate-400">Tipo</span>
                       <span className="font-extrabold text-slate-800 text-xs">{selectedStory.type}</span>
                     </div>
-                    <div className="bg-slate-50 p-3 rounded-lg">
+                    <div className="bg-slate-50 p-3 rounded-lg border">
                       <span className="block text-[8.5px] uppercase font-bold text-slate-400">Prioridad</span>
                       <span className="font-extrabold text-slate-800 text-xs text-red-700">{selectedStory.priority}</span>
                     </div>
-                    <div className="bg-slate-50 p-3 rounded-lg">
+                    <div className="bg-slate-50 p-3 rounded-lg border">
                       <span className="block text-[8.5px] uppercase font-bold text-slate-400">Story Points (Complejidad)</span>
                       <span className="font-extrabold text-slate-800 text-xs font-mono">{selectedStory.storyPoints} pts ({selectedStory.complexity})</span>
                     </div>
@@ -1875,242 +2425,128 @@ export default function ProductBacklogManager({
 
                   {/* Formato structured list */}
                   <div className="bg-teal-50/20 border border-teal-200/50 p-5 rounded-2xl space-y-3.5">
-                    <h4 className="font-bold text-teal-900 text-xs uppercase tracking-wider">Estructura Narrativa del Requerimiento:</h4>
+                    <h4 className="font-bold text-teal-950 text-xs uppercase tracking-wider">Estructura Narrativa del Requerimiento:</h4>
                     <div className="text-sm font-medium space-y-2">
-                      <p className="text-slate-700"><span className="font-black text-teal-800">COMO:</span> {selectedStory.role || 'Planificador logístico'}</p>
-                      <p className="text-slate-700"><span className="font-black text-teal-800">QUIERO:</span> {selectedStory.want || 'verificar tránsitos síncronos'}</p>
-                      <p className="text-slate-700"><span className="font-black text-teal-800">PARA:</span> {selectedStory.benefit || 'calcular existencias semanales sin demoras'}</p>
+                      <p className="text-slate-800"><span className="font-black text-teal-800">COMO:</span> {selectedStory.role || 'Planificador logístico'}</p>
+                      <p className="text-slate-800"><span className="font-black text-teal-800">QUIERO:</span> {selectedStory.want || 'verificar tránsitos síncronos'}</p>
+                      <p className="text-slate-800"><span className="font-black text-teal-800">PARA:</span> {selectedStory.benefit || 'calcular existencias semanales sin demoras'}</p>
                     </div>
                   </div>
 
-                  <div className="bg-white border rounded-xl p-4">
+                  <div className="bg-white border rounded-xl p-4 shadow-3xs">
                     <span className="block text-[9.5px] font-bold text-slate-400 uppercase mb-1">Descripción contextualizada</span>
-                    <p className="text-xs text-slate-650 leading-relaxed">{selectedStory.description || 'No hay notas técnicas documentadas.'}</p>
+                    <p className="text-xs text-slate-700 leading-relaxed font-medium">{selectedStory.description || 'No hay notas técnicas documentadas.'}</p>
                   </div>
 
                   {/* Basic meta information */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t text-xs">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t text-xs font-medium">
                     <div>
-                      <span className="block text-slate-400">Fecha Creación:</span>
+                      <span className="block text-slate-400 text-[10px]">Fecha Creación:</span>
                       <strong className="text-slate-700 font-mono">{selectedStory.createdAt}</strong>
                     </div>
                     <div>
-                      <span className="block text-slate-400">Fecha Inicio Estimada:</span>
-                      <strong className="text-slate-700 font-mono">{selectedStory.startDate || '-'}</strong>
+                      <span className="block text-slate-400 text-[10px]">Fecha Inicio Estimada:</span>
+                      <strong className="text-slate-705 font-mono">{selectedStory.startDate || '-'}</strong>
                     </div>
                     <div>
-                      <span className="block text-slate-400">Fecha Compromiso (UAT):</span>
+                      <span className="block text-slate-400 text-[10px]">Fecha Compromiso (UAT):</span>
                       <strong className="text-slate-700 font-mono text-red-600">{selectedStory.dueDate || '-'}</strong>
                     </div>
                     <div>
-                      <span className="block text-slate-400">Fecha Cierre:</span>
+                      <span className="block text-slate-400 text-[10px]">Fecha Cierre:</span>
                       <strong className="text-slate-700 font-mono text-emerald-700">{selectedStory.endDate || '-'}</strong>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* TABS: DEFINITIONS CHECKS REMOVED */}
-
-              {/* TABS: ACCEPTANCE CRITERIA */}
-              {detailTab === 'accept' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
-                    <span className="text-xs text-slate-500 font-bold">Porcentaje de Criterios Cumplidos:</span>
-                    <strong className="text-teal-700 font-mono text-sm">{getAcceptanceCriteriaMetPercent(selectedStory)}%</strong>
-                  </div>
-
-                  <div className="space-y-3">
-                    {selectedStory.acceptanceCriteria.map(crit => (
-                      <div key={crit.id} className="bg-white border rounded-xl p-4 text-xs space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-black text-teal-700 uppercase">Criterio #{crit.number} - [{crit.type}]</span>
-                          <div className="flex items-center gap-1.5">
-                            {(['Pendiente', 'Cumple', 'No cumple', 'No aplica'] as AcceptanceCriterion['status'][]).map(st => (
-                              <button
-                                key={st}
-                                type="button"
-                                disabled={currentRole === 'CONSULTA' || (currentRole === 'DEVELOPER' && st === 'Cumple')}
-                                onClick={() => toggleCritStatus(crit.id, st)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer ${
-                                  crit.status === st
-                                    ? st === 'Cumple' ? 'bg-emerald-600 text-white' :
-                                      st === 'No cumple' ? 'bg-red-500 text-white' :
-                                      st === 'No aplica' ? 'bg-slate-400 text-white' : 'bg-slate-700 text-white'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                }`}
-                              >
-                                {st}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <p className="text-slate-800 font-bold">{crit.description}</p>
-                        {crit.expectedResult && (
-                          <div className="p-2.5 bg-slate-50 rounded border border-slate-150 text-slate-600">
-                            <strong>Resultado Esperado:</strong> {crit.expectedResult}
-                          </div>
-                        )}
-                        {crit.validatedBy && (
-                          <span className="block text-[10px] text-slate-400 font-mono">
-                            ✔️ Aprobado de conformidad por {crit.validatedBy} el {crit.validatedAt}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                    {selectedStory.acceptanceCriteria.length === 0 && <span className="text-slate-400 italic block py-4 text-center text-xs">No hay criterios registrados. Cree uno abajo.</span>}
-                  </div>
-
-                  {/* Add Acceptance Criteria inline form */}
-                  {currentRole !== 'CONSULTA' && (
-                    <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-4 space-y-3.5">
-                      <h5 className="font-bold text-slate-830 text-xs tracking-tight">Agregar Criterio de Aceptación</h5>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Descripción*</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="El listado debe ordenar ascendente..."
-                            value={newCritDesc}
-                            onChange={e => setNewCritDesc(e.target.value)}
-                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Tipo de criterio</label>
-                          <select
-                            value={newCritType}
-                            onChange={e => setNewCritType(e.target.value as any)}
-                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-800"
-                          >
-                            <option value="Funcional">Funcional</option>
-                            <option value="Validación">Validación de Interfaz</option>
-                            <option value="Cálculo">Cálculo Matemático</option>
-                            <option value="Integración">Integración de Gateway</option>
-                            <option value="Seguridad">Seguridad / Criptografía</option>
-                            <option value="Reporte">Reporte de Consultoría</option>
-                          </select>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Resultado esperado de prueba técnica</label>
-                          <input
-                            type="text"
-                            placeholder="Código devuelto 200 HTTP OK con payload cifrado."
-                            value={newCritExpected}
-                            onChange={e => setNewCritExpected(e.target.value)}
-                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none"
-                          />
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddCrit}
-                        className="bg-slate-900 text-white font-bold text-xs px-4 py-1.5 rounded cursor-pointer shadow-3xs"
-                      >
-                        Insertar Criterio
-                      </button>
+                  {/* AREA COMPARTIDA: ADJUNTAR IMÁGENES Y ARCHIVOS (DRAG AND DROP) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-3xs">
+                    <div className="flex justify-between items-center pb-2 border-b">
+                      <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-650">Imágenes y Archivos Adjuntos</h4>
+                      <span className="font-mono text-[9px] bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded font-black">
+                        {(selectedStory.attachments || []).length} Archivos
+                      </span>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* TABS: TECHNICAL DATA */}
-              {detailTab === 'technical' && (
-                <div className="space-y-4">
-                  <div className="bg-slate-50 border p-5 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium">
-                    <div className="md:col-span-2">
-                      <span className="block text-slate-400 font-bold uppercase text-[9px] mb-1">Descripción técnica de afectación</span>
-                      <p className="text-slate-850 p-3 bg-white border rounded">
-                        {selectedStory.technicalCriteria?.description || 'El cálculo síncrono consulta ST_INVENTORY_WEEKLY_PROJECTION con validación JWT.'}
+                    <div 
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                      onDragLeave={() => setIsDragOver(false)}
+                      onDrop={(e) => handleFileDropOrSelect(e, false)}
+                      className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
+                        isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-white'
+                      }`}
+                      onClick={() => document.getElementById('file-input-detail')?.click()}
+                    >
+                      <Paperclip className="w-8 h-8 text-slate-400" />
+                      <p className="text-xs text-slate-650 font-bold">
+                        Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
                       </p>
+                      <p className="text-[10px] text-slate-400 font-medium">PNG, JPG, PDF, DOCX (Se almacena en memoria local del navegador)</p>
+                      <input 
+                        type="file" 
+                        id="file-input-detail" 
+                        className="hidden" 
+                        multiple 
+                        onChange={(e) => handleFileDropOrSelect(e, false)} 
+                      />
                     </div>
-                    <div>
-                      <span className="block text-slate-400 uppercase text-[8.5px]">Componente de código afectado</span>
-                      <strong className="text-slate-700 font-mono">{selectedStory.technicalCriteria?.component || 'DemandForecastEngine.ts'}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-slate-400 uppercase text-[8.5px]">API relacionada / Endpoint REST</span>
-                      <strong className="text-slate-700 font-mono">{selectedStory.technicalCriteria?.api || '/api/v1/projects/proj-1/forecast-steel'}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-slate-400 uppercase text-[8.5px]">Objeto Base de Datos relacional</span>
-                      <strong className="text-slate-700 font-mono">{selectedStory.technicalCriteria?.databaseObject || 'ST_INVENTORY_WEEKLY_PROJECTION'}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-slate-400 uppercase text-[8.5px]">Logs Requeridos de auditoría</span>
-                      <strong className="text-slate-700 font-mono">{selectedStory.technicalCriteria?.logsRequired || 'Audit Log de transacciones.'}</strong>
-                    </div>
-                  </div>
 
-                  {/* Dependencies view list */}
-                  <div className="bg-white border rounded-xl p-4">
-                    <h5 className="font-extrabold text-xs text-slate-800 mb-2 uppercase">Dependencias Registradas</h5>
-                    <div className="divide-y text-xs">
-                      {selectedStory.dependencies.map(dep => {
-                        const target = stories.find(st => st.id === dep.targetStoryId);
-                        return (
-                          <div key={dep.id} className="py-2 flex justify-between items-center">
-                            <div>
-                              <strong className="text-slate-700 font-mono">[{dep.dependencyType}]</strong> con {target ? target.code : 'Historia ID externa'}: {target ? target.title : 'External Title'}
-                              <p className="text-slate-400 font-medium text-[11px]">{dep.description}</p>
+                    {/* Lista visual de adjuntos con previsualización */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      {(selectedStory.attachments || []).map(att => (
+                        <div 
+                          key={att.id} 
+                          onClick={() => setPreviewAttachment(att)}
+                          className="bg-white border hover:border-teal-500 hover:bg-teal-50/10 cursor-pointer group text-slate-800 p-3.5 rounded-xl flex items-center justify-between gap-3 shadow-3xs overflow-hidden transition-all duration-200"
+                          title="Haga clic para previsualizar o descargar"
+                        >
+                          <div className="flex items-center gap-3 truncate flex-1">
+                            {att.fileUrl && (att.fileUrl.startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
+                              <img src={att.fileUrl} className="w-10 h-10 object-cover rounded border shrink-0 bg-slate-100 group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
+                            ) : (
+                              <div className="w-10 h-10 bg-teal-500/10 text-teal-600 rounded flex items-center justify-center shrink-0 border border-teal-500/15 group-hover:bg-teal-500/20 transition">
+                                <Eye className="w-5 h-5 hidden group-hover:block text-teal-700 animate-pulse" />
+                                <FileText className="w-5 h-5 group-hover:hidden" />
+                              </div>
+                            )}
+                            <div className="truncate text-xs">
+                              <strong className="text-slate-800 group-hover:text-teal-700 block truncate font-bold" title={att.fileName}>{att.fileName}</strong>
+                              <span className="block text-[10px] text-slate-400 mt-0.5">{att.fileType.split('/')[1]?.toUpperCase() || 'Archivo'} | {att.uploadedAt}</span>
                             </div>
-                            <span className={`px-2 py-0.5 rounded font-bold text-[9px] ${
-                              target?.status === 'Cerrada' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700 animate-pulse'
-                            }`}>
-                              {target ? target.status : 'Desconocido'}
-                            </span>
                           </div>
-                        );
-                      })}
-                      {selectedStory.dependencies.length === 0 && <span className="text-slate-400 italic block py-2 text-center text-xs">No tiene dependencias asignadas.</span>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TABS: COMMENTS AND ATTACHMENTS */}
-              {detailTab === 'attachments' && (
-                <div className="space-y-6">
-                  {/* Attachments & simulated documents gallery */}
-                  <div className="bg-white border rounded-xl p-4 space-y-4">
-                    <div className="flex justify-between items-center mb-1">
-                      <h5 className="font-bold text-slate-800 text-xs uppercase">Documentación, Imágenes & Evidencias</h5>
-                      <button 
-                        onClick={handleSimulateAttachment}
-                        disabled={currentRole === 'CONSULTA'}
-                        className="bg-slate-100 hover:bg-slate-200 border text-slate-700 font-bold text-[10px] px-3 py-1 rounded cursor-pointer transition flex items-center gap-1"
-                      >
-                        <Paperclip className="w-3.5 h-3.5 text-slate-500" />
-                        Simular Adjunto
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {selectedStory.attachments.map(att => (
-                        <div key={att.id} className="bg-slate-50 border p-3 rounded-lg flex items-center gap-3">
-                          <div className="w-8 h-8 bg-teal-500/10 text-teal-600 rounded flex items-center justify-center shrink-0 border border-teal-500/20">
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div className="text-xs truncate">
-                            <strong className="text-slate-700 block truncate">{att.fileName}</strong>
-                            <span className="block text-[10px] text-slate-450 mt-0.5">{att.fileType} | Subido por {att.uploadedBy}</span>
-                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStories(prev => prev.map(s => {
+                                if (s.id === selectedStoryId) {
+                                  return {
+                                    ...s,
+                                    attachments: (s.attachments || []).filter((a: any) => a.id !== att.id)
+                                  };
+                                }
+                                return s;
+                              }));
+                            }}
+                            className="text-red-500 hover:text-red-700 font-extrabold text-xs p-1 hover:bg-rose-50 rounded shrink-0 transition"
+                            title="Eliminar archivo"
+                          >
+                            ✕
+                          </button>
                         </div>
                       ))}
-                      {selectedStory.attachments.length === 0 && (
-                        <div className="col-span-2 text-center p-6 text-slate-400 italic text-xs">No hay entregables o registros de pruebas en la bitácora.</div>
+                      {(selectedStory.attachments || []).length === 0 && (
+                        <div className="col-span-2 text-center p-6 text-slate-400 italic text-xs">No hay entregables o registros de pruebas en la bitácora. Arrastre un archivo arriba.</div>
                       )}
                     </div>
                   </div>
 
-                  {/* Tracing comments block */}
-                  <div className="space-y-4">
-                    <h5 className="font-bold text-slate-800 text-xs uppercase border-b pb-2">Comentarios Técnicos y Historial de Hilos</h5>
-                    <div className="space-y-3.5">
-                      {selectedStory.comments.map(com => (
-                        <div key={com.id} className="bg-slate-50 border rounded-xl p-4 text-xs space-y-1.5 relative">
+                  {/* COMENTARIOS DE BITÁCORA INTEGRADOS */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <h5 className="font-extrabold text-slate-800 text-xs uppercase border-b pb-2 tracking-wider">Comentarios Técnicos y Historial de Hilos</h5>
+                    <div className="space-y-3.5 max-h-80 overflow-y-auto pr-1">
+                      {(selectedStory.comments || []).map(com => (
+                        <div key={com.id} className="bg-slate-50 border rounded-xl p-4 text-xs space-y-1.5 relative shadow-3xs">
                           <div className="flex justify-between items-center">
                             <strong className="text-slate-800">{com.userName} ({com.userRole})</strong>
                             <span className="text-[10px] text-slate-400 font-mono">{com.timestamp}</span>
@@ -2121,19 +2557,22 @@ export default function ProductBacklogManager({
                           }`}>
                             {com.type.toUpperCase()}
                           </span>
-                          <p className="text-slate-700 leading-relaxed font-medium pt-1">{com.text}</p>
+                          <p className="text-slate-700 leading-relaxed font-semibold pt-1">{com.text}</p>
                         </div>
                       ))}
+                      {(selectedStory.comments || []).length === 0 && (
+                        <p className="text-xs text-slate-400 italic text-center py-4">No hay comentarios sobre esta historia de usuario.</p>
+                      )}
                     </div>
 
                     {currentRole !== 'CONSULTA' && (
-                      <div className="bg-slate-100 p-4 rounded-xl space-y-3">
-                        <span className="block text-[10px] font-bold text-slate-600 uppercase">Nuevo Comentario de Bitácora</span>
+                      <div className="bg-slate-100 p-4 rounded-xl space-y-3 shadow-3xs">
+                        <span className="block text-[10px] font-bold text-slate-650 uppercase">Nuevo Comentario de Bitácora</span>
                         <div className="flex gap-2">
                           <select
                             value={newCommentType}
                             onChange={e => setNewCommentType(e.target.value as any)}
-                            className="bg-white border rounded px-2 py-1 text-xs text-slate-700 font-bold focus:outline-none"
+                            className="bg-white border rounded px-2.5 py-1 text-xs text-slate-700 font-bold focus:outline-none"
                           >
                             <option value="General">Comentario General</option>
                             <option value="Técnico">Detalle Técnico</option>
@@ -2147,12 +2586,12 @@ export default function ProductBacklogManager({
                             placeholder="Describa el cambio de alcance o consideraciones de base de datos..."
                             value={newCommentText}
                             onChange={e => setNewCommentText(e.target.value)}
-                            className="flex-1 bg-white border rounded px-3 py-2 text-xs outline-none"
+                            className="flex-1 bg-white border rounded px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-teal-500"
                           />
                           <button
                             type="button"
                             onClick={handleAddComment}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded shadow-3xs cursor-pointer"
+                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded shadow-3xs cursor-pointer transition"
                           >
                             Publicar
                           </button>
@@ -2160,6 +2599,211 @@ export default function ProductBacklogManager({
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* TABS: ACTIVIDADES DE LA HISTORIA */}
+              {detailTab === 'accept' && (
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-xl border">
+                    <span className="text-xs text-slate-500 font-bold">Porcentaje de Actividades Cumplidas:</span>
+                    <strong className="text-teal-700 font-mono text-sm">{getAcceptanceCriteriaMetPercent(selectedStory)}%</strong>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedStory.acceptanceCriteria.map((crit, idx) => {
+                      const idToCheck = crit.id || String(idx);
+                      const isEditingThis = editingCritId === idToCheck;
+                      return (
+                        <div key={crit.id || idx} className="bg-white border rounded-xl p-4 text-xs space-y-3 shadow-3xs">
+                          {isEditingThis ? (
+                            <div className="space-y-3 w-full animate-fadeIn">
+                              <span className="font-extrabold text-teal-850 text-[10px] uppercase">Editando Actividad #{crit.number}</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[9.5px] font-bold text-slate-500 uppercase">Descripción de la Actividad</label>
+                                  <textarea
+                                    rows={1}
+                                    value={editCritDesc}
+                                    onChange={e => {
+                                      setEditCritDesc(e.target.value);
+                                      e.target.style.height = 'auto';
+                                      e.target.style.height = `${e.target.scrollHeight}px`;
+                                    }}
+                                    style={{ height: editCritDesc ? undefined : 'auto' }}
+                                    className="w-full bg-white border rounded px-2.5 py-1.5 text-xs outline-none resize-none overflow-hidden min-h-[34px] focus:ring-1 focus:ring-teal-500 text-slate-800 font-semibold transition-all"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9.5px] font-bold text-slate-500 uppercase">Tipo de Actividad</label>
+                                  <select
+                                    value={editCritType}
+                                    onChange={e => setEditCritType(e.target.value as any)}
+                                    className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-850 focus:ring-1 focus:ring-teal-500 font-semibold"
+                                  >
+                                    <option value="Funcional">Funcional</option>
+                                    <option value="Validación">Validación de Interfaz</option>
+                                    <option value="Cálculo">Cálculo Matemático</option>
+                                    <option value="Integración">Integración de Gateway</option>
+                                    <option value="Seguridad">Seguridad / Cripografia</option>
+                                    <option value="Reporte">Reporte de Consultoría</option>
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[9.5px] font-bold text-slate-500 uppercase">Resultado esperado de validación técnica</label>
+                                  <textarea
+                                    rows={1}
+                                    value={editCritExpected}
+                                    onChange={e => {
+                                      setEditCritExpected(e.target.value);
+                                      e.target.style.height = 'auto';
+                                      e.target.style.height = `${e.target.scrollHeight}px`;
+                                    }}
+                                    style={{ height: editCritExpected ? 'auto' : undefined }}
+                                    className="w-full bg-white border rounded px-2.5 py-1.5 text-xs outline-none resize-none overflow-hidden min-h-[34px] focus:ring-1 focus:ring-teal-500 transition-all font-semibold text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCritId(null)}
+                                  className="bg-slate-200 hover:bg-slate-300 text-slate-755 font-bold px-3 py-1.5 rounded-lg text-[10.5px] cursor-pointer transition text-center"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditCritDirectly(selectedStory.id, idToCheck)}
+                                  className="bg-teal-650 hover:bg-teal-700 text-white font-black px-4 py-1.5 rounded-lg text-[10.5px] cursor-pointer transition shadow-2xs text-center"
+                                >
+                                  Guardar Cambios
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center gap-3 flex-wrap">
+                                <span className="font-extrabold text-teal-850 uppercase">Actividad #{crit.number} - [{crit.type}]</span>
+                                <div className="flex items-center gap-2">
+                                  {currentRole !== 'CONSULTA' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCritId(idToCheck);
+                                        setEditCritDesc(crit.description);
+                                        setEditCritType(crit.type);
+                                        setEditCritExpected(crit.expectedResult || '');
+                                      }}
+                                      className="text-teal-600 hover:text-teal-850 font-black px-2 py-0.5 rounded text-[10.5px] hover:bg-teal-50 transition cursor-pointer"
+                                    >
+                                      Editar
+                                    </button>
+                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    {(['Pendiente', 'Cumple', 'No cumple', 'No aplica'] as AcceptanceCriterion['status'][]).map(st => (
+                                      <button
+                                        key={st}
+                                        type="button"
+                                        disabled={currentRole === 'CONSULTA' || (currentRole === 'DEVELOPER' && st === 'Cumple')}
+                                        onClick={() => toggleCritStatus(crit.id, st)}
+                                        className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition ${
+                                          crit.status === st
+                                            ? st === 'Cumple' ? 'bg-emerald-600 text-white' :
+                                              st === 'No cumple' ? 'bg-red-500 text-white' :
+                                              st === 'No aplica' ? 'bg-slate-400 text-white' : 'bg-slate-700 text-white'
+                                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                        }`}
+                                      >
+                                        {st}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <p className="text-slate-800 font-bold">{crit.description}</p>
+                              {crit.expectedResult && (
+                                <div className="p-2.5 bg-slate-50 rounded border border-slate-150 text-slate-650 font-medium whitespace-pre-wrap leading-normal">
+                                  <strong>Resultado Esperado:</strong> {crit.expectedResult}
+                                </div>
+                              )}
+                              {crit.validatedBy && (
+                                <span className="block text-[10px] text-slate-400 font-mono font-medium">
+                                  ✔️ Aprobado de conformidad por {crit.validatedBy} el {crit.validatedAt}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {selectedStory.acceptanceCriteria.length === 0 && (
+                      <span className="text-slate-400 italic block py-4 text-center text-xs">No hay actividades de control de la HU registradas. Genere una debajo.</span>
+                    )}
+                  </div>
+
+                  {/* Add Acceptance Criteria inline form renamed to Actividades */}
+                  {currentRole !== 'CONSULTA' && (
+                    <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-4 space-y-3.5 shadow-3xs">
+                      <h5 className="font-bold text-slate-830 text-xs tracking-tight uppercase">Agregar Nueva Actividad</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Descripción de la Actividad*</label>
+                          <textarea
+                            rows={1}
+                            required
+                            placeholder="Ej. Asegurar orden descendente por fecha..."
+                            value={newCritDesc}
+                            onChange={e => {
+                              setNewCritDesc(e.target.value);
+                              e.target.style.height = 'auto';
+                              e.target.style.height = `${e.target.scrollHeight}px`;
+                            }}
+                            style={{ height: newCritDesc ? undefined : 'auto' }}
+                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none resize-none overflow-hidden min-h-[34px] focus:ring-1 focus:ring-teal-500 focus:border-teal-500 transition-all font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Tipo de Actividad</label>
+                          <select
+                            value={newCritType}
+                            onChange={e => setNewCritType(e.target.value as any)}
+                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-850"
+                          >
+                            <option value="Funcional">Funcional</option>
+                            <option value="Validación">Validación de Interfaz</option>
+                            <option value="Cálculo">Cálculo Matemático</option>
+                            <option value="Integración">Integración de Gateway</option>
+                            <option value="Seguridad">Seguridad / Cripografia</option>
+                            <option value="Reporte">Reporte de Consultoría</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-[9.5px] font-bold uppercase text-slate-500">Resultado esperado de validación técnica</label>
+                          <textarea
+                            rows={1}
+                            placeholder="Ej. Datos síncronos mapeados en tiempo real."
+                            value={newCritExpected}
+                            onChange={e => {
+                              setNewCritExpected(e.target.value);
+                              e.target.style.height = 'auto';
+                              e.target.style.height = `${e.target.scrollHeight}px`;
+                            }}
+                            style={{ height: newCritExpected ? 'auto' : undefined }}
+                            className="w-full bg-white border rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none resize-none overflow-hidden min-h-[34px] focus:ring-1 focus:ring-teal-500 focus:border-teal-500 transition-all font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddCrit}
+                        className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-1.5 rounded cursor-pointer transition shadow-3xs"
+                      >
+                        Insertar Actividad
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2196,17 +2840,38 @@ export default function ProductBacklogManager({
                 className={`bg-red-50 hover:bg-red-100 text-red-650 font-bold text-xs px-4 py-2 rounded-xl border border-red-200 transition cursor-pointer flex items-center gap-1 ${
                   currentRole !== 'ADMIN_PMO' ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
+                id={`delete-story-detail-${selectedStory.id}`}
               >
                 <Trash2 className="w-4 h-4" /> Eliminar (Solo Admin)
               </button>
 
-              <button
-                type="button"
-                onClick={() => setIsDetailOpen(false)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
-              >
-                Listo
-              </button>
+              <div className="flex items-center gap-3">
+                {currentRole !== 'CONSULTA' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const initHU = selectedStory.role || selectedStory.benefit
+                        ? `Como ${selectedStory.role || ''} quiero ${selectedStory.want || ''} para ${selectedStory.benefit || ''}`.trim()
+                        : (selectedStory.want || '');
+                      setStoryForm({ ...selectedStory, huUnified: initHU });
+                      setIsStoryFormOpen(true);
+                    }}
+                    className="bg-teal-650 hover:bg-teal-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    id={`edit-story-detail-${selectedStory.id}`}
+                  >
+                    <Edit2 className="w-4 h-4" /> Editar Propiedades
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsDetailOpen(false)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
+                  id={`close-story-detail-${selectedStory.id}`}
+                >
+                  Listo
+                </button>
+              </div>
             </div>
 
           </div>
@@ -2242,6 +2907,93 @@ export default function ProductBacklogManager({
               >
                 Confirmar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewAttachment && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-[999999] p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-100 flex flex-col text-slate-800 animate-zoomIn max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">Visualizador de Adjuntos</span>
+                <h4 className="font-extrabold text-sm text-slate-900 truncate max-w-md" title={previewAttachment.fileName}>
+                  {previewAttachment.fileName}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 rounded-lg p-2 transition cursor-pointer font-bold text-sm shadow-3xs"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+
+            {/* Container */}
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center min-h-[300px] bg-slate-50/50">
+              {previewAttachment.fileUrl && (previewAttachment.fileUrl.startsWith('data:image/') || previewAttachment.fileType.startsWith('image/')) ? (
+                <div className="relative group max-w-full">
+                  <img
+                    src={previewAttachment.fileUrl}
+                    className="max-h-[50vh] max-w-full object-contain rounded-2xl mx-auto shadow-md border border-slate-200/60 bg-white"
+                    referrerPolicy="no-referrer"
+                    alt={previewAttachment.fileName}
+                  />
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/70 text-white text-[9.5px] px-3 py-1 rounded-full font-mono">
+                    Resolución Completa en Memoria Local
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center p-8 max-w-md mx-auto space-y-4">
+                  <div className="bg-teal-500/10 text-teal-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto border border-teal-500/20">
+                    <FileText className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-800 text-sm">{previewAttachment.fileName}</h5>
+                    <p className="text-xs text-slate-450 mt-1">Este archivo está en formato de datos [{previewAttachment.fileType}] y no se puede renderizar de forma interactiva.</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3.5 border text-left text-[11px] space-y-1.5 font-mono text-slate-600">
+                    <div><span className="text-slate-400">Tipo Mime:</span> {previewAttachment.fileType}</div>
+                    <div><span className="text-slate-400">Subido por:</span> {previewAttachment.uploadedBy || 'Carlos Pérez'}</div>
+                    <div><span className="text-slate-400">Fecha:</span> {previewAttachment.uploadedAt}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions Footer */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 rounded-b-3xl shrink-0 gap-4">
+              <span className="text-[10px] text-slate-400 font-mono font-medium">
+                Almacenado localmente en sesion
+              </span>
+              <div className="flex gap-2">
+                {previewAttachment.fileUrl && previewAttachment.fileUrl !== '#' ? (
+                  <a
+                    href={previewAttachment.fileUrl}
+                    download={previewAttachment.fileName}
+                    className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-2xs cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" /> Guardar en Mi Dispositivo
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => alert('Este archivo es un marcador de demostración y no contiene datos adjuntos reales. Suba su propio archivo real en memoria mediante arrastrar y soltar.')}
+                    className="bg-slate-400 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 cursor-not-allowed"
+                  >
+                    <Download className="w-4 h-4" /> Descarga de demostración cerrada
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewAttachment(null)}
+                  className="bg-slate-900 hover:bg-slate-850 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer"
+                >
+                  Regresar
+                </button>
+              </div>
             </div>
           </div>
         </div>

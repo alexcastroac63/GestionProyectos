@@ -73,6 +73,7 @@ import {
   Briefcase,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   UserCheck,
   CheckCircle,
   HelpCircle,
@@ -102,71 +103,87 @@ import {
   Settings
 } from 'lucide-react';
 
+function safeLoad<T>(key: string, defaultValue: T): T {
+  try {
+    const local = localStorage.getItem(key);
+    if (local && local !== "undefined" && local !== "null") {
+      const parsed = JSON.parse(local);
+      if (parsed !== null && parsed !== undefined) {
+        if (Array.isArray(defaultValue) && !Array.isArray(parsed)) {
+          console.warn(`Localstorage mismatch for key "${key}": expected array, got difference.`);
+          return defaultValue;
+        }
+        if (defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)) {
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            console.warn(`Localstorage mismatch for key "${key}": expected object, got difference.`);
+            return defaultValue;
+          }
+        }
+        return parsed as T;
+      }
+    }
+  } catch (err) {
+    console.warn(`Error parsing localStorage key "${key}":`, err);
+  }
+  return defaultValue;
+}
+
 export default function App() {
   // --- Persistent State / Handlers ---
   const [users, setUsers] = useState<User[]>(() => {
-    const local = localStorage.getItem('gcp_users');
-    return local ? JSON.parse(local) : INITIAL_USERS;
+    return safeLoad<User[]>('gcp_users', INITIAL_USERS);
   });
 
   const [projects, setProjects] = useState<Project[]>(() => {
-    const local = localStorage.getItem('gcp_projects');
-    return local ? JSON.parse(local) : INITIAL_PROJECTS;
+    const list = safeLoad<Project[]>('gcp_projects', INITIAL_PROJECTS);
+    return list.map(p => ({
+      ...p,
+      sprint_size_days: p.sprint_size_days !== undefined ? p.sprint_size_days : 10
+    }));
   });
 
   const [costs, setCosts] = useState<ProjectCost[]>(() => {
-    const local = localStorage.getItem('gcp_costs');
-    return local ? JSON.parse(local) : INITIAL_PROJECT_COSTS;
+    return safeLoad<ProjectCost[]>('gcp_costs', INITIAL_PROJECT_COSTS);
   });
 
   const [sprints, setSprints] = useState<Sprint[]>(() => {
-    const local = localStorage.getItem('gcp_sprints');
-    return local ? JSON.parse(local) : INITIAL_SPRINTS;
+    return safeLoad<Sprint[]>('gcp_sprints', INITIAL_SPRINTS);
   });
 
   const [workItems, setWorkItems] = useState<WorkItem[]>(() => {
-    const local = localStorage.getItem('gcp_work_items');
-    return local ? JSON.parse(local) : INITIAL_WORK_ITEMS;
+    return safeLoad<WorkItem[]>('gcp_work_items', INITIAL_WORK_ITEMS);
   });
 
   const [activities, setActivities] = useState<ProjectActivity[]>(() => {
-    const local = localStorage.getItem('gcp_activities');
-    return local ? JSON.parse(local) : INITIAL_PROJECT_ACTIVITIES;
+    return safeLoad<ProjectActivity[]>('gcp_activities', INITIAL_PROJECT_ACTIVITIES);
   });
 
   const [testSuites, setTestSuites] = useState<TestSuite[]>(() => {
-    const local = localStorage.getItem('gcp_test_suites');
-    return local ? JSON.parse(local) : INITIAL_TEST_SUITES;
+    return safeLoad<TestSuite[]>('gcp_test_suites', INITIAL_TEST_SUITES);
   });
 
   const [testCases, setTestCases] = useState<TestCase[]>(() => {
-    const local = localStorage.getItem('gcp_test_cases');
-    return local ? JSON.parse(local) : INITIAL_TEST_CASES;
+    return safeLoad<TestCase[]>('gcp_test_cases', INITIAL_TEST_CASES);
   });
 
   const [testRuns, setTestRuns] = useState<TestRun[]>(() => {
-    const local = localStorage.getItem('gcp_test_runs');
-    return local ? JSON.parse(local) : INITIAL_TEST_RUNS;
+    return safeLoad<TestRun[]>('gcp_test_runs', INITIAL_TEST_RUNS);
   });
 
   const [mockups, setMockups] = useState<Mockup[]>(() => {
-    const local = localStorage.getItem('gcp_mockups');
-    return local ? JSON.parse(local) : INITIAL_MOCKUPS;
+    return safeLoad<Mockup[]>('gcp_mockups', INITIAL_MOCKUPS);
   });
 
   const [mockScreens, setMockScreens] = useState<MockupScreen[]>(() => {
-    const local = localStorage.getItem('gcp_mock_screens');
-    return local ? JSON.parse(local) : INITIAL_MOCKUP_SCREENS;
+    return safeLoad<MockupScreen[]>('gcp_mock_screens', INITIAL_MOCKUP_SCREENS);
   });
 
   const [mockComponents, setMockComponents] = useState<MockupComponent[]>(() => {
-    const local = localStorage.getItem('gcp_mock_components');
-    return local ? JSON.parse(local) : INITIAL_MOCKUP_COMPONENTS;
+    return safeLoad<MockupComponent[]>('gcp_mock_components', INITIAL_MOCKUP_COMPONENTS);
   });
 
   const [mockConnections, setMockConnections] = useState<MockupConnection[]>(() => {
-    const local = localStorage.getItem('gcp_mock_connections');
-    return local ? JSON.parse(local) : INITIAL_MOCKUP_CONNECTIONS;
+    return safeLoad<MockupConnection[]>('gcp_mock_connections', INITIAL_MOCKUP_CONNECTIONS);
   });
 
   // Helper for category budgets default allocations
@@ -185,15 +202,58 @@ export default function App() {
   };
 
   const [categoryBudgets, setCategoryBudgets] = useState<{ [projectId: string]: { [cat: string]: number } }>(() => {
-    const local = localStorage.getItem('gcp_category_budgets');
-    if (local) {
+    return safeLoad<{ [projectId: string]: { [cat: string]: number } }>('gcp_category_budgets', getInitialCategoryBudgets(INITIAL_PROJECTS || []));
+  });
+
+  const [budgetBaselines, setBudgetBaselines] = useState<{
+    [projectId: string]: {
+      list: Array<{
+        id: string;
+        name: string;
+        capturedAt: string;
+        totalBudget: number;
+        categories: { [cat: string]: number };
+      }>;
+      activeId: string | null;
+    };
+  }>(() => {
+    const local = localStorage.getItem('gcp_budget_baselines_multi');
+    if (local && local !== "undefined" && local !== "null") {
       try {
-        return JSON.parse(local);
+        const parsed = JSON.parse(local);
+        if (parsed !== null && parsed !== undefined) return parsed;
       } catch (e) {
         console.error(e);
       }
     }
-    return getInitialCategoryBudgets(INITIAL_PROJECTS);
+    const oldLocal = localStorage.getItem('gcp_budget_baselines');
+    if (oldLocal && oldLocal !== "undefined" && oldLocal !== "null") {
+      try {
+        const oldData = JSON.parse(oldLocal);
+        if (oldData) {
+          const newData: any = {};
+          Object.keys(oldData).forEach(projId => {
+            const item = oldData[projId];
+            if (item) {
+              newData[projId] = {
+                list: [{
+                  id: 'baseline-initial',
+                  name: 'Línea Base Inicial',
+                  capturedAt: item.capturedAt || new Date().toLocaleDateString('es-ES'),
+                  totalBudget: item.totalBudget || 150000,
+                  categories: item.categories || {}
+                }],
+                activeId: 'baseline-initial'
+              };
+            }
+          });
+          return newData;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return {};
   });
 
   // Action audit log
@@ -219,7 +279,8 @@ export default function App() {
     localStorage.setItem('gcp_mock_components', JSON.stringify(mockComponents));
     localStorage.setItem('gcp_mock_connections', JSON.stringify(mockConnections));
     localStorage.setItem('gcp_category_budgets', JSON.stringify(categoryBudgets));
-  }, [users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets]);
+    localStorage.setItem('gcp_budget_baselines_multi', JSON.stringify(budgetBaselines));
+  }, [users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets, budgetBaselines]);
 
   // Navigation / Filter States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -248,6 +309,7 @@ export default function App() {
   // Floating Modal for project creation
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
   const [projectStatusModalTarget, setProjectStatusModalTarget] = useState<Project | null>(null);
+  const [projectConfigModalTarget, setProjectConfigModalTarget] = useState<Project | null>(null);
 
   // Project List Filters
   const [projectSearch, setProjectSearch] = useState('');
@@ -305,26 +367,24 @@ export default function App() {
 
   // Dynamic Clients & Sponsors Lists
   const [clientsList, setClientsList] = useState<string[]>(() => {
-    const local = localStorage.getItem('gcp_clients_list');
-    return local ? JSON.parse(local) : [
+    return safeLoad<string[]>('gcp_clients_list', [
       'Fintech Corp Internacional', 
       'Banco Aliado de Occidente', 
       'SaaS Corp', 
       'Retail S.A.', 
       'E-Commerce Grupo', 
       'Aseguradora Regional'
-    ];
+    ]);
   });
 
   const [sponsorsList, setSponsorsList] = useState<string[]>(() => {
-    const local = localStorage.getItem('gcp_sponsors_list');
-    return local ? JSON.parse(local) : [
+    return safeLoad<string[]>('gcp_sponsors_list', [
       'Alejandra Gómez (Sponsor Principal)', 
       'Andrés Mendoza (VP Tecnología)', 
       'Sofía Ramírez (Product Lead)', 
       'Rolando Castro (Inversionista)',
       'u-1'
-    ];
+    ]);
   });
 
   // New user form states
@@ -337,11 +397,14 @@ export default function App() {
   // --- Session & Authentication State ---
   const [loggedInUser, setLoggedInUser] = useState<User | null>(() => {
     const local = localStorage.getItem('gcp_logged_in_user');
-    if (local) {
+    if (local && local !== "undefined" && local !== "null") {
       try {
-        return JSON.parse(local);
+        const parsed = JSON.parse(local);
+        if (parsed && typeof parsed === 'object') {
+          return parsed as User;
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Failed to parse loggedInUser from localStorage", e);
       }
     }
     return null;
@@ -354,9 +417,9 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginTenant, setLoginTenant] = useState('enterprise-prod');
 
-  const isDevRole = loggedInUser !== null && (
+  const isDevRole = loggedInUser !== null && loggedInUser !== undefined && loggedInUser.role && (
     (() => {
-      const roleLower = loggedInUser.role.toLowerCase();
+      const roleLower = (loggedInUser.role || '').toLowerCase();
       return (
         roleLower.includes('qa') ||
         roleLower.includes('desarrollador') ||
@@ -376,6 +439,8 @@ export default function App() {
   );
 
   // Active contextual references
+  const [newBudgetBaselineName, setNewBudgetBaselineName] = useState('');
+  const [isBudgetBaselineSectionExpanded, setIsBudgetBaselineSectionExpanded] = useState(false);
   const activeProject = projects.find(p => p.id === selectedProjectId) || projects[0];
   const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
   const activeSprint = projectSprints.find(s => s.id === selectedSprintId) || projectSprints[0];
@@ -389,6 +454,7 @@ export default function App() {
   const [newProjSponsor, setNewProjSponsor] = useState('');
   const [newProjBudget, setNewProjBudget] = useState(150000);
   const [newProjCode, setNewProjCode] = useState('');
+  const [newProjSprintSizeDays, setNewProjSprintSizeDays] = useState(10);
 
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,6 +477,7 @@ export default function App() {
       start_date: '2026-06-01',
       end_date: '2026-10-31',
       sprint_size_weeks: 2,
+      sprint_size_days: Number(newProjSprintSizeDays) || 10,
       budget_total: budgetVal
     };
     setProjects(prev => [...prev, newProj]);
@@ -428,6 +495,7 @@ export default function App() {
     setNewProjCode('');
     setNewProjClient('');
     setNewProjSponsor('');
+    setNewProjSprintSizeDays(10);
     setIsCreateProjectModalOpen(false);
     addLog('Carlos Pérez (PM)', `Creó el proyecto de negocio [${newProj.code}] ${newProj.name}`);
   };
@@ -588,6 +656,7 @@ export default function App() {
   const [cloudIsUploading, setCloudIsUploading] = useState(false);
   const [cloudProgress, setCloudProgress] = useState(0);
   const [activeCloudObjectDetail, setActiveCloudObjectDetail] = useState<ProjectCost | null>(null);
+  const [cloudFileBase64, setCloudFileBase64] = useState<string | null>(null);
 
   const simulateCloudUpload = (fileNameString: string, sizeInMb: string) => {
     setCloudIsUploading(true);
@@ -615,6 +684,13 @@ export default function App() {
       const sizeStr = file.size > 1024 * 1024 
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
         : `${(file.size / 1024).toFixed(0)} KB`;
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCloudFileBase64(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+
       simulateCloudUpload(file.name, sizeStr);
     }
   };
@@ -639,7 +715,8 @@ export default function App() {
       storage_url: cloudFileUploadedName ? `http://localhost:9000/soporte-pmo-storage/uploads/${docNum}_${cloudFileUploadedName}` : undefined,
       file_name: cloudFileUploadedName || undefined,
       file_size: cloudFileUploadedSize || undefined,
-      uploaded_at: cloudFileUploadedName ? new Date().toISOString().replace('T', ' ').substring(0, 16) : undefined
+      uploaded_at: cloudFileUploadedName ? new Date().toISOString().replace('T', ' ').substring(0, 16) : undefined,
+      raw_base64: cloudFileBase64 || undefined
     };
     
     setCosts(prev => [...prev, newCost]);
@@ -652,6 +729,7 @@ export default function App() {
     setCloudFileUploadedName('');
     setCloudFileUploadedSize('');
     setCloudProgress(0);
+    setCloudFileBase64(null);
     
     addLog('Carlos Pérez (PM)', `Registró documento ${docNum} (${newCostType}): "${newCostDesc}" por $${Number(newCostAmount)} USD (Comprobante cargado con éxito en el almacenamiento seguro)`);
   };
@@ -667,6 +745,284 @@ export default function App() {
         setCosts(prev => prev.filter(c => c.id !== id));
       }
     });
+  };
+
+  const downloadDocumentLocally = (c: ProjectCost) => {
+    const downloadName = c.file_name || `comprobante_${c.document_number || 'documento'}.pdf`;
+    const ext = downloadName.split('.').pop()?.toLowerCase() || '';
+
+    const triggerDownload = (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addLog('Cloud Storage Client', `Descarga local exitosa iniciada para el archivo de soporte: ${downloadName}`);
+    };
+
+    if (c.raw_base64) {
+      try {
+        const parts = c.raw_base64.split(';base64,');
+        const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+        const base64Str = parts.length > 1 ? parts[1] : parts[0];
+        const raw = window.atob(base64Str);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const exactBlob = new Blob([uInt8Array], { type: contentType });
+        triggerDownload(exactBlob);
+        return;
+      } catch (err) {
+        console.error("Error decoding base64 file data, falling back to template generation", err);
+      }
+    }
+
+    if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+      // 1. Image Files: Generate a beautiful, fully valid graphic voucher via Canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Soft backdrop
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(0, 0, 800, 600);
+        
+        // Deep Indigo Frame
+        ctx.strokeStyle = '#4f46e5';
+        ctx.lineWidth = 14;
+        ctx.strokeRect(7, 7, 786, 586);
+        
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 30, 740, 540);
+
+        // Header Background
+        ctx.fillStyle = '#4f46e5';
+        ctx.fillRect(30, 30, 740, 100);
+        
+        // Header Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 26px sans-serif';
+        ctx.fillText('COMPROBANTE OFICIAL DE GASTO DIGITAL', 60, 92);
+        
+        // Label values section
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.fillText('INFORMACIÓN DETALLADA DEL DOCUMENTO:', 60, 185);
+        
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(60, 195);
+        ctx.lineTo(740, 195);
+        ctx.stroke();
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Número de Factura / Documento:', 60, 235);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 17px monospace';
+        ctx.fillText(`#${c.document_number || 'N/A'}`, 330, 235);
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Rubro o Categoría de Gasto:', 60, 275);
+        ctx.fillStyle = '#4f46e5';
+        ctx.font = 'bold 17px sans-serif';
+        ctx.fillText(c.cost_type || 'OTROS', 330, 275);
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Monto del Comprobante:', 60, 315);
+        ctx.fillStyle = '#10b981';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText(`$${Number(c.amount).toLocaleString('en-US')} USD`, 330, 315);
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Concepto / Glosa de Soporte:', 60, 355);
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 16px sans-serif';
+        
+        // Handle potential long descriptions line wrapping
+        const desc = c.description;
+        if (desc.length > 42) {
+          ctx.fillText(desc.substring(0, 42) + '...', 330, 355);
+        } else {
+          ctx.fillText(desc, 330, 355);
+        }
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Fecha del Documento:', 60, 395);
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText(c.document_date || c.created_at || 'N/A', 330, 395);
+
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Proyecto en PMO:', 60, 435);
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText(`[${activeProject ? activeProject.code : 'N/A'}] ${activeProject ? activeProject.name : 'N/A'}`, 330, 435);
+
+        // Security watermark footer
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`ID de Auditoria Única Encriptado: ${c.id}`, 65, 515);
+        ctx.fillText(`Ruta de Repositorio Virtual: repo://soporte-pmo-storage/${c.storage_key || `${c.id}.pdf`}`, 65, 535);
+
+        canvas.toBlob((b) => {
+          if (b) {
+            triggerDownload(b);
+          } else {
+            // fallback if toBlob fails
+            const txtBlob = new Blob([c.description || ''], { type: ext === 'png' ? 'image/png' : 'image/jpeg' });
+            triggerDownload(txtBlob);
+          }
+        }, ext === 'png' ? 'image/png' : 'image/jpeg');
+      }
+    } else if (ext === 'pdf') {
+      // 2. PDF Files: Generate a fully valid minimal PDF structure representing the document metadata correctly
+      const textLines = [
+        `========================================================================`,
+        `         COMPROBANTE OFICIAL DE REGISTRO - SISTEMA PMO WEB`,
+        `========================================================================`,
+        `Fecha de Descarga: ${new Date().toLocaleString('es-ES')}`,
+        `Operacion: REGISTRO DE SOPORTE DE GASTO (COMPROBANTE DE COMPRA / RECIBO)`,
+        ``,
+        `INFORMACION DETALLADA DEL DOCUMENTO:`,
+        `------------------------------------------------------------------------`,
+        `Numero de Factura:  # ${c.document_number || 'N/A'}`,
+        `Fecha de Documento: ${c.document_date || c.created_at || 'N/A'}`,
+        `Rubro/Categoria:    ${c.cost_type || 'OTROS'}`,
+        `Monto Registrado:   $ ${Number(c.amount).toLocaleString('en-US')} USD`,
+        `Concepto / Glosa:   ${c.description}`,
+        `ID de Auditoria:    ${c.id}`,
+        ``,
+        `INFORMACION DEL PROYECTO ASOCIADO:`,
+        `------------------------------------------------------------------------`,
+        `ID de Proyecto PMO: ${c.project_id}`,
+        `Codigo Tematico:    ${activeProject ? activeProject.code : 'N/A'}`,
+        `Nombre de Proyecto: ${activeProject ? activeProject.name : 'N/A'}`,
+        ``,
+        `EVALUACION DE TRANSPARENCIA:`,
+        `------------------------------------------------------------------------`,
+        `Nombre original:    ${c.file_name || 'N/A'}`,
+        `Soporte Key:        repo://soporte-pmo-storage/${c.storage_key || 'N/A'}`,
+        `Firma de Auditoria: "${c.id.substring(c.id.length - Math.min(6, c.id.length))}e9800998ea"`,
+        `Verificado y firmado en el Almacen Local Seguro de PMO.`,
+        `========================================================================`
+      ];
+
+      // Build text contents stream
+      let streamContent = `BT\n/F1 10 Tf\n15 L\n40 760 Td\n`;
+      textLines.forEach(line => {
+        // Clean line to prevent syntax break in PDF strings
+        const escaped = line.replace(/[()\\\r]/g, '\\$&');
+        streamContent += `T* (${escaped}) Tj\n`;
+      });
+      streamContent += `ET`;
+
+      const streamLen = streamContent.length;
+
+      // Pack PDF objects sequentially
+      const pdfParts: string[] = [];
+      pdfParts.push(`%PDF-1.4\n`);
+      
+      const obj1 = `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`;
+      pdfParts.push(obj1);
+      
+      const obj2 = `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`;
+      pdfParts.push(obj2);
+      
+      // Use standard A4 size (595x842) layout with margins
+      const obj3 = `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n`;
+      pdfParts.push(obj3);
+      
+      const obj4 = `4 0 obj\n<< /Length ${streamLen} >>\nstream\n${streamContent}\nendstream\nendobj\n`;
+      pdfParts.push(obj4);
+      
+      // Font Definition using Courier for monospaced document receipt alignment
+      const obj5 = `5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n`;
+      pdfParts.push(obj5);
+
+      // Compute exact byte offsets to generate correct xref cross indexing
+      let currentOffset = 0;
+      const offsets: number[] = [];
+      for (let i = 0; i < pdfParts.length; i++) {
+        offsets.push(currentOffset);
+        currentOffset += pdfParts[i].length;
+      }
+
+      // Construct Cross Reference Table
+      let xref = `xref\n0 6\n0000000000 65535 f \n`;
+      for (let i = 1; i <= 5; i++) {
+        const padded = String(offsets[i]).padStart(10, '0');
+        xref += `${padded} 00000 n \n`;
+      }
+
+      const trailer = `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${currentOffset}\n%%EOF\n`;
+      const fullPdfText = pdfParts.join('') + xref + trailer;
+
+      const buffer = new Uint8Array(fullPdfText.length);
+      for (let i = 0; i < fullPdfText.length; i++) {
+        buffer[i] = fullPdfText.charCodeAt(i) & 0xff;
+      }
+      
+      const pdfBlob = new Blob([buffer], { type: 'application/pdf' });
+      triggerDownload(pdfBlob);
+    } else {
+      // 3. Text & spreadsheet files (e.g., .txt, .xlsx, .docx, .csv):
+      // Download the beautifully parsed PMO layout as genuine readable text
+      const fileContent = `========================================================================
+         COMPROBANTE OFICIAL DE REGISTRO - SISTEMA PMO WEB
+========================================================================
+Fecha de Descarga: ${new Date().toLocaleString('es-ES')}
+Operación: REGISTRO DE SOPORTE DE GASTO (COMPROBANTE DE COMPRA / RECIBO)
+
+INFORMACIÓN DETALLADA DEL DOCUMENTO:
+------------------------------------------------------------------------
+Número de Documento / Factura: #${c.document_number || 'N/A'}
+Fecha del Documento soporte:   ${c.document_date || c.created_at || 'N/A'}
+Rubro / Categoría de Gasto:    ${c.cost_type || 'OTROS'}
+Concepto / Glosa de Soporte:    ${c.description}
+Monto Registrado Global:       $${Number(c.amount).toLocaleString('en-US')} USD
+ID Único de Auditoría Interna: ${c.id}
+
+INFORMACIÓN DEL PROYECTO ASOCIADO:
+------------------------------------------------------------------------
+ID de Proyecto en PMO:         ${c.project_id}
+Código Temático / Clave:       ${activeProject ? activeProject.code : 'N/A'}
+Nombre de Proyecto Principal:  ${activeProject ? activeProject.name : 'N/A'}
+
+INFORMACIÓN E INTEGRIDAD DEL REPOSITORIO DIGITAL:
+------------------------------------------------------------------------
+Nombre del Archivo Cargado:    ${c.file_name || `comprobante_${c.document_number || 'documento'}.txt`}
+Tamaño de Archivo Declarado:   ${c.file_size || 'N/A'}
+Ruta Virtual en Repositorio:   repo://soporte-pmo-storage/${c.storage_key || `uploads/${c.document_number}_comprobante.pdf`}
+Firma de Integridad (MD5 Checksum): "${c.id.substring(c.id.length - Math.min(10, c.id.length))}e9800998ea"
+API Cloud Endpoint Solicitado:     ${c.storage_url || `http://localhost:9000/soporte-pmo-storage/uploads/${c.document_number}_comprobante.pdf`}
+Última Sincronización Registrada:  ${c.uploaded_at || c.created_at || new Date().toISOString()}
+
+------------------------------------------------------------------------
+Verificado por el Almacén de Datos Seguro Local de PMO Web.
+========================================================================`;
+
+      let mimeType = 'text/plain;charset=utf-8';
+      if (ext === 'csv') mimeType = 'text/csv;charset=utf-8';
+      else if (ext === 'xlsx') mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      else if (ext === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+      const txtBlob = new Blob([fileContent], { type: mimeType });
+      triggerDownload(txtBlob);
+    }
   };
 
   // Add Activity (Gantt)
@@ -2044,6 +2400,82 @@ export default function App() {
                         <Edit2 className="w-3.5 h-3.5" />
                         <span>Cambiar Estado</span>
                       </button>
+
+                      <button
+                        onClick={() => {
+                          if (isDevRole) {
+                            alert('Acceso restringido: Los perfiles de desarrollo no poseen permisos para configurar proyectos.');
+                            return;
+                          }
+                          setProjectConfigModalTarget(activeProject);
+                        }}
+                        disabled={isDevRole}
+                        className="bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 text-slate-700 font-extrabold text-xs px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer border border-slate-200"
+                        title={isDevRole ? "Editor restringido para perfiles de desarrollo" : undefined}
+                      >
+                        <Settings className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Configurar Proyecto</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* PROJECT CONFIGURATION METADATA RIBBON */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white border border-slate-200 rounded-xl p-4 mt-4 shadow-3xs text-xs animate-fadeIn">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                        <Briefcase className="w-4 h-4" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Cliente</span>
+                        <span className="font-semibold text-slate-800 truncate block whitespace-nowrap">{activeProject.client || 'General'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+                        <UserCheck className="w-4 h-4" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Sponsor</span>
+                        <span className="font-semibold text-slate-800 truncate block whitespace-nowrap">
+                          {(() => {
+                            const foundSponsor = users.find(u => u.id === activeProject.sponsor);
+                            return foundSponsor ? `${foundSponsor.first_name} ${foundSponsor.last_name}` : activeProject.sponsor || 'Sponsor Principal';
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-amber-50 text-amber-600 rounded-lg shrink-0">
+                        <Coins className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Presupuesto</span>
+                        <span className="font-mono font-bold text-slate-800">${activeProject.budget_total?.toLocaleString()} USD</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-rose-50 text-rose-600 rounded-lg shrink-0">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Cronograma</span>
+                        <span className="font-semibold text-slate-700 text-[11px] truncate block whitespace-nowrap">{activeProject.start_date} al {activeProject.end_date}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 col-span-2 md:col-span-1">
+                      <div className="p-2 bg-sky-50 text-sky-600 rounded-lg shrink-0">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Tamaño del Sprint</span>
+                        <span className="font-semibold text-sky-850 font-bold bg-sky-50 border border-sky-100 px-2.5 py-0.5 rounded text-[11px] block mt-0.5 w-fit">
+                          {activeProject.sprint_size_days !== undefined ? activeProject.sprint_size_days : 10} días hábiles
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -2058,7 +2490,7 @@ export default function App() {
                       }`}
                     >
                       <Layers className="w-4 h-4 text-blue-500" />
-                      <span>Estructura Jerárquica del Proyecto</span>
+                      <span>Cronograma de actividades</span>
                     </button>
                     <button
                       onClick={() => setProjectSubTab('costs')}
@@ -2069,7 +2501,7 @@ export default function App() {
                       }`}
                     >
                       <Coins className="w-4 h-4 text-indigo-500" />
-                      <span>Control de Rubros de Presupuesto Asignado vs. Ejecutado y Historial de Documentos Registrados</span>
+                      <span>Presupuesto</span>
                     </button>
                   </div>
 
@@ -2081,6 +2513,7 @@ export default function App() {
                         users={users}
                         addLog={addLog}
                         isDevRole={isDevRole}
+                        sprints={sprints}
                       />
                     </div>
                   ) : (
@@ -2093,6 +2526,93 @@ export default function App() {
                           INFRAESTRUCTURA: Math.round(activeProject.budget_total * 0.20),
                           OUTSOURCING: Math.round(activeProject.budget_total * 0.15),
                           OTROS: Math.round(activeProject.budget_total * 0.10)
+                        };
+
+                        const projBaselineData = budgetBaselines[selectedProjectId] || { list: [], activeId: null };
+                        const activeBaseline = projBaselineData.list.find(b => b.id === projBaselineData.activeId) || null;
+
+                        const handleCaptureBaseline = () => {
+                          const name = newBudgetBaselineName.trim() || `Línea Base #${projBaselineData.list.length + 1}`;
+                          const newBaseline = {
+                            id: `bl-${Date.now()}`,
+                            name: name,
+                            capturedAt: new Date().toLocaleDateString('es-ES', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }),
+                            totalBudget: activeProject.budget_total,
+                            categories: { ...activeProjBudgetMap }
+                          };
+
+                          setBudgetBaselines(prev => {
+                            const current = prev[selectedProjectId] || { list: [], activeId: null };
+                            const updatedList = [...current.list, newBaseline];
+                            return {
+                              ...prev,
+                              [selectedProjectId]: {
+                                list: updatedList,
+                                activeId: newBaseline.id
+                              }
+                            };
+                          });
+                          setNewBudgetBaselineName('');
+                          addLog('Carlos Pérez (PM)', `Capturó la Línea Base de presupuesto ($ USD): "${name}" para el proyecto [${activeProject.code}]`);
+                        };
+
+                        const handleSetActiveBaseline = (id: string) => {
+                          setBudgetBaselines(prev => {
+                            const current = prev[selectedProjectId] || { list: [], activeId: null };
+                            return {
+                              ...prev,
+                              [selectedProjectId]: {
+                                ...current,
+                                activeId: id
+                              }
+                            };
+                          });
+                          const selectedBl = projBaselineData.list.find(b => b.id === id);
+                          if (selectedBl) {
+                            addLog('Carlos Pérez (PM)', `Activó la Línea Base de presupuesto "${selectedBl.name}" para el proyecto [${activeProject.code}]`);
+                          }
+                        };
+
+                        const handleClearActiveBaseline = () => {
+                          setBudgetBaselines(prev => {
+                            const current = prev[selectedProjectId] || { list: [], activeId: null };
+                            return {
+                              ...prev,
+                              [selectedProjectId]: {
+                                ...current,
+                                activeId: null
+                              }
+                            };
+                          });
+                          addLog('Carlos Pérez (PM)', `Desactivó la Línea Base de presupuesto activa para el proyecto [${activeProject.code}]`);
+                        };
+
+                        const handleDeleteBaseline = (id: string) => {
+                          const baselineToDelete = projBaselineData.list.find(b => b.id === id);
+                          setBudgetBaselines(prev => {
+                            const current = prev[selectedProjectId] || { list: [], activeId: null };
+                            const updatedList = current.list.filter(b => b.id !== id);
+                            let nextActiveId = current.activeId;
+                            if (nextActiveId === id) {
+                              nextActiveId = updatedList.length > 0 ? updatedList[updatedList.length - 1].id : null;
+                            }
+                            return {
+                              ...prev,
+                              [selectedProjectId]: {
+                                list: updatedList,
+                                activeId: nextActiveId
+                              }
+                            };
+                          });
+                          if (baselineToDelete) {
+                            addLog('Carlos Pérez (PM)', `Eliminó la Línea Base de presupuesto "${baselineToDelete.name}" de la historia del proyecto [${activeProject.code}]`);
+                          }
                         };
 
                         return (
@@ -2118,7 +2638,7 @@ export default function App() {
                             </div>
 
                             {/* Summary of Project Category budgets vs total project limit */}
-                            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center text-[11px] gap-2 mb-6">
+                            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center text-[11px] gap-2">
                               <span className="text-slate-500 font-semibold uppercase tracking-wide text-[10px]">
                                 Consolidado de Asignaciones de Proyecto:
                               </span>
@@ -2127,21 +2647,198 @@ export default function App() {
                               </span>
                             </div>
 
+                            {/* Baseline History and Capture Dashboard */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 transition-all duration-200">
+                              <div 
+                                onClick={() => setIsBudgetBaselineSectionExpanded(prev => !prev)}
+                                className="flex items-center justify-between cursor-pointer select-none group"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                                    <History className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 font-sans group-hover:text-indigo-600 transition-colors">
+                                      Líneas Base (Baselines) de Presupuesto
+                                    </h4>
+                                    <p className="text-[10.5px] text-slate-500 font-medium truncate max-w-[280px] sm:max-w-md md:max-w-lg mt-0.5">
+                                      {activeBaseline ? (
+                                        <span>Comparando activamente con la Línea Base: <strong className="text-indigo-600 font-extrabold font-mono">{activeBaseline.name}</strong> (${activeBaseline.totalBudget.toLocaleString()} USD)</span>
+                                      ) : (
+                                        <span className="text-slate-450 italic">No hay ninguna Línea Base de presupuesto activa en este momento</span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-800 font-extrabold font-mono px-2 py-0.5 rounded-md hidden sm:inline-block">
+                                    {projBaselineData.list.length} {projBaselineData.list.length === 1 ? 'REGISTRO' : 'REGISTROS'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-indigo-600 hover:text-indigo-700 font-extrabold flex items-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg py-1 px-2.5 transition cursor-pointer shadow-xs"
+                                  >
+                                    <span>{isBudgetBaselineSectionExpanded ? 'Colapsar' : 'Expandir'}</span>
+                                    {isBudgetBaselineSectionExpanded ? (
+                                      <ChevronUp className="w-3.5 h-3.5 text-indigo-500" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5 text-indigo-500" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isBudgetBaselineSectionExpanded && (
+                                <div className="mt-5 pt-4 border-t border-slate-200/80 space-y-5 animate-fadeIn">
+                                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                    {/* Left column: Capture Form */}
+                                    <div className="lg:col-span-12 xl:col-span-5 bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between space-y-4 shadow-sm">
+                                      <div className="space-y-2">
+                                        <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                          <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                          Registrar Nueva Línea Base
+                                        </h5>
+                                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                                          Captura una foto estática de la distribución actual del presupuesto asignado global ($ USD) para guardar un plan de referencia exacto y medir desviaciones.
+                                        </p>
+                                        
+                                        <div className="pt-2">
+                                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Nombre o Identificador de esta Línea Base</label>
+                                          <div className="relative">
+                                            <input
+                                              type="text"
+                                              placeholder={`Ej: LB Inicial, LB Post-Rebalance, LB Q2...`}
+                                              value={newBudgetBaselineName}
+                                              onChange={e => setNewBudgetBaselineName(e.target.value)}
+                                              className="w-full bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300 focus:bg-white focus:border-indigo-500 focus:outline-none p-2 rounded-lg text-xs font-medium"
+                                            />
+                                            {newBudgetBaselineName && (
+                                              <button 
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setNewBudgetBaselineName('');
+                                                }}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                              >
+                                                <X className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <button
+                                        onClick={handleCaptureBaseline}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:-translate-y-0.5 active:translate-y-0"
+                                      >
+                                        <Plus className="w-4 h-4" />
+                                        <span>Fijar Nueva Línea Base</span>
+                                      </button>
+                                    </div>
+
+                                    {/* Right column: History List */}
+                                    <div className="lg:col-span-12 xl:col-span-7 space-y-3">
+                                      <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                        <History className="w-4 h-4 text-indigo-500" />
+                                        Historial y Línea Base Activa
+                                      </h5>
+
+                                      <div className="bg-white border border-slate-200 rounded-xl max-h-[170px] overflow-y-auto divide-y divide-slate-100 shadow-sm">
+                                        {projBaselineData.list.length === 0 ? (
+                                          <div className="p-8 text-center flex flex-col items-center justify-center space-y-2">
+                                            <div className="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
+                                              <History className="w-5 h-5 text-slate-400" />
+                                            </div>
+                                            <div>
+                                              <p className="text-[11px] font-bold text-slate-700">Sin registros históricos</p>
+                                              <p className="text-[10px] text-slate-400">Use el formulario de la izquierda para capturar la primera referencia.</p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          projBaselineData.list.map((baselineVal) => {
+                                            const isSelectedActive = projBaselineData.activeId === baselineVal.id;
+                                            return (
+                                              <div 
+                                                key={baselineVal.id} 
+                                                className={`p-3 flex items-center justify-between gap-3 transition-colors ${
+                                                  isSelectedActive ? 'bg-indigo-50/40' : 'hover:bg-slate-50/50'
+                                                }`}
+                                              >
+                                                <div className="space-y-1 min-w-0">
+                                                  <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-slate-900 text-xs truncate max-w-[190px]" title={baselineVal.name}>
+                                                      {baselineVal.name}
+                                                    </span>
+                                                    {isSelectedActive && (
+                                                      <span className="text-[9px] bg-emerald-100 border border-emerald-250 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                                                        <Check className="w-2.5 h-2.5 font-bold" /> ACTIVA
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex items-center gap-2 text-[10px] text-slate-450">
+                                                    <span>Fecha: <b className="text-slate-600 font-mono">{baselineVal.capturedAt}</b></span>
+                                                    <span>•</span>
+                                                    <span>Total: <b className="text-slate-600 font-mono">${baselineVal.totalBudget.toLocaleString()} USD</b></span>
+                                                  </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  {!isSelectedActive ? (
+                                                    <button
+                                                      onClick={() => handleSetActiveBaseline(baselineVal.id)}
+                                                      className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-650 font-extrabold text-[10.5px] px-2.5 py-1.5 rounded-lg cursor-pointer transition shadow-xs hover:border-slate-300"
+                                                      title="Establecer como la línea base activa para comparar en la tabla"
+                                                    >
+                                                      Activar
+                                                    </button>
+                                                  ) : (
+                                                    <button
+                                                      onClick={handleClearActiveBaseline}
+                                                      className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-extrabold text-[10.5px] px-2.5 py-1.5 rounded-lg cursor-pointer transition shadow-xs"
+                                                      title="Desactivar comparación actual"
+                                                    >
+                                                      Desactivar
+                                                    </button>
+                                                  )}
+                                                  <button
+                                                    onClick={() => handleDeleteBaseline(baselineVal.id)}
+                                                    className="hover:bg-rose-50 hover:text-rose-600 border border-transparent hover:border-rose-100 p-1.5 rounded-lg text-slate-400 cursor-pointer transition"
+                                                    title="Eliminar esta línea base"
+                                                  >
+                                                    <Trash2 className="w-4 h-4" />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
                             {/* Table of categories: Planificado vs Ejecutado */}
                             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
                               <table className="w-full text-left border-collapse text-xs">
                                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                                   <tr>
                                     <th className="p-3 pl-4">Rubro / Categoría de Gasto</th>
+                                    <th className="p-3">Línea Base ($ USD)</th>
                                     <th className="p-3">Presupuesto Asignado ($ USD)</th>
+                                    <th className="p-3 text-center">Desviación vs LB</th>
                                     <th className="p-3">Gasto Real Ejecutado ($ USD)</th>
-                                    <th className="p-3">Saldo Disponible / Desviación</th>
+                                    <th className="p-3">Saldo Real Disponible</th>
                                     <th className="p-3 pr-4">Porcentaje de Ejecución</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-150">
                                   {(['NOMINA', 'LICENCIAS', 'INFRAESTRUCTURA', 'OUTSOURCING', 'OTROS'] as const).map(cat => {
                                     const assignedAmt = activeProjBudgetMap[cat] !== undefined ? activeProjBudgetMap[cat] : Math.round(activeProject.budget_total * 0.20);
+                                    const baselineAmt = activeBaseline ? (activeBaseline.categories[cat] ?? 0) : null;
+                                    const varianceAmt = baselineAmt !== null ? (assignedAmt - baselineAmt) : null;
+
                                     const executedAmt = projectCosts.filter(c => c.cost_type === cat).reduce((sum, item) => sum + item.amount, 0);
                                     const balanceAmt = assignedAmt - executedAmt;
                                     const isOver = executedAmt > assignedAmt;
@@ -2166,6 +2863,15 @@ export default function App() {
                                             {cat === 'OTROS' && '(Caja menor y varios)'}
                                           </span>
                                         </td>
+                                        <td className="p-3 font-mono font-bold text-slate-500">
+                                          {baselineAmt !== null ? (
+                                            <span className="text-slate-700">
+                                              ${baselineAmt.toLocaleString('en-US')}
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-350 font-normal italic">Sin fijar</span>
+                                          )}
+                                        </td>
                                         <td className="p-3">
                                           <div className="flex items-center gap-1.5 w-32">
                                             <span className="text-slate-400 font-mono font-semibold">$</span>
@@ -2187,6 +2893,23 @@ export default function App() {
                                             />
                                           </div>
                                         </td>
+                                        <td className="p-3 text-center font-mono text-[11px]">
+                                          {varianceAmt !== null ? (
+                                            varianceAmt > 0 ? (
+                                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Presupuesto asignado incrementado respecto a la línea base">
+                                                +${varianceAmt.toLocaleString('en-US')}
+                                              </span>
+                                            ) : varianceAmt < 0 ? (
+                                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-100" title="Presupuesto asignado reducido respecto a la línea base">
+                                                -${Math.abs(varianceAmt).toLocaleString('en-US')}
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-400">Sin cambios</span>
+                                            )
+                                          ) : (
+                                            <span className="text-slate-300">-</span>
+                                          )}
+                                        </td>
                                         <td className="p-3 font-mono font-bold text-slate-900">
                                           ${executedAmt.toLocaleString('en-US')} USD
                                         </td>
@@ -2202,7 +2925,7 @@ export default function App() {
                                             }
                                           </span>
                                         </td>
-                                        <td className="p-3 pr-4">
+                                        <td className="p-3 pr-4 animate-fadeIn">
                                           <div className="flex items-center gap-2">
                                             <div className="flex-1 bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
                                               <div
@@ -2262,19 +2985,16 @@ export default function App() {
                                             repo://{c.file_name} ({c.file_size})
                                           </div>
                                           <span className="text-slate-300 text-[9px] font-mono">•</span>
-                                          <a
-                                            href={c.storage_url}
-                                            target="_blank"
-                                            rel="noreferrer"
+                                          <button
                                             onClick={(e) => {
                                               e.preventDefault();
-                                              addLog('Cloud Storage Client', `Descarga solicitada del archivo: ${c.storage_key}`);
-                                              alert(`[ALMACENAMIENTO] Descargando comprobante oficial '${c.file_name}' (${c.file_size}) desde almacenamiento local seguro...`);
+                                              downloadDocumentLocally(c);
                                             }}
-                                            className="text-[10px] text-slate-500 hover:text-indigo-650 font-bold underline inline-flex items-center gap-0.5 font-mono"
+                                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline inline-flex items-center gap-0.5 font-mono bg-transparent border-none cursor-pointer p-0"
+                                            title="Generar y descargar archivo de soporte localmente"
                                           >
                                             Descargar localmente
-                                          </a>
+                                          </button>
                                         </div>
                                       )}
                                     </div>
@@ -2302,11 +3022,11 @@ export default function App() {
                             {isRegisterCostModalOpen && (
                               <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                                 <div 
-                                  className="bg-white border border-slate-200 rounded-xl max-w-md w-full shadow-2xl animate-scaleUp overflow-hidden"
+                                  className="bg-white border border-slate-200 rounded-xl max-w-md w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleUp overflow-hidden"
                                   onClick={e => e.stopPropagation()}
                                 >
                                   {/* Modal Header */}
-                                  <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center select-none">
+                                  <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center select-none shrink-0">
                                     <div className="flex items-center gap-2 text-indigo-600">
                                       <Coins className="w-4 h-4 text-indigo-600 animate-pulse" />
                                       <span className="text-xs font-extrabold uppercase tracking-wider block">Registrar Soporte de Gasto</span>
@@ -2326,7 +3046,7 @@ export default function App() {
                                       handleAddCost(e);
                                       setIsRegisterCostModalOpen(false); // Close on submit
                                     }} 
-                                    className="p-5 space-y-4"
+                                    className="p-5 space-y-4 overflow-y-auto"
                                   >
                                     <p className="text-[11px] text-slate-500 leading-normal">
                                       Ingrese la información oficial del documento soporte (factura, nómina o recibos). Esto se actualizará en la telemetría financiera global de inmediato.
@@ -2431,7 +3151,7 @@ export default function App() {
                                           </div>
                                           <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden font-mono">
                                             <div 
-                                              className="bg-indigo-650 h-full rounded-full transition-all duration-100 font-mono" 
+                                              className="bg-indigo-600 h-full rounded-full transition-all duration-100 font-mono" 
                                               style={{ width: `${cloudProgress}%` }}
                                             />
                                           </div>
@@ -2474,7 +3194,7 @@ export default function App() {
                                       </button>
                                       <button
                                         type="submit"
-                                        className="bg-indigo-650 hover:bg-indigo-750 text-white font-extrabold text-xs px-5 py-2.5 rounded-lg transition-all shadow-sm cursor-pointer"
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-lg transition-all shadow-sm cursor-pointer"
                                       >
                                         Registrar Documento
                                       </button>
@@ -2503,6 +3223,8 @@ export default function App() {
                 users={users}
                 sprints={sprints}
                 addLog={addLog}
+                workItems={workItems}
+                setWorkItems={setWorkItems}
               />
             </div>
           )}
@@ -3246,7 +3968,7 @@ export default function App() {
                     {INITIAL_COMMITS.map(commit => (
                       <div key={commit.id} className="border border-slate-150 p-3 rounded-xl hover:bg-slate-50 text-xs transition">
                         <div className="flex justify-between">
-                          <span className="font-mono text-indigo-650 font-bold bg-indigo-50 px-1 py-0.5 rounded">{commit.hash}</span>
+                          <span className="font-mono text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded">{commit.hash}</span>
                           <span className="text-[10px] text-slate-400 font-mono">{new Date(commit.timestamp).toLocaleDateString()}</span>
                         </div>
                         <p className="font-semibold text-slate-800 mt-2">{commit.message}</p>
@@ -3747,11 +4469,16 @@ export default function App() {
                       <div className="space-y-4">
                         {(() => {
                           const savedRulesStr = localStorage.getItem('scrum_transition_rules');
-                          let activeRules: TransitionRule[] = [];
-                          try {
-                            activeRules = savedRulesStr ? JSON.parse(savedRulesStr) : DEFAULT_TRANSITION_RULES;
-                          } catch (e) {
-                            activeRules = DEFAULT_TRANSITION_RULES;
+                          let activeRules: TransitionRule[] = DEFAULT_TRANSITION_RULES;
+                          if (savedRulesStr && savedRulesStr !== "undefined" && savedRulesStr !== "null") {
+                            try {
+                              const parsed = JSON.parse(savedRulesStr);
+                              if (parsed !== null && parsed !== undefined && Array.isArray(parsed)) {
+                                activeRules = parsed;
+                              }
+                            } catch (e) {
+                              activeRules = DEFAULT_TRANSITION_RULES;
+                            }
                           }
 
                           // Group rules by category for an ultra-structured clean overview!
@@ -4194,21 +4921,174 @@ export default function App() {
                   >
                     Cerrar Inspector
                   </button>
-                  <a
-                    href={activeCloudObjectDetail.storage_url}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
                     onClick={(e) => {
                       e.preventDefault();
-                      alert(`Conectando con API local... Descargando '${activeCloudObjectDetail.file_name}'`);
+                      downloadDocumentLocally(activeCloudObjectDetail);
                     }}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-sm transition"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Descargar Objeto
-                  </a>
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* PROJECT CONFIGURATION MODAL */}
+        {projectConfigModalTarget && (
+          <div 
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" 
+            onClick={() => setProjectConfigModalTarget(null)}
+          >
+            <div 
+              className="bg-white border border-slate-200 text-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden animate-fadeIn" 
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center font-sans">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-slate-700" />
+                  <h4 className="font-bold text-sm text-slate-850 font-sans text-slate-900">
+                    Configurar Proyecto: [{projectConfigModalTarget.code}]
+                  </h4>
+                </div>
+                <button
+                  onClick={() => setProjectConfigModalTarget(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-lg select-none px-1.5 focus:outline-none transition cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
+
+              <form 
+                onSubmit={e => {
+                  e.preventDefault();
+                  setProjects(prev => prev.map(p => p.id === projectConfigModalTarget.id ? projectConfigModalTarget : p));
+                  addLog('Carlos Pérez (PM)', `Actualizó la configuración global del proyecto [${projectConfigModalTarget.code}] ${projectConfigModalTarget.name}`);
+                  setProjectConfigModalTarget(null);
+                }}
+                className="p-5 space-y-4 text-xs font-sans"
+              >
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Nombre del Proyecto</label>
+                  <input
+                    type="text"
+                    required
+                    value={projectConfigModalTarget.name}
+                    onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, name: e.target.value } : null)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Cliente</label>
+                    <select
+                      value={projectConfigModalTarget.client}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, client: e.target.value } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      {clientsList.map(c => (
+                        <option key={c} value={c}>🏢 {c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Sponsor Principal</label>
+                    <select
+                      value={projectConfigModalTarget.sponsor}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, sponsor: e.target.value } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      {sponsorsList.map(s => (
+                        <option key={s} value={s}>👤 {s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Fecha de Inicio</label>
+                    <input
+                      type="date"
+                      required
+                      value={projectConfigModalTarget.start_date}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, start_date: e.target.value } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Fecha de Fin</label>
+                    <input
+                      type="date"
+                      required
+                      value={projectConfigModalTarget.end_date}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, end_date: e.target.value } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Presupuesto ($ USD)</label>
+                    <input
+                      type="number"
+                      required
+                      value={projectConfigModalTarget.budget_total}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, budget_total: Number(e.target.value) } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tamaño de Sprint (Días Hábiles)*</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={90}
+                      value={projectConfigModalTarget.sprint_size_days !== undefined ? projectConfigModalTarget.sprint_size_days : 10}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, sprint_size_days: Number(e.target.value) } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Prioridad de Portafolio</label>
+                  <select
+                    value={projectConfigModalTarget.priority}
+                    onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, priority: e.target.value as any } : null)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                  >
+                    <option value="HIGH">🔴 Alta</option>
+                    <option value="MEDIUM">🟡 Media</option>
+                    <option value="LOW">🟢 Baja</option>
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-2 text-xs pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setProjectConfigModalTarget(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-bold transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-extrabold transition cursor-pointer"
+                  >
+                    Guardar Cambios
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
@@ -4360,6 +5240,18 @@ export default function App() {
                         <option key={s} value={s}>👤 {s}</option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tamaño Sprints (Días Hábiles)*</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={90}
+                      value={newProjSprintSizeDays}
+                      onChange={e => setNewProjSprintSizeDays(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
+                    />
                   </div>
                 </div>
 

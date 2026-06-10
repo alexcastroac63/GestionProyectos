@@ -7,7 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Terminal, Cpu, Play, CheckCircle2, AlertCircle, RefreshCw, Layers,
   Server, Database, Shield, Download, FileText, Check, Trash2, Folder, 
-  ExternalLink, Info, Code, Eye, HelpCircle, HardDrive, Lock
+  ExternalLink, Info, Code, Eye, HelpCircle, HardDrive, Lock,
+  Activity, Search, Plus, X, Users, Settings, StopCircle
 } from 'lucide-react';
 
 interface PipelineLogStep {
@@ -59,10 +60,49 @@ const INITIAL_STORAGE_MOCKS: StorageObject[] = [
   }
 ];
 
+export interface PortainerContainer {
+  id: string;
+  name: string;
+  image: string;
+  status: 'running' | 'stopped' | 'paused';
+  cpu: number;
+  memory: string;
+  ip: string;
+  ports: string;
+  role: string;
+  created: string;
+}
+
+const INITIAL_PORTAINER_CONTAINERS: PortainerContainer[] = [
+  { id: 'c-postgres', name: 'pmo-postgres-1', image: 'postgres:16.3-alpine', status: 'running', cpu: 1.2, memory: '48.2 MB / 8.0 GB', ip: '172.24.0.2', ports: '5432:5432/tcp', role: 'Base de Datos Relacional PostgreSQL del Proyecto', created: '2026-06-01 08:31:12' },
+  { id: 'c-gateway', name: 'pmo-nginx-gateway', image: 'nginx:1.26-alpine', status: 'running', cpu: 0.5, memory: '12.4 MB / 8.0 GB', ip: '172.24.0.3', ports: '4000:4000/tcp', role: 'Proxy Reverso & API Gateway Router de Microservicios', created: '2026-06-01 08:31:15' },
+  { id: 'c-storage', name: 'pmo-storage-simulator', image: 'minio/minio:RELEASE', status: 'running', cpu: 0.8, memory: '64.1 MB / 8.0 GB', ip: '172.24.0.4', ports: '9000:9000/tcp', role: 'Servidor S3 Compatible para Soportes de Costos', created: '2026-06-01 08:31:18' },
+  { id: 'c-provisioner', name: 'pmo-storage-provisioner', image: 'minio/mc:latest', status: 'stopped', cpu: 0, memory: '0 MB / 8.0 GB', ip: '172.24.0.5', ports: '-', role: 'Script Auto-Productor de Bucket Soportes', created: '2026-06-01 08:31:21' },
+  { id: 'c-teams', name: 'pmo-api-teams', image: 'node:20.14-alpine', status: 'running', cpu: 2.1, memory: '185.0 MB / 8.0 GB', ip: '172.24.0.6', ports: '4106:4106/tcp', role: 'Microservicio de Autenticación & Estructura de Equipos', created: '2026-06-01 08:31:24' },
+  { id: 'c-dashboard', name: 'pmo-api-dashboard', image: 'node:20.14-alpine', status: 'running', cpu: 1.7, memory: '210.5 MB / 8.0 GB', ip: '172.24.0.7', ports: '4101:4101/tcp', role: 'Microservicio de Control Financiero & OKRs', created: '2026-06-01 08:31:26' },
+  { id: 'c-projects', name: 'pmo-api-projects', image: 'node:20.14-alpine', status: 'running', cpu: 1.1, memory: '192.4 MB / 8.0 GB', ip: '172.24.0.8', ports: '4102:4102/tcp', role: 'Microservicio de Planificación de Proyectos & Gantt', created: '2026-06-01 08:31:28' },
+  { id: 'c-scrum', name: 'pmo-api-scrum', image: 'node:20.14-alpine', status: 'running', cpu: 1.4, memory: '178.9 MB / 8.0 GB', ip: '172.24.0.9', ports: '4103:4103/tcp', role: 'Microservicio De Tableros Scrum & Sprints', created: '2026-06-01 08:31:30' },
+  { id: 'c-qa', name: 'pmo-api-qa', image: 'node:20.14-alpine', status: 'running', cpu: 0.9, memory: '115.6 MB / 8.0 GB', ip: '172.24.0.10', ports: '4104:4104/tcp', role: 'Microservicio De Auditoría, QA & Traza De Certificaciones', created: '2026-06-01 08:31:32' },
+  { id: 'c-ui', name: 'pmo-web-ui', image: 'node:20-alpine', status: 'running', cpu: 0.3, memory: '52.7 MB / 8.0 GB', ip: '172.24.0.11', ports: '3000:3000/tcp', role: 'Contenedor UI Principal Web en Puerto Externo 3000', created: '2026-06-01 08:31:35' }
+];
+
 export default function DevOpsPipeline() {
   const [running, setRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
   const [activeTab, setActiveTab] = useState<'cicd' | 'docker' | 'storage'>('cicd');
+
+  // Portainer IO States
+  const [portainerNavTab, setPortainerNavTab] = useState<'dashboard' | 'containers' | 'images' | 'volumes' | 'networks'>('dashboard');
+  const [portainerContainers, setPortainerContainers] = useState<PortainerContainer[]>(INITIAL_PORTAINER_CONTAINERS);
+  const [selectedContainerLogs, setSelectedContainerLogs] = useState<PortainerContainer | null>(null);
+  const [portainerLogs, setPortainerLogs] = useState<string[]>([]);
+  const [portainerSearchQuery, setPortainerSearchQuery] = useState('');
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [deployName, setDeployName] = useState('');
+  const [deployImage, setDeployImage] = useState('');
+  const [deployPort, setDeployPort] = useState('');
+  const [deployRole, setDeployRole] = useState('');
+  const [portainerAlert, setPortainerAlert] = useState<string | null>(null);
   
   // Storage Interactive Console States
   const [storageObjects, setStorageObjects] = useState<StorageObject[]>([]);
@@ -175,13 +215,245 @@ export default function DevOpsPipeline() {
     { name: 'ui', port: 3000, role: 'Main React Web UI Container', status: 'ACTIVE' }
   ];
 
+  // Helper to trigger Portainer alerts
+  const triggerPortainerAlert = (msg: string) => {
+    setPortainerAlert(msg);
+    setTimeout(() => {
+      setPortainerAlert(prev => prev === msg ? null : prev);
+    }, 3500);
+  };
+
+  // Generate simulated historical logs on command
+  const getContainerHistoryLogs = (c: PortainerContainer): string[] => {
+    const timestamp = () => new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const idHex = c.id.substring(c.id.length - 6);
+    
+    if (c.status !== 'running') {
+      return [
+        `[${timestamp()}] [system] Container ${c.name} is currently ${c.status.toUpperCase()}`,
+        `[${timestamp()}] [system] Process terminated with exit code 0`,
+        `[${timestamp()}] [system] Use the Portainer dashboard to start/restart this resource.`
+      ];
+    }
+
+    if (c.name.includes('postgres')) {
+      return [
+        `[${timestamp()}] [postgres] database system is ready to accept connections on port 5432`,
+        `[${timestamp()}] [postgres] server started / socket is listening on [::]:5432`,
+        `[${timestamp()}] [postgres] database "dev_db" has been initialized with schema tables`,
+        `[${timestamp()}] [postgres] client connected: index 1 - IP: 172.24.0.6 (pmo-api-teams)`,
+        `[${timestamp()}] [postgres] LOG:  checkpoint starting: force database commit`,
+        `[${timestamp()}] [postgres] LOG:  checkpoint complete: wrote 42 buffers (0.1%); backup enabled`,
+        `[${timestamp()}] [postgres] client connected: index 2 - IP: 172.24.0.7 (pmo-api-dashboard)`,
+        `[${timestamp()}] [postgres] LOG:  vacuum process running on public.project_costs... completed (0.01s)`
+      ];
+    } else if (c.name.includes('gateway')) {
+      return [
+        `[${timestamp()}] [nginx] starting nginx/1.26.2 gateway agent...`,
+        `[${timestamp()}] [nginx] loading routing maps from /etc/nginx/conf.d/gateway.conf`,
+        `[${timestamp()}] [nginx] 127.0.0.1 - - [PORT 3000] "GET /api/health HTTP/1.1" 200 48 "-" "cURL/7.81.0"`,
+        `[${timestamp()}] [nginx] upstream routing: mapping "/api/teams" -> "http://172.24.0.6:4106"`,
+        `[${timestamp()}] [nginx] upstream routing: mapping "/api/dashboard" -> "http://172.24.0.7:4101"`,
+        `[${timestamp()}] [nginx] 172.24.0.1 - - "POST /api/costs/upload HTTP/1.1" 201 104 "http://localhost:3000/"`,
+        `[${timestamp()}] [nginx] [warn] connection rate-limiting bypass enabled for debug subnet 172.24.0.0/16`
+      ];
+    } else if (c.name.includes('storage')) {
+      return [
+        `[${timestamp()}] [minio] MinIO Object Storage Simulator running on cluster`,
+        `[${timestamp()}] [minio] API Endpoint: http://172.24.0.4:9000 (Local secure storage S3 client bound)`,
+        `[${timestamp()}] [minio] Console UI available locally at: http://localhost:9001`,
+        `[${timestamp()}] [minio] PUT /soporte-pmo-storage/uploads/roadmap_pmo_v2.pdf [Status: 200 OK] (Size: 4.8MB)`,
+        `[${timestamp()}] [minio] GET /soporte-pmo-storage/uploads/roadmap_pmo_v2.pdf [Status: 200 OK] - fetched`,
+        `[${timestamp()}] [minio] Authenticated request from accessKeyId: mock_storage_key_id (signature v4)`
+      ];
+    } else if (c.name.startsWith('pmo-api-')) {
+      const svcName = c.name.replace('pmo-api-', '').toUpperCase();
+      return [
+        `[${timestamp()}] [${svcName}] NestJS microservice core framework v10.3 initialized`,
+        `[${timestamp()}] [${svcName}] connected to PostgreSQL cluster: "postgres://pmo-postgres-1:5432/dev_db"`,
+        `[${timestamp()}] [${svcName}] listening on internal port ${c.ports.split(':')[0]} [HTTP Engine active]`,
+        `[${timestamp()}] [${svcName}] telemetry reporter mapped to Prometheus server on port 9100/metrics`,
+        `[${timestamp()}] [${svcName}] HEARTBEAT: CPU: ${c.cpu}% | MEM: ${c.memory} | connection pool: 8 active`
+      ];
+    } else if (c.name.includes('web-ui')) {
+      return [
+        `[${timestamp()}] [vite] dev server running on host 0.0.0.0, binding external port 3000`,
+        `[${timestamp()}] [vite] hot module replacement (HMR) turned OFF by control plane orchestration`,
+        `[${timestamp()}] [vite] client asset pipeline compiled in 4.1s. All modules loaded successfully.`,
+        `[${timestamp()}] [vite] GET /main.tsx - 200 OK - client fetched main SPA code`,
+        `[${timestamp()}] [vite] GET /src/components/DevOpsPipeline.tsx - 200 OK (hot code updated)`
+      ];
+    } else {
+      return [
+        `[${timestamp()}] [custom-container] Container ${c.name} started successfully`,
+        `[${timestamp()}] [custom-container] executing command specified by entrypoint image ${c.image}`,
+        `[${timestamp()}] [custom-container] running daemon monitoring health checks...`,
+        `[${timestamp()}] [custom-container] Log thread listening on tty stdio.`
+      ];
+    }
+  };
+
+  // Stop a container simulation
+  const handleStopPortainerContainer = (id: string) => {
+    setPortainerContainers(prev => prev.map(c => {
+      if (c.id === id) {
+        triggerPortainerAlert(`Contenedor '${c.name}' detenido con éxito (STOP SIGTERM)`);
+        showToast(`Portainer.io: '${c.name}' detenido`);
+        return { ...c, status: 'stopped', cpu: 0 };
+      }
+      return c;
+    }));
+  };
+
+  // Start a container simulation
+  const handleStartPortainerContainer = (id: string) => {
+    setPortainerContainers(prev => prev.map(c => {
+      if (c.id === id) {
+        triggerPortainerAlert(`Contenedor '${c.name}' iniciado con éxito`);
+        showToast(`Portainer.io: '${c.name}' iniciado`);
+        return { ...c, status: 'running', cpu: 0.5 };
+      }
+      return c;
+    }));
+  };
+
+  // Restart a container simulation
+  const handleRestartPortainerContainer = (id: string) => {
+    const randomCpu = Number((Math.random() * 2 + 0.5).toFixed(1));
+    setPortainerContainers(prev => prev.map(c => {
+      if (c.id === id) {
+        triggerPortainerAlert(`Reiniciando contenedor '${c.name}' (RESTART SIGKILL/SIGSTART)`);
+        showToast(`Portainer.io: Reiniciando '${c.name}'`);
+        return { ...c, status: 'runner' as any, cpu: 0 }; // Temporary intermediate state
+      }
+      return c;
+    }));
+
+    setTimeout(() => {
+      setPortainerContainers(prev => prev.map(c => {
+        if (c.id === id || (c.id === id && c.status === 'runner' as any)) {
+          return { ...c, status: 'running', cpu: randomCpu };
+        }
+        return c;
+      }));
+    }, 1200);
+  };
+
+  // Pause/Resume container simulation
+  const handlePausePortainerContainer = (id: string) => {
+    setPortainerContainers(prev => prev.map(c => {
+      if (c.id === id) {
+        if (c.status === 'paused') {
+          triggerPortainerAlert(`Contenedor '${c.name}' reanudado`);
+          return { ...c, status: 'running', cpu: 0.3 };
+        } else {
+          triggerPortainerAlert(`Contenedor '${c.name}' pausado`);
+          return { ...c, status: 'paused', cpu: 0 };
+        }
+      }
+      return c;
+    }));
+  };
+
+  // Deploy custom container in Portainer simulation
+  const handleDeployPortainerContainer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deployName || !deployImage) return;
+
+    let cleanName = deployName.trim().replace(/\s+/g, '-').toLowerCase();
+    if (!cleanName.startsWith('pmo-')) cleanName = 'pmo-' + cleanName;
+
+    const newSvc: PortainerContainer = {
+      id: `c-custom-${Date.now()}`,
+      name: cleanName,
+      image: deployImage.trim().toLowerCase(),
+      status: 'running',
+      cpu: 0.8,
+      memory: '22.0 MB / 8.0 GB',
+      ip: `172.24.0.${Math.floor(Math.random() * 80 + 20)}`,
+      ports: deployPort ? `${deployPort}:${deployPort}/tcp` : '-',
+      role: deployRole.trim() || 'Servicio Personalizado de Portainer IO',
+      created: new Date().toISOString().replace('T', ' ').substring(0, 19)
+    };
+
+    setPortainerContainers(prev => [...prev, newSvc]);
+    setShowDeployModal(false);
+    setDeployName('');
+    setDeployImage('');
+    setDeployPort('');
+    setDeployRole('');
+    triggerPortainerAlert(`Se desplegó el contenedor '${cleanName}' en el Docker Node`);
+    showToast(`✓ Contenedor Portainer '${cleanName}' creado con éxito`);
+  };
+
+  // Inspect logs
+  const handleInspectContainerLogs = (c: PortainerContainer) => {
+    setSelectedContainerLogs(c);
+    setPortainerLogs(getContainerHistoryLogs(c));
+  };
+
+  // Dynamic Telemetry updates for Docker Portainer running containers
+  useEffect(() => {
+    const telemetryInterval = setInterval(() => {
+      setPortainerContainers(prev => prev.map(c => {
+        if (c.status !== 'running') return c;
+        // Minor dynamic variation in CPU Usage (+ or - 0.2)
+        const diff = (Math.random() - 0.5) * 0.4;
+        const nextCpu = Math.max(0.1, Number((c.cpu + diff).toFixed(1)));
+        
+        // Minor dynamic memory simulation (e.g. modify MB value by +/- 0.5 MB)
+        const memParts = c.memory.split(' ');
+        if (memParts.length > 0) {
+          const numericMem = parseFloat(memParts[0]);
+          const nextNumericMem = Math.max(5, Number((numericMem + (Math.random() - 0.5) * 0.8).toFixed(1)));
+          const nextMemory = `${nextNumericMem} MB / 8.0 GB`;
+          return { ...c, cpu: nextCpu, memory: nextMemory };
+        }
+        
+        return { ...c, cpu: nextCpu };
+      }));
+    }, 3000);
+
+    return () => clearInterval(telemetryInterval);
+  }, []);
+
+  // Log append loop when checking logs
+  useEffect(() => {
+    if (!selectedContainerLogs || selectedContainerLogs.status !== 'running') return;
+
+    const logAppendInterval = setInterval(() => {
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(11, 19);
+      let newLine = '';
+      if (selectedContainerLogs.name.includes('postgres')) {
+        newLine = `[${timestamp}] [postgres] client disconnected or routine transaction finished. Vacuum status: idle.`;
+      } else if (selectedContainerLogs.name.includes('gateway')) {
+        newLine = `[${timestamp}] [nginx] 127.0.0.1 - "GET /api/health HTTP/1.1" 200 OK (Heartbeat tracer request)`;
+      } else if (selectedContainerLogs.name.includes('storage')) {
+        newLine = `[${timestamp}] [minio] Simulating incoming stats validation request on soporte-pmo-storage bucket.`;
+      } else {
+        newLine = `[${timestamp}] [system] telemetry probe reported container metrics [CPU: ${selectedContainerLogs.cpu}% | MEM: ${selectedContainerLogs.memory}]`;
+      }
+
+      setPortainerLogs(prev => [...prev, newLine]);
+    }, 2000);
+
+    return () => clearInterval(logAppendInterval);
+  }, [selectedContainerLogs]);
+
   // Load objects uploaded inside support documents
   const loadStorageObjects = () => {
     // 1. Costs with files
     const local = localStorage.getItem('gcp_costs');
-    const costFiles = local ? JSON.parse(local) : [];
+    let costFiles: any[] = [];
+    if (local && local !== "undefined") {
+      try {
+        costFiles = JSON.parse(local);
+      } catch (e) {
+        console.error("Failed to parse gcp_costs inside loadStorageObjects", e);
+      }
+    }
     const attached: StorageObject[] = costFiles
-      .filter((c: any) => c.storage_key)
+      .filter((c: any) => c && c.storage_key)
       .map((c: any) => {
         const fileExt = c.file_name?.split('.').pop() || 'pdf';
         let mime = 'application/pdf';
@@ -202,7 +474,14 @@ export default function DevOpsPipeline() {
 
     // 2. Custom files uploaded here directly
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
-    const custom: StorageObject[] = customLocal ? JSON.parse(customLocal) : [];
+    let custom: StorageObject[] = [];
+    if (customLocal && customLocal !== "undefined") {
+      try {
+        custom = JSON.parse(customLocal);
+      } catch (e) {
+        console.error("Failed to parse custom local storage files", e);
+      }
+    }
 
     setStorageObjects([...INITIAL_STORAGE_MOCKS, ...attached, ...custom]);
   };
@@ -277,7 +556,14 @@ export default function DevOpsPipeline() {
     };
 
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
-    const custom = customLocal ? JSON.parse(customLocal) : [];
+    let custom: StorageObject[] = [];
+    if (customLocal && customLocal !== "undefined") {
+      try {
+        custom = JSON.parse(customLocal);
+      } catch (e) {
+        console.error("Failed to parse custom local files during upload", e);
+      }
+    }
     const updated = [...custom, newObj];
     localStorage.setItem('gcp_storage_custom_files', JSON.stringify(updated));
 
@@ -289,7 +575,14 @@ export default function DevOpsPipeline() {
 
   const handleDeleteStorageObject = (id: string, name: string) => {
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
-    let custom = customLocal ? JSON.parse(customLocal) : [];
+    let custom: StorageObject[] = [];
+    if (customLocal && customLocal !== "undefined") {
+      try {
+        custom = JSON.parse(customLocal);
+      } catch (e) {
+        console.error("Failed to parse custom files during deletion", e);
+      }
+    }
     
     if (custom.some((o: any) => o.id === id)) {
       setDeleteConfirmState({
@@ -485,54 +778,814 @@ export default function DevOpsPipeline() {
       )}
 
       {activeTab === 'docker' && (
-        <div className="p-6 animate-fadeIn">
-          <div className="mb-6 bg-slate-50 border border-slate-200/70 rounded-xl p-4 flex gap-3.5 items-start">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-semibold text-slate-800 text-sm">Arquitectura Multi-Servicio de Contenedores Docker</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                La solución desacopla la bases de datos relacionales, el gateway reverso Nginx, los micro-servicios internos de negocio y el servicio de almacenamiento compatible de S3 (MinIO). Todos los sub-servicios están orquestados via <code className="font-mono bg-slate-200 text-slate-800 px-1 rounded font-bold">docker-compose.yml</code> de forma nativa.
-              </p>
+        <div className="bg-slate-900 text-slate-100 flex flex-col font-sans animate-fadeIn min-h-[600px] rounded-b-xl border-t border-slate-800">
+          {/* Portainer Blue/Cyan top banner */}
+          <div className="px-5 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-teal-400 font-extrabold text-sm tracking-widest uppercase font-mono">PORTAINER</span>
+                <span className="text-indigo-400 font-medium text-xs bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-900/40">Community v2.19.4</span>
+              </div>
+              <span className="text-slate-600 font-mono text-xs">|</span>
+              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
+                <span>Entorno activo: <strong className="text-slate-200">local (Socket /var/run/docker.sock)</strong></span>
+              </div>
             </div>
+
+            <button 
+              onClick={() => {
+                setPortainerContainers(INITIAL_PORTAINER_CONTAINERS);
+                triggerPortainerAlert("Entorno recreado: Lista restaurada con contenedores oficiales de fábrica");
+              }}
+              title="Restaurar estado inicial de contenedores"
+              className="px-2.5 py-1 bg-slate-850 hover:bg-slate-800 text-slate-350 text-[11px] rounded border border-slate-750 font-medium transition cursor-pointer flex items-center gap-1 font-mono"
+            >
+              <RefreshCw className="w-3 h-3 text-teal-400" />
+              Reset Stack
+            </button>
           </div>
 
-          <div className="border border-slate-200 rounded-xl overflow-hidden mt-6">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="p-3.5">Nombre Contenedor</th>
-                  <th className="p-3.5">Puerto Interno</th>
-                  <th className="p-3.5">Función de Orquestación</th>
-                  <th className="p-3.5 text-right font-bold">Estado Docker Engine</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {dockerServices.map((srv, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/50 transition">
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-2">
-                        <Terminal className="w-4 h-4 text-indigo-500 font-mono" />
-                        <span className="font-mono font-bold text-slate-800">{srv.name}</span>
+          {/* Portainer Alert Notification Banner */}
+          {portainerAlert && (
+            <div className="bg-teal-950 border-b border-teal-800 text-teal-250 text-xs px-5 py-2 flex items-center gap-2 font-mono text-teal-300">
+              <span className="bg-teal-900 text-teal-300 font-bold px-1.5 py-0.2 rounded text-[10px]">SUCCESS</span>
+              <span>{portainerAlert}</span>
+            </div>
+          )}
+
+          {/* Core Portainer Inner Side+Main layout */}
+          <div className="grid grid-cols-1 md:grid-cols-12 min-h-[500px]">
+            {/* Sidebar Navigation */}
+            <div className="md:col-span-3 bg-slate-950/75 border-r border-slate-850 p-4 space-y-5 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-2 font-sans pl-2">NAVEGACIÓN</span>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setPortainerNavTab('dashboard')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'dashboard' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                    Dashboards (Cluster)
+                  </button>
+                  <button
+                    onClick={() => setPortainerNavTab('containers')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'containers' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-teal-400" />
+                    Contenedores ({portainerContainers.length})
+                  </button>
+                  <button
+                    onClick={() => setPortainerNavTab('images')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'images' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Cpu className="w-3.5 h-3.5 text-amber-400" />
+                    Imágenes (14)
+                  </button>
+                  <button
+                    onClick={() => setPortainerNavTab('networks')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'networks' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Server className="w-3.5 h-3.5 text-violet-400" />
+                    Redes Virtuales (3)
+                  </button>
+                  <button
+                    onClick={() => setPortainerNavTab('volumes')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'volumes' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                    Volúmenes Persistidos (5)
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-850 pt-4 pl-2 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-sans">CONTROL DE ACCESO</span>
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Users className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Usuarios: Admin (pmo-sys)</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Settings className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Configuración Engine</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 p-3 rounded-lg space-y-1.5 font-mono text-[10px] text-slate-500 text-left">
+                <div className="text-slate-400 font-bold">DOCKER ENGINE VER:</div>
+                <div>v26.0.2-ce (API 1.45)</div>
+                <div className="text-slate-400 font-bold mt-1">S.O. ANFITRIÓN:</div>
+                <div>Alpine Linux v3.19</div>
+                <div className="text-slate-400 font-bold mt-1">DOCKER SOCKET:</div>
+                <div className="text-indigo-400">unix:///docker.sock</div>
+              </div>
+            </div>
+
+            {/* Main Portainer View Content Area */}
+            <div className="md:col-span-9 p-6 space-y-6 overflow-y-auto">
+              
+              {/* VIEW: DASHBOARD PANEL */}
+              {portainerNavTab === 'dashboard' && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-teal-400" />
+                      Panel General de Recursos Docker (Dashboard)
+                    </h4>
+                    <p className="text-xs text-slate-450 mt-1">
+                      Vista consolidada de los objetos de infraestructura orquestados en el stack de desarrollo local.
+                    </p>
+                  </div>
+
+                  {/* Summary grid bento */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    
+                    <div 
+                      onClick={() => setPortainerNavTab('containers')}
+                      className="bg-slate-950/40 border border-slate-800 hover:border-teal-500/50 p-4 rounded-xl flex items-center justify-between hover:bg-slate-950/90 transition cursor-pointer group"
+                    >
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">CONTENEDORES</span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-slate-100">{portainerContainers.length}</span>
+                          <span className="text-[10px] text-emerald-400 font-bold">
+                            ({portainerContainers.filter(c => c.status === 'running').length} en línea)
+                          </span>
+                        </div>
                       </div>
-                    </td>
-                    <td className="p-3.5 font-mono text-indigo-700 font-bold">{srv.port === 0 ? '-' : srv.port}</td>
-                    <td className="p-3.5 text-slate-500">{srv.role}</td>
-                    <td className="p-3.5 text-right">
-                      {srv.status === 'COMPLETED' ? (
-                        <span className="text-[10px] inline-flex items-center gap-1.5 bg-blue-50 text-blue-750 px-2 py-0.5 rounded-full font-bold uppercase">
-                          COMPLETED
-                        </span>
-                      ) : (
-                        <span className="text-[10px] inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          RUNNING
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div className="p-3 bg-teal-950/50 text-teal-400 rounded-lg group-hover:bg-teal-900/50 transition">
+                        <Terminal className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => setPortainerNavTab('images')}
+                      className="bg-slate-950/40 border border-slate-800 hover:border-amber-500/50 p-4 rounded-xl flex items-center justify-between hover:bg-slate-950/90 transition cursor-pointer group"
+                    >
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">IMÁGENES REGISTRADAS</span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-slate-100">14</span>
+                          <span className="text-[10px] text-slate-400">Total: 4.12 GB</span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-amber-950/50 text-amber-400 rounded-lg group-hover:bg-amber-900/50 transition">
+                        <Cpu className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => setPortainerNavTab('networks')}
+                      className="bg-slate-950/40 border border-slate-800 hover:border-violet-500/50 p-4 rounded-xl flex items-center justify-between hover:bg-slate-950/90 transition cursor-pointer group"
+                    >
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">REDES (DOCKER NET)</span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-slate-100">3</span>
+                          <span className="text-[10px] text-violet-400 font-bold">Bridge Orquestado</span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-violet-950/50 text-violet-400 rounded-lg group-hover:bg-violet-900/50 transition">
+                        <Server className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => setPortainerNavTab('volumes')}
+                      className="bg-slate-950/40 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-xl flex items-center justify-between hover:bg-slate-950/90 transition cursor-pointer group"
+                    >
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">VOLÚMENES MOUNTED</span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-slate-100">5</span>
+                          <span className="text-[10px] text-slate-400">Establezados en compose</span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-emerald-950/50 text-emerald-400 rounded-lg group-hover:bg-emerald-900/50 transition">
+                        <HardDrive className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    {/* Additional Portainer dashboard panels */}
+                    <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">STACKS INSTALADOS</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-white">1</span>
+                          <span className="text-[10px] font-mono text-indigo-400">pmo-cluster-stack</span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-slate-900 text-slate-400 rounded-lg">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">ESTADO DEL CLUSTER</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span className="text-xs text-slate-200 font-bold">100% Saludable</span>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-slate-900 text-slate-400 rounded-lg">
+                        <Shield className="w-5 h-5 text-emerald-400" />
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* System Architecture summary block */}
+                  <div className="bg-slate-950/20 border border-slate-800 p-5 rounded-xl space-y-3">
+                    <h5 className="text-xs font-bold text-slate-300 block font-mono">INSTRUCCIONES DE ACCESO AL SÉQUITO PORTAINER IO:</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      El panel administrativo de Portainer está conectado nativamente con el socket de control local. Aquí puedes simular cualquier operación del Docker Engine como detener bases de datos Postgres, reiniciar el gateway reverso Nginx para refrescar redireccionamientos, pausar APIs para validar resiliencias de error en frontend, o desplegar nuevos servicios temporales de prueba.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW: CONTAINERS LIST */}
+              {portainerNavTab === 'containers' && (
+                <div className="space-y-6">
+                  
+                  {/* Title and Add button */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-teal-400" />
+                        Lista de Contenedores (Docker Engine Socket)
+                      </h4>
+                      <p className="text-xs text-slate-405 text-slate-400 mt-1">
+                        Utiliza la barra de herramientas para controlar la ejecución y recursos asignados del stack.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setShowDeployModal(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-md cursor-pointer transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Añadir Contenedor (Run CLI)
+                    </button>
+                  </div>
+
+                  {/* Search and Toolbar actions */}
+                  <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-4">
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-mono text-xs">
+                      
+                      {/* Batch Controls */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setPortainerContainers(prev => prev.map(c => ({ ...c, status: 'running', cpu: 1.0 })));
+                            triggerPortainerAlert("Iniciando todos los contenedores del cluster...");
+                          }}
+                          className="px-3 py-1.5 bg-emerald-950 text-emerald-300 border border-emerald-800/85 hover:bg-emerald-900 rounded font-semibold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Play className="w-3.5 h-3.5" /> Start All
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPortainerContainers(prev => prev.map(c => ({ ...c, status: 'stopped', cpu: 0 })));
+                            triggerPortainerAlert("Deteniendo todos los contenedores de soporte...");
+                          }}
+                          className="px-3 py-1.5 bg-red-950 text-red-300 border border-red-800/85 hover:bg-red-900 rounded font-semibold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <StopCircle className="w-3.5 h-3.5" /> Stop All
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPortainerContainers(prev => prev.map(c => ({ ...c, status: 'running', cpu: 1.4 })));
+                            triggerPortainerAlert("Reinstalando y reiniciando cluster stack completo...");
+                          }}
+                          className="px-3 py-1.5 bg-slate-850 text-slate-200 border border-slate-750 hover:bg-slate-800 rounded font-semibold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> Restart All
+                        </button>
+                      </div>
+
+                      {/* Filter Search */}
+                      <div className="relative font-sans text-xs w-full md:w-64">
+                        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          placeholder="Buscar contenedores..."
+                          value={portainerSearchQuery}
+                          onChange={e => setPortainerSearchQuery(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-750 focus:border-indigo-500 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-100 placeholder-slate-505"
+                        />
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Containers Table */}
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="p-3.5 pl-5">Nombre Contenedor</th>
+                            <th className="p-3.5">Estado</th>
+                            <th className="p-3.5">Dirección IP</th>
+                            <th className="p-3.5">Mapeo Puertos</th>
+                            <th className="p-3.5">Monitor Telemetría CPU/Mem</th>
+                            <th className="p-3.5 text-right pr-5">Acciones Rápidas (Engine)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850 font-mono text-[11px]">
+                          {portainerContainers
+                            .filter(c => c.name.toLowerCase().includes(portainerSearchQuery.toLowerCase()) || c.image.toLowerCase().includes(portainerSearchQuery.toLowerCase()))
+                            .map((c) => (
+                              <tr key={c.id} className="hover:bg-slate-950/40 transition">
+                                
+                                <td className="p-3.5 pl-5">
+                                  <div>
+                                    <span className="font-bold text-slate-150 font-mono block">{c.name}</span>
+                                    <span className="text-[10px] text-slate-505 text-slate-500 font-mono">{c.image}</span>
+                                  </div>
+                                  <div className="text-[9.5px] text-slate-500 font-sans mt-0.5">{c.role}</div>
+                                </td>
+
+                                <td className="p-3.5">
+                                  {c.status === 'running' && (
+                                    <span className="text-[9px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded-full font-sans uppercase inline-flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                      RUNNING
+                                    </span>
+                                  )}
+                                  {c.status === 'stopped' && (
+                                    <span className="text-[9px] font-bold bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-sans uppercase inline-flex items-center gap-1">
+                                      STOPPED
+                                    </span>
+                                  )}
+                                  {c.status === 'paused' && (
+                                    <span className="text-[9px] font-bold bg-amber-950 text-amber-400 border border-amber-800/40 px-2 py-0.5 rounded-full font-sans uppercase inline-flex items-center gap-1">
+                                      PAUSED
+                                    </span>
+                                  )}
+                                  {c.status as any === 'runner' && (
+                                    <span className="text-[9px] font-bold bg-teal-950 text-teal-300 border border-teal-800 px-2 py-0.5 rounded-full font-sans uppercase inline-flex items-center gap-1 animate-pulse">
+                                      RESTARTING
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="p-3.5 text-slate-300">{c.ip}</td>
+                                
+                                <td className="p-3.5 text-indigo-400 font-bold font-mono">{c.ports}</td>
+
+                                <td className="p-3.5 font-sans">
+                                  {c.status === 'running' ? (
+                                    <div className="space-y-1 w-32">
+                                      <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400">
+                                        <span>CPU: {c.cpu}%</span>
+                                        <span>MEM</span>
+                                      </div>
+                                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-300 ${c.cpu > 2 ? 'bg-amber-450 bg-amber-500' : 'bg-teal-400'}`}
+                                          style={{ width: `${Math.min(100, Math.max(8, c.cpu * 20))}%` }}
+                                        />
+                                      </div>
+                                      <div className="text-[9px] text-slate-500 truncate font-mono text-left">{c.memory}</div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-600 font-mono italic text-[10px]">Sin telemetría</span>
+                                  )}
+                                </td>
+
+                                <td className="p-3.5 text-right pr-5">
+                                  <div className="flex justify-end items-center gap-2" onClick={e => e.stopPropagation()}>
+                                    
+                                    {c.status === 'stopped' ? (
+                                      <button
+                                        onClick={() => handleStartPortainerContainer(c.id)}
+                                        className="p-1.5 bg-slate-800 hover:bg-emerald-950 text-slate-300 hover:text-emerald-400 rounded border border-slate-700 hover:border-emerald-800 transition cursor-pointer"
+                                        title="Iniciar Contenedor (docker start)"
+                                      >
+                                        <Play className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleStopPortainerContainer(c.id)}
+                                        className="p-1.5 bg-slate-800 hover:bg-red-950 text-slate-300 hover:text-red-400 rounded border border-slate-700 hover:border-red-800 transition cursor-pointer"
+                                        title="Detener Contenedor (docker stop)"
+                                      >
+                                        <StopCircle className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    <button
+                                      onClick={() => handleRestartPortainerContainer(c.id)}
+                                      disabled={c.status === 'stopped'}
+                                      className="p-1.5 bg-slate-800 hover:bg-indigo-950 text-slate-300 hover:text-indigo-400 disabled:opacity-40 rounded border border-slate-700 hover:border-indigo-800 transition cursor-pointer"
+                                      title="Reiniciar Contenedor (docker restart)"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handlePausePortainerContainer(c.id)}
+                                      disabled={c.status === 'stopped'}
+                                      className="p-1.5 bg-slate-800 hover:bg-amber-950 text-slate-300 hover:text-amber-400 disabled:opacity-40 rounded border border-slate-700 hover:border-amber-800 transition cursor-pointer"
+                                      title={c.status === 'paused' ? "Reanudar Contenedor (docker unpause)" : "Pausar Contenedor (docker pause)"}
+                                    >
+                                      <Cpu className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleInspectContainerLogs(c)}
+                                      className="p-1.5 bg-indigo-950 text-indigo-400 hover:bg-indigo-900 rounded border border-indigo-900 transition cursor-pointer flex items-center justify-center gap-1 px-2 text-[10px] font-sans font-bold"
+                                      title="Inspeccionar Logs de Ejecución (stdout/stderr)"
+                                    >
+                                      <Terminal className="w-3.5 h-3.5" />
+                                      Logs
+                                    </button>
+
+                                    {/* Delete option for custom containers only */}
+                                    {c.id.startsWith('c-custom-') && (
+                                      <button
+                                        onClick={() => {
+                                          setPortainerContainers(prev => prev.filter(item => item.id !== c.id));
+                                          triggerPortainerAlert(`Contenedor '${c.name}' eliminado del Docker Engine`);
+                                          showToast(`Portainer.io: '${c.name}' eliminado`);
+                                        }}
+                                        className="p-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 rounded border border-slate-700 hover:border-rose-800 transition cursor-pointer"
+                                        title="Eliminar Contenedor (docker rm -f)"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                  </div>
+                                </td>
+
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* ACTIVE LOOGER TERMINAL MODAL DRIVER */}
+                  {selectedContainerLogs && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 text-slate-800 animate-fadeIn font-sans">
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full text-slate-100 flex flex-col h-[550px]" onClick={e => e.stopPropagation()}>
+                        
+                        {/* Drawer Header */}
+                        <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Terminal className="w-4 h-4 text-teal-400" />
+                            <div>
+                              <h3 className="text-xs font-bold text-slate-100 uppercase font-mono tracking-wide">
+                                INSPECTOR DOCKER LOGS: {selectedContainerLogs.name}
+                              </h3>
+                              <p className="text-[10px] text-slate-450 mt-0.5">Filtro de salida estándar de ejecución en tiempo real (stdout/stderr)</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-900 px-2.5 py-0.5 rounded font-mono font-bold uppercase">
+                              STREAM DISPONIBLE (LIVE)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedContainerLogs(null)}
+                              className="p-1 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition cursor-pointer"
+                              title="Cerrar Terminal"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Terminal Body */}
+                        <div className="flex-1 p-5 bg-slate-950 font-mono text-[11px] leading-relaxed overflow-y-auto whitespace-pre-wrap select-text text-slate-300">
+                          {portainerLogs.length === 0 ? (
+                            <p className="text-slate-600 italic">Conectando con la tty del contenedor... Esperando buffers.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {portainerLogs.map((log, idx) => (
+                                <div key={idx} className={idx === portainerLogs.length - 1 ? 'text-teal-300 animate-fadeIn' : ''}>
+                                  {log}
+                                </div>
+                              ))}
+                              <div className="h-4" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Control actions footer */}
+                        <div className="p-3.5 bg-slate-950 border-t border-slate-850 flex items-center justify-between font-mono text-xs">
+                          <div className="text-slate-500 font-sans text-[10px]">
+                            Consola ANSI Emulation compliant • host_stream: true
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setPortainerLogs(getContainerHistoryLogs(selectedContainerLogs))}
+                              className="px-3 py-1 bg-slate-850 hover:bg-slate-800 hover:text-white rounded text-[11px] font-semibold text-slate-300 border border-slate-750 transition cursor-pointer"
+                            >
+                              Reiniciar Stream
+                            </button>
+                            <button
+                              onClick={() => setPortainerLogs([])}
+                              className="px-3 py-1 bg-slate-850 hover:bg-slate-800 hover:text-white rounded text-[11px] font-semibold text-slate-300 border border-slate-750 transition cursor-pointer"
+                            >
+                              Limpiar Consola
+                            </button>
+                            <button
+                              onClick={() => setSelectedContainerLogs(null)}
+                              className="px-4 py-1 bg-indigo-600 hover:bg-indigo-700 rounded text-[11px] font-bold text-white transition cursor-pointer"
+                            >
+                              Cerrar Inspector
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                  {/* QUICK CONTAINER DEPLOY FORM MODAL */}
+                  {showDeployModal && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 text-slate-800 animate-fadeIn font-sans">
+                      <form onSubmit={handleDeployPortainerContainer} className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-slate-100 flex flex-col">
+                        
+                        <div className="p-5 bg-slate-950 border-b border-slate-850 flex justify-between items-center">
+                          <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                            🐳 Desplegar Contenedor (Portainer Run Engine)
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setShowDeployModal(false)}
+                            className="text-slate-400 hover:text-white font-bold cursor-pointer font-mono"
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="p-5 space-y-4 text-xs">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nombre del Contenedor / Alias*</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ej. custom-cache-redis"
+                              value={deployName}
+                              onChange={e => setDeployName(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-750 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 font-mono"
+                            />
+                            <p className="text-[9px] text-slate-500">Se le antepondrá el prefijo 'pmo-' automáticamente.</p>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Imagen Docker (Registro Hub)*</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ej. redis:7-alpine, rabbitmq:management"
+                              value={deployImage}
+                              onChange={e => setDeployImage(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-750 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 font-mono"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Puerto Interno</label>
+                              <input
+                                type="text"
+                                placeholder="Ej. 6379, 5672"
+                                value={deployPort}
+                                onChange={e => setDeployPort(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-750 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 font-mono"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Protocolo de Red</label>
+                              <select className="w-full bg-slate-950 border border-slate-750 rounded-lg px-3 py-2 text-xs text-slate-400 cursor-pointer">
+                                <option>TCP (Por Defecto)</option>
+                                <option>UDP (Fast delivery)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Descripción u Orquestación de Rubro</label>
+                            <input
+                              type="text"
+                              placeholder="Ej. Broker de Mensajería para Auditoría"
+                              value={deployRole}
+                              onChange={e => setDeployRole(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-750 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950 px-5 py-3 border-t border-slate-850 flex justify-end gap-2 text-xs font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => setShowDeployModal(false)}
+                            className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm cursor-pointer transition"
+                          >
+                            Desplegar Contenedor
+                          </button>
+                        </div>
+
+                      </form>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {/* VIEW: IMAGES */}
+              {portainerNavTab === 'images' && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-amber-400" />
+                      Imágenes Locales Registradas (Docker Node Storage)
+                    </h4>
+                    <p className="text-xs text-slate-450 mt-1">
+                      Catálogo de imágenes descargadas en la caché local para aprovisionamiento inmediato de microservicios.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3.5 pl-5">Identificador Hash</th>
+                          <th className="p-3.5">Tags Asociados</th>
+                          <th className="p-3.5">Tamaño Físico</th>
+                          <th className="p-3.5">Uso en Stack</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850 font-mono text-[11px]">
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-indigo-400 font-bold">sha256:d8b2e118ae23</td>
+                          <td className="p-3.5 text-slate-200">postgres:16.3-alpine</td>
+                          <td className="p-3.5 text-slate-400">231.2 MB</td>
+                          <td className="p-3.5"><span className="text-[9px] font-bold bg-indigo-950 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded-full font-sans uppercase">EN USO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-indigo-400 font-bold">sha256:ee4f82d18471</td>
+                          <td className="p-3.5 text-slate-200">nginx:1.26-alpine</td>
+                          <td className="p-3.5 text-slate-400">42.5 MB</td>
+                          <td className="p-3.5"><span className="text-[9px] font-bold bg-indigo-950 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded-full font-sans uppercase">EN USO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-indigo-400 font-bold">sha256:bb15e19de8a3</td>
+                          <td className="p-3.5 text-slate-200">minio/minio:RELEASE</td>
+                          <td className="p-3.5 text-slate-400">147.8 MB</td>
+                          <td className="p-3.5"><span className="text-[9px] font-bold bg-indigo-950 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded-full font-sans uppercase">EN USO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-indigo-400 font-bold">sha256:fb4f08f8aa91</td>
+                          <td className="p-3.5 text-slate-200">node:20.14-alpine</td>
+                          <td className="p-3.5 text-slate-400">118.4 MB</td>
+                          <td className="p-3.5"><span className="text-[9px] font-bold bg-indigo-950 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded-full font-sans uppercase">EN USO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-slate-500">sha256:98fa2a77fe19</td>
+                          <td className="p-3.5 text-slate-400">ubuntu:latest</td>
+                          <td className="p-3.5 text-slate-400">77.9 MB</td>
+                          <td className="p-3.5"><span className="text-[9px] font-bold bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-sans uppercase">HUÉRFANO</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW: NETWORKS */}
+              {portainerNavTab === 'networks' && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                      <Server className="w-4 h-4 text-violet-400" />
+                      Redes Virtuales de Comunicación Interna (Docker Networks)
+                    </h4>
+                    <p className="text-xs text-slate-450 mt-1">
+                      Aislamiento y subredes privadas creadas para prevenir accesos maliciosos externos.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3.5 pl-5">Nombre Red</th>
+                          <th className="p-3.5">Driver Orquestador</th>
+                          <th className="p-3.5">Rango de Subred / Gateway (CIDR)</th>
+                          <th className="p-3.5">Ámbito</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850 font-mono text-[11px]">
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-indigo-400 font-bold">pmo-cluster-network-bridge</td>
+                          <td className="p-3.5 text-slate-200">bridge</td>
+                          <td className="p-3.5 text-slate-350">172.24.0.0/16 (GW: 172.24.0.1)</td>
+                          <td className="p-3.5 text-slate-500">local</td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-slate-400">bridge</td>
+                          <td className="p-3.5 text-slate-400">bridge</td>
+                          <td className="p-3.5 text-slate-500">172.17.0.0/16 (GW: 172.17.0.1)</td>
+                          <td className="p-3.5 text-slate-500">local</td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-slate-400">host</td>
+                          <td className="p-3.5 text-slate-400">host</td>
+                          <td className="p-3.5 text-slate-500">-</td>
+                          <td className="p-3.5 text-slate-500">local</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW: VOLUMES */}
+              {portainerNavTab === 'volumes' && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                      <HardDrive className="w-4 h-4 text-emerald-400" />
+                      Volúmenes de Datos Persistentes (Mounted Volumes)
+                    </h4>
+                    <p className="text-xs text-slate-450 mt-1">
+                      Directorios persistidos fuera del ciclo de vida del contenedor para asegurar almacenamiento durable.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3.5 pl-5">Nombre del Volumen</th>
+                          <th className="p-3.5">Driver</th>
+                          <th className="p-3.5">Ruta de Montaje Virtual</th>
+                          <th className="p-3.5">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850 font-mono text-[11px]">
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-emerald-400 font-bold">pmo-postgres-volume-data</td>
+                          <td className="p-3.5 text-slate-200">local</td>
+                          <td className="p-3.5 text-slate-350">/var/lib/postgresql/data</td>
+                          <td className="p-3.5"><span className="text-[9px] bg-slate-850 text-slate-450 px-2 py-0.5 rounded font-bold">SISTEMA COMPLEMENTARIO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-emerald-400 font-bold">pmo-storage-bucket-data</td>
+                          <td className="p-3.5 text-slate-200">local</td>
+                          <td className="p-3.5 text-slate-350">/var/lib/storage-minio/data</td>
+                          <td className="p-3.5"><span className="text-[9px] bg-slate-850 text-slate-450 px-2 py-0.5 rounded font-bold">SISTEMA COMPLEMENTARIO</span></td>
+                        </tr>
+                        <tr className="hover:bg-slate-950/40">
+                          <td className="p-3.5 pl-5 text-slate-300">pmo-teams-express-cache</td>
+                          <td className="p-3.5 text-slate-400">local</td>
+                          <td className="p-3.5 text-slate-500">/root/.npm/_cacache</td>
+                          <td className="p-3.5">
+                            <button 
+                              onClick={() => {
+                                triggerPortainerAlert("Volumen 'pmo-teams-express-cache' vaciado por comando CLI");
+                                showToast("Portainer: Volumen de caché vaciado");
+                              }}
+                              className="px-2 py-0.5 hover:bg-red-950 text-slate-400 hover:text-red-400 border border-slate-750 hover:border-red-800 transition rounded font-sans uppercase font-bold text-[9px] cursor-pointer"
+                            >
+                              Podar Volumen
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         </div>
       )}
@@ -713,8 +1766,33 @@ export default function DevOpsPipeline() {
                               <a
                                 href="#devops-root"
                                 onClick={() => {
-                                  showToast(`↓ Iniciando descarga simulada de '${obj.name}' desde Repositorio Almacenamiento Seguro`);
-                                  // Open new mock tab
+                                  showToast(`↓ Iniciando descarga de '${obj.name}' desde Repositorio Almacenamiento Seguro`);
+                                  if (obj.raw_base64) {
+                                    try {
+                                      const parts = obj.raw_base64.split(';base64,');
+                                      const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+                                      const base64Str = parts.length > 1 ? parts[1] : parts[0];
+                                      const raw = window.atob(base64Str);
+                                      const rawLength = raw.length;
+                                      const uInt8Array = new Uint8Array(rawLength);
+                                      for (let i = 0; i < rawLength; ++i) {
+                                        uInt8Array[i] = raw.charCodeAt(i);
+                                      }
+                                      const exactBlob = new Blob([uInt8Array], { type: contentType });
+                                      const downloadUrl = URL.createObjectURL(exactBlob);
+                                      const link = document.createElement('a');
+                                      link.href = downloadUrl;
+                                      link.download = obj.name;
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+                                      URL.revokeObjectURL(downloadUrl);
+                                      return;
+                                    } catch (err) {
+                                      console.error("Error decoding base64 data for storage object download", err);
+                                    }
+                                  }
+                                  // Open new mock tab fallback
                                   window.open(obj.url, '_blank');
                                 }}
                                 className="p-1 bg-slate-100 rounded text-slate-500 hover:text-indigo-600 border border-slate-200 transition"
@@ -803,7 +1881,7 @@ export default function DevOpsPipeline() {
               <button
                 onClick={() => setSelectedAwsCodeTab('nodejs')}
                 className={`px-4 py-2 border-r border-slate-200 ${
-                  selectedAwsCodeTab === 'nodejs' ? 'bg-white text-indigo-650 font-bold' : 'text-slate-500 hover:text-slate-850'
+                  selectedAwsCodeTab === 'nodejs' ? 'bg-white text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-850'
                 }`}
               >
                 Secure Storage SDK (NodeJS / Nest)
@@ -811,7 +1889,7 @@ export default function DevOpsPipeline() {
               <button
                 onClick={() => setSelectedAwsCodeTab('terraform')}
                 className={`px-4 py-2 border-r border-slate-200 ${
-                  selectedAwsCodeTab === 'terraform' ? 'bg-white text-indigo-650' : 'text-slate-500 hover:text-slate-850'
+                  selectedAwsCodeTab === 'terraform' ? 'bg-white text-indigo-600' : 'text-slate-500 hover:text-slate-850'
                 }`}
               >
                 Terraform Prov
@@ -819,7 +1897,7 @@ export default function DevOpsPipeline() {
               <button
                 onClick={() => setSelectedAwsCodeTab('docker')}
                 className={`px-4 py-2 border-r border-slate-200 ${
-                  selectedAwsCodeTab === 'docker' ? 'bg-white text-indigo-650' : 'text-slate-500 hover:text-slate-850'
+                  selectedAwsCodeTab === 'docker' ? 'bg-white text-indigo-600' : 'text-slate-500 hover:text-slate-850'
                 }`}
               >
                 Docker Compose CLI

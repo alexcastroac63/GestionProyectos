@@ -110,6 +110,7 @@ export const INITIAL_PROJECTS: Project[] = [
     start_date: '2026-05-01',
     end_date: '2026-08-30',
     sprint_size_weeks: 2,
+    sprint_size_days: 10,
     budget_total: 120000
   },
   {
@@ -129,6 +130,7 @@ export const INITIAL_PROJECTS: Project[] = [
     start_date: '2026-06-15',
     end_date: '2026-12-15',
     sprint_size_weeks: 3,
+    sprint_size_days: 10,
     budget_total: 250000
   }
 ];

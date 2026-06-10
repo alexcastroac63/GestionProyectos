@@ -54,6 +54,7 @@ export interface WBSItem {
   dependsOnId?: string; // Dependency task ID
   comments: WBSComment[];
   evidenceFiles: WBSEvidence[];
+  sprintId?: string; // Associated Sprint
 }
 
 export interface WBSComment {
@@ -90,6 +91,7 @@ interface ProjectWBSManagerProps {
   users: User[];
   addLog: (user: string, text: string) => void;
   isDevRole?: boolean;
+  sprints?: any[];
 }
 
 // --- Dynamic Dummy Data Builder ---
@@ -428,14 +430,17 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
   ];
 };
 
-export default function ProjectWBSManager({ projectId, users, addLog, isDevRole = false }: ProjectWBSManagerProps) {
+export default function ProjectWBSManager({ projectId, users, addLog, isDevRole = false, sprints = [] }: ProjectWBSManagerProps) {
   // --- States ---
   const [items, setItems] = useState<WBSItem[]>(() => {
     const key = `wbs_tasks_${projectId}`;
     const cached = localStorage.getItem(key);
-    if (cached) {
+    if (cached && cached !== "null" && cached !== "undefined") {
       try {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       } catch (e) {
         console.error("Error reading wbs cache", e);
       }
@@ -446,9 +451,12 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const [baselines, setBaselines] = useState<WBSBaseline[]>(() => {
     const key = `wbs_baselines_${projectId}`;
     const cached = localStorage.getItem(key);
-    if (cached) {
+    if (cached && cached !== "null" && cached !== "undefined") {
       try {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       } catch (e) {
         console.error("Error reading baselines cache", e);
       }
@@ -477,6 +485,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterResponsible, setFilterResponsible] = useState<string>('ALL');
+
+  const projectSprints = sprints.filter((s: any) => s.project_id === projectId);
 
   // Expansion levels
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({
@@ -776,15 +786,18 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   useEffect(() => {
     const key = `wbs_tasks_${projectId}`;
     const cached = localStorage.getItem(key);
-    let loadedItems: WBSItem[];
-    if (cached) {
+    let loadedItems: WBSItem[] | null = null;
+    if (cached && cached !== "null" && cached !== "undefined") {
       try {
-        loadedItems = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          loadedItems = parsed;
+        }
       } catch (e) {
         console.error("Error reading wbs cache", e);
-        loadedItems = getInitialWBSItems(projectId);
       }
-    } else {
+    }
+    if (!loadedItems) {
       loadedItems = getInitialWBSItems(projectId);
     }
     setItems(handleRecalculateProgress(loadedItems));
@@ -1432,27 +1445,64 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     const sizeKB = Math.round(file.size / 1024);
     const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
 
-    const newEvidence: WBSEvidence = {
-      id: `ev-gen-${Date.now()}`,
-      fileName: file.name,
-      fileSize: sizeStr,
-      uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      uploadedBy: 'Carlos Pérez (PM)'
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Data = reader.result as string;
+
+      const newEvidence: WBSEvidence = {
+        id: `ev-gen-${Date.now()}`,
+        fileName: file.name,
+        fileSize: sizeStr,
+        uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        uploadedBy: 'Carlos Pérez (PM)'
+      };
+
+      setItems(prev => {
+        return prev.map(it => {
+          if (it.id === activeItemId) {
+            return {
+              ...it,
+              evidenceFiles: [...it.evidenceFiles, newEvidence]
+            };
+          }
+          return it;
+        });
+      });
+
+      // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
+      try {
+        const customLocal = localStorage.getItem('gcp_storage_custom_files');
+        const custom = customLocal ? JSON.parse(customLocal) : [];
+        let cleanKey = `wbs/task_${activeItemId}/${file.name.trim().replace(/\s+/g, '_').toLowerCase()}`;
+        
+        const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+        let mime = 'application/octet-stream';
+        if (['png', 'jpg', 'jpeg'].includes(fileExt)) mime = `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`;
+        else if (fileExt === 'pdf') mime = 'application/pdf';
+        else if (['zip', 'rar'].includes(fileExt)) mime = 'application/zip';
+        else if (['txt', 'sql', 'json'].includes(fileExt)) mime = 'text/plain';
+
+        const newObject = {
+          id: `sim-wbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          key: cleanKey,
+          name: file.name,
+          size: sizeStr,
+          url: `http://localhost:9000/soporte-pmo-storage/${cleanKey}`,
+          uploadedAt: new Date().toISOString().substring(0, 10),
+          type: mime,
+          raw_base64: base64Data
+        };
+
+        custom.push(newObject);
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+      } catch (err) {
+        console.error("Error writing WBS evidence file to simulated storage bucket", err);
+      }
+
+      addLog('Carlos Pérez (PM)', `Subió archivo de evidencia "${file.name}" de forma segura al repositorio 'soporte-pmo-storage' en Docker.`);
     };
 
-    setItems(prev => {
-      return prev.map(it => {
-        if (it.id === activeItemId) {
-          return {
-            ...it,
-            evidenceFiles: [...it.evidenceFiles, newEvidence]
-          };
-        }
-        return it;
-      });
-    });
-
-    addLog('Carlos Pérez (PM)', `Subió archivo de evidencia "${file.name}" de forma simulada en almacenamiento local.`);
+    reader.readAsDataURL(file);
   };
 
   const handleDeleteEvidence = (evId: string) => {
@@ -2332,7 +2382,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
               <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 select-none">
                 <tr>
                   <th className="p-3 w-10"></th>
-                  <th className="p-3 pl-2 w-1/3">Estructura Jerárquica del Proyecto (WBS)</th>
+                  <th className="p-3 pl-2 w-1/3">Cronograma de actividades</th>
                   <th className="p-3 w-32">Responsable</th>
                   <th className="p-3 w-28">F. Inicio</th>
                   <th className="p-3 w-28">F. Fin</th>
@@ -2445,6 +2495,19 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                             className="bg-transparent border-b border-transparent group-hover:border-slate-250 focus:border-blue-500 outline-none w-full px-1 py-0.5 text-xs"
                             title="Haga clic para editar nombre del requerimiento"
                           />
+
+                          {it.sprintId && (() => {
+                            const found = projectSprints.find(s => s.id === it.sprintId);
+                            if (!found) return null;
+                            return (
+                              <span 
+                                className="text-[9px] bg-indigo-50 border border-indigo-150 text-indigo-700 font-extrabold px-1.5 py-0.2 rounded shrink-0 font-mono select-none" 
+                                title={`Asigned to Sprint: ${found.name}`}
+                              >
+                                ⚡ {found.name}
+                              </span>
+                            );
+                          })()}
 
                           {/* Quick indicators */}
                           {it.comments.length > 0 && (
@@ -2877,6 +2940,24 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                       className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-1.5 text-xs text-slate-800 font-mono font-bold"
                     />
                   </div>
+                </div>
+              )}
+
+              {selectedItem.level !== 'FASE' && selectedItem.level !== 'MODULO' && projectSprints.length > 0 && (
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Sprint Relacionado</label>
+                  <select
+                    value={selectedItem.sprintId || ''}
+                    onChange={(e) => handleUpdateItemField(selectedItem.id, 'sprintId', e.target.value || undefined)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-bold"
+                  >
+                    <option value="">Ninguno (Backlog del Proyecto)</option>
+                    {projectSprints.map(s => (
+                      <option key={s.id} value={s.id}>
+                        ⚡ {s.name} ({s.status === 'ACTIVO' ? 'Activo' : s.status === 'PLANIFICADO' ? 'Planificado' : 'Finalizado'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 

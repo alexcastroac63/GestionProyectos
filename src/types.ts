@@ -61,6 +61,7 @@ export interface Project {
   start_date: string;
   end_date: string;
   sprint_size_weeks: number;
+  sprint_size_days: number;
   budget_total: number;
 }
 
@@ -80,6 +81,7 @@ export interface ProjectCost {
   file_name?: string;
   file_size?: string;
   uploaded_at?: string;
+  raw_base64?: string;
 }
 
 export interface Sprint {

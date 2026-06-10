@@ -174,9 +174,12 @@ export default function MockupCanvas({
   // Persistent mockups database by project ID
   const [projectData, setProjectData] = useState<{ [projId: string]: ProjectDivision[] }>(() => {
     const saved = localStorage.getItem('gcp_mockup_divisions_v2');
-    if (saved) {
+    if (saved && saved !== "null" && saved !== "undefined") {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
       } catch (e) {
         console.error('Error parseando mockup divisions local storage', e);
       }
@@ -509,6 +512,36 @@ export default function MockupCanvas({
     reader.onloadend = () => {
       const base64 = reader.result as string;
       addNewMockupVersion(base64, file.name);
+
+      // S3 compatible MinIO Docker bucket sync (soporte-pmo-storage)
+      try {
+        const customLocal = localStorage.getItem('gcp_storage_custom_files');
+        const custom = customLocal ? JSON.parse(customLocal) : [];
+        
+        const sizeStr = file.size > 1024 * 1024 
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(file.size / 1024).toFixed(0)} KB`;
+          
+        let cleanKey = `mockups/division_${selectedDivisionId || 'general'}/${file.name.trim().replace(/\s+/g, '_').toLowerCase()}`;
+        const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+        let mime = file.type || 'image/png';
+
+        const newObject = {
+          id: `sim-mockup-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          key: cleanKey,
+          name: file.name,
+          size: sizeStr,
+          url: `http://localhost:9000/soporte-pmo-storage/${cleanKey}`,
+          uploadedAt: new Date().toISOString().substring(0, 10),
+          type: mime,
+          raw_base64: base64
+        };
+
+        custom.push(newObject);
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+      } catch (err) {
+        console.error("Error syncing mockup file build with storage bucket", err);
+      }
     };
     reader.onerror = () => {
       setFeedbackMsg({ type: 'err', text: 'Error procesando el archivo de imagen.' });

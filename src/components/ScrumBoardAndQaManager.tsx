@@ -11,6 +11,11 @@ import {
   TransitionRule
 } from '../types';
 import { DEFAULT_TRANSITION_RULES } from '../data';
+
+const formatSprintName = (name: string): string => {
+  const match = name.match(/\d+/);
+  return match ? `SPRINT ${match[0]}` : name.toUpperCase();
+};
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -211,7 +216,14 @@ export default function ScrumBoardAndQaManager({
   // Load and manage our extended custom data models from local storage
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>(() => {
     const raw = localStorage.getItem('scrum_criteria');
-    if (raw) return JSON.parse(raw);
+    if (raw && raw !== "undefined" && raw !== "null") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse scrum_criteria", e);
+      }
+    }
     return [
       {
         id: 'crit-1',
@@ -239,7 +251,14 @@ export default function ScrumBoardAndQaManager({
 
   const [techCriteria, setTechCriteria] = useState<TechnicalCriterion[]>(() => {
     const raw = localStorage.getItem('scrum_tech_criteria');
-    if (raw) return JSON.parse(raw);
+    if (raw && raw !== "undefined" && raw !== "null") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse scrum_tech_criteria", e);
+      }
+    }
     return [
       {
         id: 't-crit-1',
@@ -255,7 +274,14 @@ export default function ScrumBoardAndQaManager({
 
   const [bugs, setBugs] = useState<ScrumBug[]>(() => {
     const raw = localStorage.getItem('scrum_bugs');
-    if (raw) return JSON.parse(raw);
+    if (raw && raw !== "undefined" && raw !== "null") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse scrum_bugs", e);
+      }
+    }
     return [
       {
         id: 'bug-1',
@@ -279,7 +305,14 @@ export default function ScrumBoardAndQaManager({
 
   const [evidences, setEvidences] = useState<ScrumEvidence[]>(() => {
     const raw = localStorage.getItem('scrum_evidences');
-    if (raw) return JSON.parse(raw);
+    if (raw && raw !== "undefined" && raw !== "null") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse scrum_evidences", e);
+      }
+    }
     return [
       {
         id: 'ev-1',
@@ -297,7 +330,14 @@ export default function ScrumBoardAndQaManager({
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     const raw = localStorage.getItem('scrum_audit_logs');
-    if (raw) return JSON.parse(raw);
+    if (raw && raw !== "undefined" && raw !== "null") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed !== null && parsed !== undefined) return parsed;
+      } catch (e) {
+        console.error("Failed to parse scrum_audit_logs", e);
+      }
+    }
     return [
       {
         id: 'log-1',
@@ -453,9 +493,12 @@ export default function ScrumBoardAndQaManager({
     // Load rules from localStorage with fallback to defaults
     const savedRulesStr = localStorage.getItem('scrum_transition_rules');
     let activeRules = DEFAULT_TRANSITION_RULES;
-    if (savedRulesStr) {
+    if (savedRulesStr && savedRulesStr !== "undefined" && savedRulesStr !== "null") {
       try {
-        activeRules = JSON.parse(savedRulesStr);
+        const parsed = JSON.parse(savedRulesStr);
+        if (parsed !== null && parsed !== undefined) {
+          activeRules = parsed;
+        }
       } catch (e) {
         // Fallback
       }
@@ -1086,14 +1129,14 @@ export default function ScrumBoardAndQaManager({
             </div>
 
             <div className="mt-2.5 flex items-center gap-3">
-              <h2 className="text-xl md:text-2xl font-black tracking-tight">{currentSprint?.name || 'Sin Sprint Activo'}</h2>
+              <h2 className="text-xl md:text-2xl font-black tracking-tight">{currentSprint ? formatSprintName(currentSprint.name) : 'Sin Sprint Activo'}</h2>
               <select
                 value={selectedSprintId}
                 onChange={e => setSelectedSprintId(e.target.value)}
                 className="bg-slate-800 border border-slate-700 hover:border-slate-600 px-3 py-1.5 text-xs font-bold text-teal-400 rounded-xl cursor-pointer focus:ring-1 focus:ring-teal-500 outline-none"
               >
                 {SprintsForProject.map(sp => (
-                  <option key={sp.id} value={sp.id}>{sp.name}</option>
+                  <option key={sp.id} value={sp.id}>{formatSprintName(sp.name)}</option>
                 ))}
               </select>
             </div>
@@ -2119,7 +2162,12 @@ export default function ScrumBoardAndQaManager({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[9px] uppercase font-bold">Sprint Asignado</span>
-                  <strong className="text-teal-700 text-xs mt-0.5 block">{sprints.find(s=>s.id === activeStory.sprint_id)?.name || 'Product Backlog'}</strong>
+                  <strong className="text-teal-700 text-xs mt-0.5 block">
+                    {(() => {
+                      const sp = sprints.find(s=>s.id === activeStory.sprint_id);
+                      return sp ? formatSprintName(sp.name) : 'Product Backlog';
+                    })()}
+                  </strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[9px] uppercase font-bold">Story Points</span>
@@ -2198,7 +2246,7 @@ export default function ScrumBoardAndQaManager({
                     >
                       <option value="">Product Backlog</option>
                       {sprints.filter(s => s.project_id === selectedProjectId && s.id !== selectedSprintId).map(sp => (
-                        <option key={sp.id} value={sp.id}>{sp.name}</option>
+                        <option key={sp.id} value={sp.id}>{formatSprintName(sp.name)}</option>
                       ))}
                     </select>
                     <button
