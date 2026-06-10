@@ -129,6 +129,37 @@ function safeLoad<T>(key: string, defaultValue: T): T {
   return defaultValue;
 }
 
+function safeSave(key: string, value: any): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    if (err instanceof DOMException && (
+      err.name === 'QuotaExceededError' ||
+      err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    )) {
+      console.warn(`[QuotaExceededError] La clave "${key}" excedió la cuota de localStorage (5MB). Optimizando espacio...`);
+      
+      if (Array.isArray(value)) {
+        const reduced = value.map(item => {
+          if (item && typeof item === 'object') {
+            return { ...item, raw_base64: undefined };
+          }
+          return item;
+        });
+        try {
+          localStorage.setItem(key, JSON.stringify(reduced));
+          console.warn(`[QuotaExceededError Fix] Guardada copia optimizada (sin base64) para "${key}" exitosamente.`);
+          return;
+        } catch (innerErr) {
+          console.error(`[QuotaExceededError Fatal] Incluso sin base64 falló el guardado para "${key}":`, innerErr);
+        }
+      }
+    } else {
+      console.error(`Error guardando en localStorage key "${key}":`, err);
+    }
+  }
+}
+
 export default function App() {
   // --- Persistent State / Handlers ---
   const [users, setUsers] = useState<User[]>(() => {
@@ -266,21 +297,21 @@ export default function App() {
 
   // Sync to localstorage
   useEffect(() => {
-    localStorage.setItem('gcp_users', JSON.stringify(users));
-    localStorage.setItem('gcp_projects', JSON.stringify(projects));
-    localStorage.setItem('gcp_costs', JSON.stringify(costs));
-    localStorage.setItem('gcp_sprints', JSON.stringify(sprints));
-    localStorage.setItem('gcp_work_items', JSON.stringify(workItems));
-    localStorage.setItem('gcp_activities', JSON.stringify(activities));
-    localStorage.setItem('gcp_test_suites', JSON.stringify(testSuites));
-    localStorage.setItem('gcp_test_cases', JSON.stringify(testCases));
-    localStorage.setItem('gcp_test_runs', JSON.stringify(testRuns));
-    localStorage.setItem('gcp_mockups', JSON.stringify(mockups));
-    localStorage.setItem('gcp_mock_screens', JSON.stringify(mockScreens));
-    localStorage.setItem('gcp_mock_components', JSON.stringify(mockComponents));
-    localStorage.setItem('gcp_mock_connections', JSON.stringify(mockConnections));
-    localStorage.setItem('gcp_category_budgets', JSON.stringify(categoryBudgets));
-    localStorage.setItem('gcp_budget_baselines_multi', JSON.stringify(budgetBaselines));
+    safeSave('gcp_users', users);
+    safeSave('gcp_projects', projects);
+    safeSave('gcp_costs', costs);
+    safeSave('gcp_sprints', sprints);
+    safeSave('gcp_work_items', workItems);
+    safeSave('gcp_activities', activities);
+    safeSave('gcp_test_suites', testSuites);
+    safeSave('gcp_test_cases', testCases);
+    safeSave('gcp_test_runs', testRuns);
+    safeSave('gcp_mockups', mockups);
+    safeSave('gcp_mock_screens', mockScreens);
+    safeSave('gcp_mock_components', mockComponents);
+    safeSave('gcp_mock_connections', mockConnections);
+    safeSave('gcp_category_budgets', categoryBudgets);
+    safeSave('gcp_budget_baselines_multi', budgetBaselines);
   }, [users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets, budgetBaselines]);
 
   // Navigation / Filter States

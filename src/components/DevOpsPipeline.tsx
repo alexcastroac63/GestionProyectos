@@ -574,7 +574,17 @@ export default function DevOpsPipeline() {
       }
     }
     const updated = [...custom, newObj];
-    localStorage.setItem('gcp_storage_custom_files', JSON.stringify(updated));
+    try {
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(updated));
+    } catch (err) {
+      console.error("Failed to save gcp_storage_custom_files due to quota limits, retrying without base64 content:", err);
+      const reduced = updated.map(item => ({ ...item, raw_base64: undefined }));
+      try {
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(reduced));
+      } catch (inner) {
+        console.error("Failed to save even reduced storage files:", inner);
+      }
+    }
 
     setStorageUploadName('');
     showToast(`✓ Archivo '${cleanName}' subido al Repositorio (soporte-pmo-storage)`);
@@ -603,7 +613,11 @@ export default function DevOpsPipeline() {
         message: `¿Está seguro de que desea eliminar el archivo '${name}' del Repositorio de Almacenamiento de forma permanente?`,
         onConfirm: () => {
           custom = custom.filter((o: any) => o.id !== id);
-          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+          try {
+            localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+          } catch (err) {
+            console.error("Failed to update gcp_storage_custom_files after deletion:", err);
+          }
           showToast(`✗ Archivo '${name}' eliminado del Repositorio de Almacenamiento`);
           loadStorageObjects();
           if (selectedObject?.id === id) {
