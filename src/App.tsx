@@ -441,7 +441,7 @@ export default function App() {
   // Active contextual references
   const [newBudgetBaselineName, setNewBudgetBaselineName] = useState('');
   const [isBudgetBaselineSectionExpanded, setIsBudgetBaselineSectionExpanded] = useState(false);
-  const activeProject = projects.find(p => p.id === selectedProjectId) || projects[0];
+  const activeProject = projects.find(p => p.id === selectedProjectId) || projects[0] || INITIAL_PROJECTS[0];
   const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
   const activeSprint = projectSprints.find(s => s.id === selectedSprintId) || projectSprints[0];
   const activeSprintIdEffective = activeSprint?.id || '';

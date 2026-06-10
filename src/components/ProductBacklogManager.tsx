@@ -957,7 +957,17 @@ export default function ProductBacklogManager({
         // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
         try {
           const customLocal = localStorage.getItem('gcp_storage_custom_files');
-          const custom = customLocal ? JSON.parse(customLocal) : [];
+          let custom: any[] = [];
+          if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+            try {
+              const parsed = JSON.parse(customLocal);
+              if (Array.isArray(parsed)) {
+                custom = parsed;
+              }
+            } catch (e) {
+              console.error(e);
+            }
+          }
           
           const sizeStr = file.size > 1024 * 1024 
             ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`

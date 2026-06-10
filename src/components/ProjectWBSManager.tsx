@@ -1472,7 +1472,17 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
       try {
         const customLocal = localStorage.getItem('gcp_storage_custom_files');
-        const custom = customLocal ? JSON.parse(customLocal) : [];
+        let custom: any[] = [];
+        if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+          try {
+            const parsed = JSON.parse(customLocal);
+            if (Array.isArray(parsed)) {
+              custom = parsed;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
         let cleanKey = `wbs/task_${activeItemId}/${file.name.trim().replace(/\s+/g, '_').toLowerCase()}`;
         
         const fileExt = file.name.split('.').pop()?.toLowerCase() || '';

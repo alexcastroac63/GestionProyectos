@@ -445,9 +445,12 @@ export default function DevOpsPipeline() {
     // 1. Costs with files
     const local = localStorage.getItem('gcp_costs');
     let costFiles: any[] = [];
-    if (local && local !== "undefined") {
+    if (local && local !== "undefined" && local !== "null") {
       try {
-        costFiles = JSON.parse(local);
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          costFiles = parsed;
+        }
       } catch (e) {
         console.error("Failed to parse gcp_costs inside loadStorageObjects", e);
       }
@@ -475,9 +478,12 @@ export default function DevOpsPipeline() {
     // 2. Custom files uploaded here directly
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
     let custom: StorageObject[] = [];
-    if (customLocal && customLocal !== "undefined") {
+    if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
       try {
-        custom = JSON.parse(customLocal);
+        const parsed = JSON.parse(customLocal);
+        if (Array.isArray(parsed)) {
+          custom = parsed;
+        }
       } catch (e) {
         console.error("Failed to parse custom local storage files", e);
       }
@@ -557,9 +563,12 @@ export default function DevOpsPipeline() {
 
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
     let custom: StorageObject[] = [];
-    if (customLocal && customLocal !== "undefined") {
+    if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
       try {
-        custom = JSON.parse(customLocal);
+        const parsed = JSON.parse(customLocal);
+        if (Array.isArray(parsed)) {
+          custom = parsed;
+        }
       } catch (e) {
         console.error("Failed to parse custom local files during upload", e);
       }
@@ -576,9 +585,12 @@ export default function DevOpsPipeline() {
   const handleDeleteStorageObject = (id: string, name: string) => {
     const customLocal = localStorage.getItem('gcp_storage_custom_files');
     let custom: StorageObject[] = [];
-    if (customLocal && customLocal !== "undefined") {
+    if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
       try {
-        custom = JSON.parse(customLocal);
+        const parsed = JSON.parse(customLocal);
+        if (Array.isArray(parsed)) {
+          custom = parsed;
+        }
       } catch (e) {
         console.error("Failed to parse custom files during deletion", e);
       }
