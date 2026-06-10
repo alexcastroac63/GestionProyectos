@@ -51,6 +51,7 @@ import DevOpsPipeline from './components/DevOpsPipeline';
 import ProjectWBSManager from './components/ProjectWBSManager';
 import ProductBacklogManager from './components/ProductBacklogManager';
 import ScrumBoardAndQaManager from './components/ScrumBoardAndQaManager';
+import KPIDashboard from './components/KPIDashboard';
 
 // Icons Import
 import {
@@ -1904,136 +1905,22 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
           </div>
         </header>
 
-
-
         {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
               {/* 1. TAB: DASHBOARD */}
               {activeTab === 'dashboard' && (
-            <div className="space-y-6 animate-fadeIn" id="tab-dashboard">
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
-                <h3 className="text-slate-900 font-bold text-lg">Resumen de Control Integral del Proyecto</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Métricas clave consolidadas en base a presupuestos, historias de usuario, sprints y auditorías QA.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-                  {/* Card 1: Requerimientos */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <span className="text-[10px] bg-sky-100 text-sky-850 px-2 py-0.5 rounded-full font-bold uppercase">Requerimientos</span>
-                    <h4 className="text-2xl font-bold text-slate-950 mt-2 font-mono">
-                      {workItems.length} Elementos
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      {workItems.filter(w => w.type === 'HISTORIA_USUARIO').length} Historias, {workItems.filter(w => w.type === 'TAREA').length} Tareas, {workItems.filter(w => w.type === 'BUG').length} Bugs cargados.
-                    </p>
-                  </div>
-
-                  {/* Card 2: Cost Control */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <span className="text-[10px] bg-amber-100 text-amber-850 px-2 py-0.5 rounded-full font-bold uppercase">Presupuesto Real</span>
-                    <h4 className="text-2xl font-bold text-slate-950 mt-2 font-mono">
-                      {isDevRole ? '••••••' : `$${totalCostAmount.toLocaleString('en-US')}`}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      {isDevRole ? 'De un límite de ••••••. Margen libre de ••••••. (Restringido)' : `De un límite de $${activeProject.budget_total.toLocaleString('en-US')} USD. Margen libre de $${remainingBudget.toLocaleString('en-US')} USD.`}
-                    </p>
-                  </div>
-
-                  {/* Card 3: Sprints Completed */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <span className="text-[10px] bg-emerald-100 text-emerald-850 px-2 py-0.5 rounded-full font-bold uppercase">Sprints</span>
-                    <h4 className="text-2xl font-bold text-slate-950 mt-2 font-mono">
-                      {sprints.filter(s => s.status === 'FINALIZADO').length}/{sprints.length} Cerrados
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      Sprint activo: <strong className="text-slate-700 font-mono">{activeSprint?.name || 'Ninguno'}</strong>. Goal: {activeSprint?.goal || 'Sin meta'}.
-                    </p>
-                  </div>
+                <div className="animate-fadeIn" id="tab-dashboard">
+                  <KPIDashboard
+                    projects={projects}
+                    users={users}
+                    sprints={sprints}
+                    workItems={workItems}
+                    activities={activities}
+                    costs={costs}
+                  />
                 </div>
-              </div>
-
-              {/* Dynamic Cost breakdown custom React bar chart */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                  <h4 className="font-semibold text-slate-900 text-sm mb-4">Ejecutada de Costo por Categoría</h4>
-                  <div className="space-y-4">
-                    {['NOMINA', 'LICENCIAS', 'INFRAESTRUCTURA', 'OUTSOURCING', 'OTROS'].map(cat => {
-                      const amount = costs.filter(c => c.project_id === selectedProjectId && c.cost_type === cat).reduce((sum, current) => sum + current.amount, 0);
-                      const percent = totalCostAmount > 0 ? (amount / totalCostAmount) * 100 : 0;
-                      
-                      let barColor = 'bg-teal-500';
-                      if (cat === 'LICENCIAS') barColor = 'bg-indigo-400';
-                      if (cat === 'INFRAESTRUCTURA') barColor = 'bg-sky-400';
-                      if (cat === 'OUTSOURCING') barColor = 'bg-amber-400';
-                      if (cat === 'OTROS') barColor = 'bg-slate-400';
-
-                      return (
-                        <div key={cat} className="space-y-1">
-                          <div className="flex justify-between text-xs font-semibold">
-                            <span className="text-slate-700 tracking-tight font-mono">{cat}</span>
-                            <span className="text-slate-900 font-bold">{isDevRole ? '••••••' : `$${amount.toLocaleString('en-US')} (${Math.round(percent)}%)`}</span>
-                          </div>
-                          <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                            <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${percent}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Sprints velocity metric progress */}
-                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <h4 className="font-semibold text-slate-900 text-sm mb-3">Velocidad del Sprint Activo</h4>
-                    <p className="text-xs text-slate-500 mb-4">
-                      Rendimiento de puntos estimados {completedPoints} completados del total de {totalPoints} planeados para el {activeSprint?.name}.
-                    </p>
-                    <div className="flex items-center gap-6">
-                      {/* Big radial gauge custom CSS */}
-                      <div className="relative w-28 h-28 flex items-center justify-center bg-slate-50 rounded-full border border-slate-150 shadow-inner">
-                        <svg className="absolute w-full h-full transform -rotate-90">
-                          <circle cx="56" cy="56" r="48" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
-                          <circle cx="56" cy="56" r="48" stroke="#14b8a6" strokeWidth="8" fill="transparent"
-                                  strokeDasharray={2 * Math.PI * 48}
-                                  strokeDashoffset={2 * Math.PI * 48 * (1 - (totalPoints > 0 ? completedPoints / totalPoints : 0))}
-                          />
-                        </svg>
-                        <div className="text-center">
-                          <span className="text-lg font-extrabold text-slate-950 font-mono block">
-                            {totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0}%
-                          </span>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Hecho</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-teal-500" />
-                          <span className="text-slate-600">Puntos Finalizados: <strong className="text-slate-900">{completedPoints} pts</strong></span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-slate-300" />
-                          <span className="text-slate-600">Puntos Pendientes: <strong className="text-slate-900">{totalPoints - completedPoints} pts</strong></span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 italic mt-2">
-                          La capacidad máxima acordada por el equipo de ingeniería es de {activeSprint?.capacity} pts.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-100/80 pt-4 flex gap-2">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
-                      Métrica de sprint de: {activeSprint?.start_date} a {activeSprint?.end_date}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+              )}
 
           {/* 2. TAB: PROJECTS & COST BUDGETS_ */}
           {activeTab === 'projects' && (
