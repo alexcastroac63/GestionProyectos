@@ -295,6 +295,14 @@ export default function ProductBacklogManager({
   const [filterResponsible, setFilterResponsible] = useState<string>('all');
   const [filterEpic, setFilterEpic] = useState<string>('all');
   const [filterSprint, setFilterSprint] = useState<string>('all');
+  const [collapsedGroups, setCollapsedGroups] = useState<{[key: string]: boolean}>({});
+
+  const toggleGroup = (groupId: string, defaultValue: boolean) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !(prev[groupId] !== undefined ? prev[groupId] : defaultValue)
+    }));
+  };
 
   // --- Selection and Modals ---
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
@@ -1653,146 +1661,267 @@ export default function ProductBacklogManager({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150">
-                  {filteredStories.map(story => {
-                    const funcOwner = users.find(u => u.id === story.functionalOwnerId);
-                    const techOwner = users.find(u => u.id === story.technicalOwnerId);
-                    const storyEpic = epics.find(e => e.id === story.epic_id);
-                    const storySprint = sprints.find(s => s.id === story.sprint_id);
-                    
-                    const dorVal = getChecksPercent(story, 'dor');
-                    const dodVal = getChecksPercent(story, 'dod');
+                  {(() => {
+                    const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
+                    const activeSprints = projectSprints.filter(s => s.status === 'EN_CURSO' || s.status === 'EN_QA');
+                    const otherSprints = projectSprints.filter(s => s.status !== 'EN_CURSO' && s.status !== 'EN_QA');
 
-                    // Warnings
-                    const isOverdue = story.dueDate && new Date(story.dueDate) < new Date() && story.status !== 'Cerrada';
-                    const hasOverStoryPoints = story.storyPoints > 13;
-                    const hasMissingResponsible = !story.functionalOwnerId && !story.technicalOwnerId;
+                    const groups: Array<{
+                      id: string;
+                      name: string;
+                      isCompleted: boolean;
+                      badgeText: string;
+                      badgeStyle: string;
+                      stories: UserStory[];
+                    }> = [];
 
-                    return (
-                      <tr 
-                        key={story.id} 
-                        onDoubleClick={() => {
-                          setSelectedStoryId(story.id);
-                          const initHU = story.role || story.benefit
-                            ? `Como ${story.role || ''} quiero ${story.want || ''} para ${story.benefit || ''}`.trim()
-                            : (story.want || '');
-                          setStoryForm({ ...story, huUnified: initHU });
-                          setDetailTab('general');
-                          setIsDetailOpen(true);
-                        }}
-                        className="hover:bg-slate-50/60 cursor-pointer transition-all"
-                      >
-                        <td className="p-3 font-mono font-bold">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-100 text-[10.5px]">
-                              {story.code}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3 max-w-[200px]">
-                          <div>
-                            <span className="font-bold text-slate-850 block hover:text-teal-600 transition">{story.title}</span>
-                            <span className="text-[10px] text-slate-400 mt-0.5 block truncate max-w-[200px]">
-                              Como {story.role || '...'} quiero {story.want || '...'}
-                            </span>
-                            {/* Warning notifications */}
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              {isOverdue && (
-                                <span className="inline-flex items-center gap-1 text-[9px] bg-red-50 text-red-700 font-bold px-1.5 rounded border border-red-150 animate-pulse">
-                                  <AlertTriangle className="w-2.5 h-2.5" /> Vencida
-                                </span>
-                              )}
-                              {hasOverStoryPoints && (
-                                <span className="inline-flex items-center gap-1 text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 rounded border border-amber-150">
-                                  <AlertTriangle className="w-2.5 h-2.5" /> Est. Mayor a 13 (Dividir)
-                                </span>
-                              )}
-                              {hasMissingResponsible && (
-                                <span className="inline-flex items-center gap-1 text-[9px] bg-indigo-50 text-indigo-700 font-bold px-1.5 rounded border border-indigo-150">
-                                  <Info className="w-2.5 h-2.5" /> Sin responsable asignado
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[10.5px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 font-mono">
-                            {storyEpic ? storyEpic.code : '-'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[10.5px] font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-150 font-mono">
-                            {storySprint ? (() => {
-                              const match = storySprint.name.match(/\d+/);
-                              return match ? `SPRINT ${match[0]}` : storySprint.name.toUpperCase();
-                            })() : 'Backlog'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold ${
-                            story.priority === 'Crítica' ? 'bg-red-50 text-red-700 border border-red-100' :
-                            story.priority === 'Alta' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {story.priority}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center font-mono font-bold text-slate-800">
-                          {story.storyPoints} pts
-                        </td>
-                        <td className="p-3">
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] text-slate-650 block">
-                              👤 F: {funcOwner ? `${funcOwner.first_name} ${funcOwner.last_name.charAt(0)}.` : 'Sin asignar'}
-                            </span>
-                            <span className="text-[10px] text-slate-450 block">
-                              ⚙️ T: {techOwner ? `${techOwner.first_name} ${techOwner.last_name.charAt(0)}.` : 'Sin asignar'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-2.5">
-                            <select
-                              value={story.status}
-                              onChange={e => transitionStoryStatus(story, e.target.value as StoryStatus)}
-                              className={`bg-slate-50 border text-[10px] uppercase rounded-full font-black px-2 py-1 focus:outline-none cursor-pointer ${
-                                story.status === 'Cerrada' ? 'bg-emerald-50 border-emerald-250 text-emerald-800' :
-                                story.status === 'Ready' ? 'bg-indigo-50 border-indigo-250 text-indigo-800' :
-                                story.status === 'En desarrollo' ? 'bg-blue-50 border-blue-250 text-blue-800' :
-                                story.status === 'Bloqueada' ? 'bg-red-55 border-red-250 text-red-800' : 'bg-slate-100 border-slate-200 text-slate-650'
-                              }`}
-                            >
-                              {storyStatusesEnum.map(st => (
-                                <option key={st} value={st}>{st}</option>
-                              ))}
-                            </select>
+                    // 1. Active Sprints
+                    activeSprints.forEach(s => {
+                      groups.push({
+                        id: s.id,
+                        name: s.name,
+                        isCompleted: false,
+                        badgeText: s.status === 'EN_QA' ? 'En Pruebas QA (Activo)' : 'En Ejecución (Activo)',
+                        badgeStyle: s.status === 'EN_QA' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-blue-100 text-blue-800 border-blue-200',
+                        stories: filteredStories.filter(st => st.sprint_id === s.id)
+                      });
+                    });
 
-                            {currentRole !== 'CONSULTA' && (
-                              <button
-                                type="button"
-                                title="Editar Historia de Usuario"
-                                onClick={(e) => {
-                                  e.stopPropagation(); // Evitamos que haga trigger del doubleClick de la fila
+                    // 2. Backlog without Sprint
+                    const noSprintStories = filteredStories.filter(story => {
+                      return !story.sprint_id || !projectSprints.some(sp => sp.id === story.sprint_id);
+                    });
+                    groups.push({
+                      id: 'backlog',
+                      name: '📦 Product Backlog (Sin asignar a Sprint)',
+                      isCompleted: false,
+                      badgeText: 'Sin Sprint',
+                      badgeStyle: 'bg-slate-150 text-slate-700 border border-slate-200',
+                      stories: noSprintStories
+                    });
+
+                    // 3. Executed / Completed Sprints
+                    const executedSprints = otherSprints.filter(s => s.status === 'FINALIZADO');
+                    executedSprints.forEach(s => {
+                      groups.push({
+                        id: s.id,
+                        name: s.name,
+                        isCompleted: true, // Contracted static default
+                        badgeText: 'Finalizado (Contraído)',
+                        badgeStyle: 'bg-slate-200 text-slate-605 text-slate-600 border border-slate-300',
+                        stories: filteredStories.filter(st => st.sprint_id === s.id)
+                      });
+                    });
+
+                    // 4. Future / Planned Sprints (e.g. NO_INICIADO)
+                    const futureSprints = otherSprints.filter(s => s.status !== 'FINALIZADO');
+                    futureSprints.forEach(s => {
+                      groups.push({
+                        id: s.id,
+                        name: s.name,
+                        isCompleted: false,
+                        badgeText: 'Planificado',
+                        badgeStyle: 'bg-indigo-50 text-indigo-700 border border-indigo-150',
+                        stories: filteredStories.filter(st => st.sprint_id === s.id)
+                      });
+                    });
+
+                    // If filteredStories is totally empty
+                    if (filteredStories.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={8} className="p-8 text-center text-slate-500 italic">
+                            No se encontraron historias de usuario que coincidan con los filtros seleccionados.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return groups.map(group => {
+                      // Skip rendering empty groups if a specific sprint ID filter is active,
+                      // or if they are not the 'backlog' group and contain no stories.
+                      if (group.stories.length === 0 && group.id !== 'backlog' && filterSprint !== 'all') {
+                        return null;
+                      }
+
+                      // Check if collapsed
+                      const isCollapsed = collapsedGroups[group.id] !== undefined ? collapsedGroups[group.id] : group.isCompleted;
+
+                      return (
+                        <React.Fragment key={group.id}>
+                          {/* Segment Group Header Row */}
+                          <tr 
+                            className="bg-slate-50 border-y border-slate-200/80 cursor-pointer hover:bg-slate-100/85 transition-colors select-none font-sans"
+                            onClick={() => toggleGroup(group.id, group.isCompleted)}
+                          >
+                            <td colSpan={8} className="p-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="p-0.5 hover:bg-slate-200 rounded text-slate-500 transition">
+                                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  </span>
+                                  <span className={`text-[11px] font-extrabold tracking-tight text-slate-900 ${group.isCompleted ? 'text-slate-500 line-through' : ''}`}>
+                                    {group.name}
+                                  </span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full font-mono uppercase tracking-wider ${group.badgeStyle}`}>
+                                    {group.badgeText}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] font-medium text-slate-500 font-mono">
+                                  {group.stories.length} {group.stories.length === 1 ? 'requerimiento' : 'requerimientos'}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Segment Group Stories Rows */}
+                          {!isCollapsed && group.stories.length === 0 && (
+                            <tr>
+                              <td colSpan={8} className="p-4 text-center text-slate-400 italic bg-slate-50/25">
+                                No se tienen requerimientos asignados a este segmento de sprint.
+                              </td>
+                            </tr>
+                          )}
+
+                          {!isCollapsed && group.stories.map(story => {
+                            const funcOwner = users.find(u => u.id === story.functionalOwnerId);
+                            const techOwner = users.find(u => u.id === story.technicalOwnerId);
+                            const storyEpic = epics.find(e => e.id === story.epic_id);
+                            const storySprint = sprints.find(s => s.id === story.sprint_id);
+                            
+                            const dorVal = getChecksPercent(story, 'dor');
+                            const dodVal = getChecksPercent(story, 'dod');
+
+                            // Warnings
+                            const isOverdue = story.dueDate && new Date(story.dueDate) < new Date() && story.status !== 'Cerrada';
+                            const hasOverStoryPoints = story.storyPoints > 13;
+                            const hasMissingResponsible = !story.functionalOwnerId && !story.technicalOwnerId;
+
+                            return (
+                              <tr 
+                                key={story.id} 
+                                onDoubleClick={() => {
+                                  setSelectedStoryId(story.id);
                                   const initHU = story.role || story.benefit
                                     ? `Como ${story.role || ''} quiero ${story.want || ''} para ${story.benefit || ''}`.trim()
                                     : (story.want || '');
                                   setStoryForm({ ...story, huUnified: initHU });
-                                  setIsStoryFormOpen(true);
+                                  setDetailTab('general');
+                                  setIsDetailOpen(true);
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-slate-100 rounded-lg transition"
-                                id={`edit-story-btn-${story.id}`}
+                                className="hover:bg-slate-50/60 cursor-pointer transition-all"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredStories.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-500 italic">No se encontraron historias de usuario que coincidan con los filtros seleccionados.</td>
-                    </tr>
-                  )}
+                                <td className="p-3 font-mono font-bold">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-100 text-[10.5px]">
+                                      {story.code}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-3 max-w-[200px]">
+                                  <div>
+                                    <span className="font-bold text-slate-850 block hover:text-teal-600 transition">{story.title}</span>
+                                    <span className="text-[10px] text-slate-400 mt-0.5 block truncate max-w-[200px]">
+                                      Como {story.role || '...'} quiero {story.want || '...'}
+                                    </span>
+                                    {/* Warning notifications */}
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {isOverdue && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] bg-red-50 text-red-700 font-bold px-1.5 rounded border border-red-150 animate-pulse">
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Vencida
+                                        </span>
+                                      )}
+                                      {hasOverStoryPoints && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 rounded border border-amber-150">
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Est. Mayor a 13 (Dividir)
+                                        </span>
+                                      )}
+                                      {hasMissingResponsible && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] bg-indigo-50 text-indigo-700 font-bold px-1.5 rounded border border-indigo-150">
+                                          <Info className="w-2.5 h-2.5" /> Sin responsable asignado
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <span className="text-[10.5px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 font-mono">
+                                    {storyEpic ? storyEpic.code : '-'}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <span className="text-[10.5px] font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-150 font-mono">
+                                    {storySprint ? (() => {
+                                      const match = storySprint.name.match(/\d+/);
+                                      return match ? `SPRINT ${match[0]}` : storySprint.name.toUpperCase();
+                                    })() : 'Backlog'}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold ${
+                                    story.priority === 'Crítica' ? 'bg-red-50 text-red-700 border border-red-100' :
+                                    story.priority === 'Alta' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {story.priority}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold text-slate-800">
+                                  {story.storyPoints} pts
+                                </td>
+                                <td className="p-3">
+                                  <div className="space-y-0.5">
+                                    <span className="text-[10px] text-slate-650 block">
+                                      👤 F: {funcOwner ? `${funcOwner.first_name} ${funcOwner.last_name.charAt(0)}.` : 'Sin asignar'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-450 block">
+                                      ⚙️ T: {techOwner ? `${techOwner.first_name} ${techOwner.last_name.charAt(0)}.` : 'Sin asignar'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex items-center justify-end gap-2.5">
+                                    <select
+                                      value={story.status}
+                                      onChange={e => transitionStoryStatus(story, e.target.value as StoryStatus)}
+                                      className={`bg-slate-50 border text-[10px] uppercase rounded-full font-black px-2 py-1 focus:outline-none cursor-pointer ${
+                                        story.status === 'Cerrada' ? 'bg-emerald-50 border-emerald-250 text-emerald-800' :
+                                        story.status === 'Ready' ? 'bg-indigo-50 border-indigo-250 text-indigo-800' :
+                                        story.status === 'En desarrollo' ? 'bg-blue-50 border-blue-250 text-blue-800' :
+                                        story.status === 'Bloqueada' ? 'bg-red-55 border-red-250 text-red-800' : 'bg-slate-100 border-slate-200 text-slate-650'
+                                      }`}
+                                    >
+                                      {storyStatusesEnum.map(st => (
+                                        <option key={st} value={st}>{st}</option>
+                                      ))}
+                                    </select>
+
+                                    {currentRole !== 'CONSULTA' && (
+                                      <button
+                                        type="button"
+                                        title="Editar Historia de Usuario"
+                                        onClick={(e) => {
+                                          e.stopPropagation(); // Evitamos que haga trigger del doubleClick de la fila
+                                          const initHU = story.role || story.benefit
+                                            ? `Como ${story.role || ''} quiero ${story.want || ''} para ${story.benefit || ''}`.trim()
+                                            : (story.want || '');
+                                          setStoryForm({ ...story, huUnified: initHU });
+                                          setIsStoryFormOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-slate-100 rounded-lg transition"
+                                        id={`edit-story-btn-${story.id}`}
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>

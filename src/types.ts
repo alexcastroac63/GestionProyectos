@@ -18,6 +18,16 @@ export interface User {
   role: string;
   status: 'ACTIVE' | 'INACTIVE';
   password?: string;
+  tenant_id?: string;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  description: string;
+  domain: string;
+  plan: 'Basics' | 'Enterprise' | 'Premium';
+  status: 'Active' | 'Inactive';
 }
 
 export interface Team {
@@ -64,6 +74,7 @@ export interface Project {
   sprint_size_weeks: number;
   sprint_size_days: number;
   budget_total: number;
+  tenant_id?: string;
 }
 
 export interface ProjectCost {
