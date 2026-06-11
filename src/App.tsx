@@ -429,6 +429,11 @@ export default function App() {
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordStatus, setForgotPasswordStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSendingForgotPassword, setIsSendingForgotPassword] = useState(false);
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<'request' | 'verify'>('request');
+  const [forgotPasswordVerificationCode, setForgotPasswordVerificationCode] = useState('');
+  const [forgotPasswordCodeInput, setForgotPasswordCodeInput] = useState('');
+  const [forgotPasswordNewPassword, setForgotPasswordNewPassword] = useState('');
+  const [forgotPasswordSuccessMessage, setForgotPasswordSuccessMessage] = useState('');
 
   // SMTP Settings States (with defaults)
   const [smtpAccount, setSmtpAccount] = useState(() => {
@@ -1508,138 +1513,327 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
             {showLoginForgotPassword ? (
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Correo Oficial del Usuario</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <Mail className="w-4 h-4" />
+                {forgotPasswordStep === 'request' ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Correo Oficial del Usuario</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="email"
+                          value={forgotPasswordEmail}
+                          onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                          placeholder="ejemplo@campestre.com.sv"
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
+                        />
+                      </div>
+                      <p className="text-[9px] text-slate-500">
+                        Ingrese el correo del usuario cuyas credenciales desea restablecer. Esto simulará o canalizará la entrega de un código de acceso de un solo uso por SMTP.
+                      </p>
                     </div>
-                    <input
-                      type="email"
-                      value={forgotPasswordEmail}
-                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                      placeholder="ejemplo@campestre.com.sv"
-                      className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
-                    />
-                  </div>
-                  <p className="text-[9px] text-slate-500">
-                    Ingrese el correo del usuario cuyas credenciales desea restablecer. Esto simulará e intentará canalizar el envío por SMTP.
-                  </p>
-                </div>
 
-                {forgotPasswordStatus && (
-                  <div className={`border rounded-xl p-3 flex gap-2.5 text-xs ${
-                    forgotPasswordStatus.type === 'error' 
-                      ? 'bg-red-500/10 border-red-500/25 text-red-400' 
-                      : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                  }`}>
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <div className="leading-relaxed whitespace-pre-line text-left flex-1 font-sans">
-                      {forgotPasswordStatus.message}
-                    </div>
-                  </div>
-                )}
+                    {forgotPasswordStatus && (
+                      <div className={`border rounded-xl p-3 flex gap-2.5 text-xs ${
+                        forgotPasswordStatus.type === 'error' 
+                          ? 'bg-red-500/10 border-red-500/25 text-red-400' 
+                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                      }`}>
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div className="leading-relaxed whitespace-pre-line text-left flex-1 font-sans">
+                          {forgotPasswordStatus.message}
+                        </div>
+                      </div>
+                    )}
 
-                <div className="flex gap-2.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLoginForgotPassword(false);
-                      setForgotPasswordEmail('');
-                      setForgotPasswordStatus(null);
-                    }}
-                    className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 cursor-pointer text-center"
-                  >
-                    Volver al Inicio
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSendingForgotPassword}
-                    onClick={() => {
-                      const emailToFind = forgotPasswordEmail.trim().toLowerCase();
-                      if (!emailToFind) {
-                        setForgotPasswordStatus({
-                          type: 'error',
-                          message: 'Por favor, ingrese un correo oficial registrado.'
-                        });
-                        return;
-                      }
+                    {/* Local Simulation Option when SMTP doesn't exist */}
+                    {(!smtpAccount.trim() || !smtpPassword.trim()) && (
+                      <div className="bg-slate-950/60 border border-slate-850 p-3 rounded-xl space-y-1.5 animate-fadeIn">
+                        <div className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1.5 leading-none">
+                          <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce" />
+                          Simulación Directa Local (Atajo Rápido)
+                        </div>
+                        <p className="text-[9.5px] text-slate-400 leading-normal">
+                          ¿No cuenta con un servidor SMTP habilitado en este momento? Puede procesar la simulación de restablecimiento de contraseña de forma 100% local aquí mismo.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const emailToFind = forgotPasswordEmail.trim().toLowerCase();
+                            if (!emailToFind) {
+                              setForgotPasswordStatus({
+                                type: 'error',
+                                message: 'Por favor, ingrese un correo oficial registrado primero.'
+                              });
+                              return;
+                            }
+                            const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
+                            if (!targetUser) {
+                              setForgotPasswordStatus({
+                                type: 'error',
+                                message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`
+                              });
+                              return;
+                            }
+                            // Generate local code
+                            const localCode = 'CAMP-' + Math.floor(100000 + Math.random() * 900000);
+                            setForgotPasswordVerificationCode(localCode);
+                            setForgotPasswordStep('verify');
+                            setForgotPasswordStatus({
+                              type: 'success',
+                              message: `🧪 MODO DE SIMULACIÓN LOCAL ACTIVO\n\nSe ha generado un código de seguridad local: ${localCode}\n\nPor favor, cópielo e ingréselo a continuación para actualizar su clave.`
+                            });
+                            addLog('Simulación', `Se generó código de restablecimiento de contraseña local para ${emailToFind}: ${localCode}`);
+                          }}
+                          className="w-full bg-teal-950/50 hover:bg-teal-900/60 border border-teal-800/40 text-teal-300 font-bold py-1.5 rounded-lg text-[10.5px] transition cursor-pointer"
+                        >
+                          🧪 Generar Código y Simular Localmente
+                        </button>
+                      </div>
+                    )}
 
-                      const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
-                      if (!targetUser) {
-                        setForgotPasswordStatus({
-                          type: 'error',
-                          message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`
-                        });
-                        return;
-                      }
-
-                      setIsSendingForgotPassword(true);
-                      setForgotPasswordStatus(null);
-                      
-                      (async () => {
-                        try {
-                          if (!smtpAccount.trim() || !smtpPassword.trim()) {
-                            setIsSendingForgotPassword(false);
+                    <div className="flex gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLoginForgotPassword(false);
+                          setForgotPasswordEmail('');
+                          setForgotPasswordStatus(null);
+                        }}
+                        className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 cursor-pointer text-center"
+                      >
+                        Volver al Inicio
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSendingForgotPassword}
+                        onClick={() => {
+                          const emailToFind = forgotPasswordEmail.trim().toLowerCase();
+                          if (!emailToFind) {
                             setForgotPasswordStatus({
                               type: 'error',
-                              message: `⚠️ CONFIGURACIÓN REQUERIDA (SMTP NO CONFIGURADO)\n\nFallo de envío del correo hacia: ${emailToFind}.\n\nNo se detectó cuenta de envío de notificaciones ni contraseña.\n\nSolución:\n1. Inicie sesión temporalmente con un usuario de Acceso Rápido.\n2. Vaya al menú "Configuración Central" en el panel lateral y proporcione su cuenta de correo y credenciales SMTP.`
+                              message: 'Por favor, ingrese un correo oficial registrado.'
                             });
-                            addLog('Fallo de Envío SMTP', `Se intentó enviar un enlace de recuperación de contraseña a ${emailToFind}, pero la cuenta SMTP no está configurada.`);
                             return;
                           }
 
-                          const res = await fetch('/api/send-recovery', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                              host: smtpHost.trim(),
-                              port: smtpPort.trim(),
-                              username: smtpAccount.trim(),
-                              password: smtpPassword.trim(),
-                              emailToFind: emailToFind
-                            })
-                          });
-
-                          const data = await res.json();
-                          setIsSendingForgotPassword(false);
-
-                          if (res.ok && data.success) {
-                            setForgotPasswordStatus({
-                              type: 'success',
-                              message: `✅ ¡EMAIL DE RECUPERACIÓN ENVIADO CON ÉXITO!\n\nServidor SMTP: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\nDestinatario: ${emailToFind}\n\n${data.message}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Puede verificar los detalles en la bitácora del sistema.`
-                            });
-                            addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} desde la cuenta SMTP configurada: ${smtpAccount}`);
-                          } else {
+                          const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
+                          if (!targetUser) {
                             setForgotPasswordStatus({
                               type: 'error',
-                              message: `❌ ERROR EN SERVIDOR DE ALERTAS SMTP:\n\n${data.message || 'Error técnico desconocido.'}\n\nPor favor, revise que la Cuenta y contraseña de SMTP ubicadas en "Configuración Central" sean válidas para el Host ${smtpHost}.`
+                              message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`
                             });
-                            addLog('Fallo de Envío SMTP', `Error de despacho SMTP a ${emailToFind}: ${data.message || 'Fallo desconocido'}`);
+                            return;
                           }
-                        } catch (err: any) {
-                          setIsSendingForgotPassword(false);
-                          setForgotPasswordStatus({
-                            type: 'error',
-                            message: `⚠️ Error de comunicación con la plataforma: ${err.message || 'Fallo general de red.'}`
-                          });
-                        }
-                      })();
-                    }}
-                    className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isSendingForgotPassword ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Espere...</span>
-                      </>
-                    ) : (
-                      <span>Enviar Alerta</span>
+
+                          setIsSendingForgotPassword(true);
+                          setForgotPasswordStatus(null);
+                          
+                          (async () => {
+                            try {
+                              if (!smtpAccount.trim() || !smtpPassword.trim()) {
+                                setIsSendingForgotPassword(false);
+                                setForgotPasswordStatus({
+                                  type: 'error',
+                                  message: `⚠️ CONFIGURACIÓN REQUERIDA (SMTP NO CONFIGURADO)\n\nFallo de envío del correo hacia: ${emailToFind}.\n\nNo se detectó cuenta de envío de notificaciones ni contraseña.\n\nSolución:\n1. Inicie sesión temporalmente con un usuario de Acceso Rápido.\n2. Vaya al menú "Configuración Central" en el panel lateral y proporcione su cuenta de correo y credenciales SMTP.\n3. O bien, intente la opción de "Simulación Directa Local" de arriba.`
+                                });
+                                addLog('Fallo de Envío SMTP', `Se intentó enviar un enlace de recuperación de contraseña a ${emailToFind}, pero la cuenta SMTP no está configurada.`);
+                                return;
+                              }
+
+                              const res = await fetch('/api/send-recovery', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                  host: smtpHost.trim(),
+                                  port: smtpPort.trim(),
+                                  username: smtpAccount.trim(),
+                                  password: smtpPassword.trim(),
+                                  emailToFind: emailToFind
+                                })
+                              });
+
+                              const data = await res.json();
+                              setIsSendingForgotPassword(false);
+
+                              if (res.ok && data.success) {
+                                setForgotPasswordVerificationCode(data.tempToken);
+                                setForgotPasswordStep('verify');
+                                setForgotPasswordStatus({
+                                  type: 'success',
+                                  message: `✅ ¡CÓDIGO DE RECUPERACIÓN DESPACHADO CON ÉXITO!\n\nServidor SMTP: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Por favor consulte su buzón (incluso Correo no Deseado/Spam) para encontrar el código aleatorio e ingréselo a continuación.`
+                                });
+                                addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} con código de verificación ${data.tempToken}`);
+                              } else {
+                                setForgotPasswordStatus({
+                                  type: 'error',
+                                  message: `❌ ERROR EN SERVIDOR DE ALERTAS SMTP:\n\n${data.message || 'Error técnico desconocido.'}\n\nPor favor, revise que la Cuenta y contraseña de SMTP sean válidas.`
+                                });
+                                addLog('Fallo de Envío SMTP', `Error de despacho SMTP a ${emailToFind}: ${data.message || 'Fallo desconocido'}`);
+                              }
+                            } catch (err: any) {
+                              setIsSendingForgotPassword(false);
+                              setForgotPasswordStatus({
+                                type: 'error',
+                                message: `⚠️ Error de comunicación con la plataforma: ${err.message || 'Fallo general de red.'}`
+                              });
+                            }
+                          })();
+                        }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {isSendingForgotPassword ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Espere...</span>
+                          </>
+                        ) : (
+                          <span>Enviar Alerta</span>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-4 animate-fadeIn">
+                    {forgotPasswordStatus && (
+                      <div className={`border rounded-xl p-3 flex gap-2.5 text-[11px] ${
+                        forgotPasswordStatus.type === 'error' 
+                          ? 'bg-red-500/10 border-red-500/25 text-red-400' 
+                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                      }`}>
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div className="leading-relaxed whitespace-pre-line text-left flex-1 font-sans">
+                          {forgotPasswordStatus.message}
+                        </div>
+                      </div>
                     )}
-                  </button>
-                </div>
+
+                    {/* Input verification code */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Código de Seguridad / Verificación *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                          <Key className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          value={forgotPasswordCodeInput}
+                          onChange={(e) => setForgotPasswordCodeInput(e.target.value)}
+                          placeholder="Ingrese el código recibido"
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs font-mono tracking-widest uppercase focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Input new password */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Nueva Contraseña de Acceso *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                          <Lock className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="password"
+                          value={forgotPasswordNewPassword}
+                          onChange={(e) => setForgotPasswordNewPassword(e.target.value)}
+                          placeholder="Establezca su nueva contraseña clave"
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {forgotPasswordSuccessMessage && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded-xl p-3 flex gap-2.5 text-xs text-left animate-fadeIn">
+                        <Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
+                        <div className="leading-relaxed font-sans">
+                          {forgotPasswordSuccessMessage}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotPasswordStep('request');
+                          setForgotPasswordCodeInput('');
+                          setForgotPasswordNewPassword('');
+                          setForgotPasswordStatus(null);
+                          setForgotPasswordSuccessMessage('');
+                        }}
+                        className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 cursor-pointer text-center"
+                      >
+                        Atrás / Solicitar de nuevo
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const typedCode = forgotPasswordCodeInput.trim().toUpperCase();
+                          const expectedCode = forgotPasswordVerificationCode.trim().toUpperCase();
+                          const emailToFind = forgotPasswordEmail.trim().toLowerCase();
+                          
+                          if (!typedCode) {
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: 'Por favor, ingrese el código de verificación enviado.'
+                            });
+                            return;
+                          }
+
+                          if (typedCode !== expectedCode) {
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: `❌ CÓDIGO DE SEGURIDAD INCORRECTO.\n\nEl código ingresado no coincide con el código de recuperación enviado.`
+                            });
+                            return;
+                          }
+
+                          if (!forgotPasswordNewPassword.trim() || forgotPasswordNewPassword.length < 4) {
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: 'Por favor, ingrese una nueva contraseña válida (mínimo 4 caracteres).'
+                            });
+                            return;
+                          }
+
+                          const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
+                          if (!targetUser) {
+                            setForgotPasswordStatus({
+                              type: 'error',
+                              message: 'Error al asociar el usuario para el cambio de credenciales.'
+                            });
+                            return;
+                          }
+
+                          // Update password!
+                          setUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, password: forgotPasswordNewPassword.trim() } : u));
+                          setForgotPasswordSuccessMessage(`¡Contraseña restablecida correctamente para ${targetUser.first_name}!\n\nSu cuenta se ha actualizado en la base de datos local de Lifecycle PM. Volviendo a la ventana de login en 3 segundos...`);
+                          setForgotPasswordStatus(null);
+                          addLog('Seguridad', `Restableció con éxito su propia contraseña para la cuenta de ${targetUser.email} mediante verificación de token de seguridad.`);
+                          
+                          setTimeout(() => {
+                            setShowLoginForgotPassword(false);
+                            setForgotPasswordEmail('');
+                            setForgotPasswordStatus(null);
+                            setForgotPasswordStep('request');
+                            setForgotPasswordCodeInput('');
+                            setForgotPasswordNewPassword('');
+                            setForgotPasswordSuccessMessage('');
+                          }, 3500);
+                        }}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Confirmar Restauración 🔑</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <form onSubmit={handleLogin} className="space-y-4">
