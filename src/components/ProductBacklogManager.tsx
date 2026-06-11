@@ -443,7 +443,7 @@ export default function ProductBacklogManager({
               type: 'Funcional',
               expectedResult: 'Listado completo sin pérdidas de registros.',
               status: 'Cumple',
-              validatedBy: 'Ana Gómez',
+              validatedBy: 'SA',
               validatedAt: '2026-06-02'
             },
             {

@@ -17,6 +17,7 @@ export interface User {
   avatar_url?: string;
   role: string;
   status: 'ACTIVE' | 'INACTIVE';
+  password?: string;
 }
 
 export interface Team {

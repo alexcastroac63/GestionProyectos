@@ -161,6 +161,24 @@ function safeSave(key: string, value: any): void {
 }
 
 export default function App() {
+  // --- Synchronous Outdated Cache Purge Block ---
+  try {
+    const rawUsers = localStorage.getItem('gcp_users');
+    if (rawUsers && (rawUsers.includes('ana.gomez@empresa.com') || !rawUsers.includes('sa@campestre.com.sv'))) {
+      console.log('[Security Sync] Purging legacy local storage caches synchronously before render...');
+      const keysToPurge = [
+        'gcp_users', 'gcp_projects', 'gcp_costs', 'gcp_sprints', 'gcp_work_items',
+        'gcp_activities', 'gcp_logged_in_user', 'gcp_category_budgets',
+        'gcp_test_suites', 'gcp_test_cases', 'gcp_test_runs',
+        'gcp_mockups', 'gcp_mock_screens', 'gcp_mock_components',
+        'gcp_mock_connections', 'gcp_budget_baselines_multi'
+      ];
+      keysToPurge.forEach(k => localStorage.removeItem(k));
+    }
+  } catch (err) {
+    console.warn('Failed to parse or purge stale localStorage keys:', err);
+  }
+
   // --- Persistent State / Handlers ---
   const [users, setUsers] = useState<User[]>(() => {
     return safeLoad<User[]>('gcp_users', INITIAL_USERS);
@@ -628,6 +646,12 @@ export default function App() {
 
     if (foundUser.status === 'INACTIVE') {
       setLoginError('Esta cuenta se encuentra desactivada temporalmente en el panel administrativo.');
+      return;
+    }
+
+    // Secure password matching validation for live implementation
+    if (foundUser.password && loginPassword !== foundUser.password) {
+      setLoginError('La contraseña ingresada es incorrecta.');
       return;
     }
 
@@ -1454,7 +1478,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       type="email"
                       value={forgotPasswordEmail}
                       onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                      placeholder="ejemplo@empresa.com"
+                      placeholder="ejemplo@campestre.com.sv"
                       className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
                     />
                   </div>
@@ -1604,7 +1628,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       type="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="ejemplo@empresa.com"
+                      placeholder="ejemplo@campestre.com.sv"
                       className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
                     />
                   </div>
@@ -1669,38 +1693,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
               </form>
             )}
 
-            {/* Quick Demo Pre-fills Panel */}
-            <div className="mt-8 pt-5 border-t border-slate-850">
-              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest font-mono text-center mb-3">
-                🚪 Acceso Rápido de Prueba (Autocompletar)
-              </p>
-              
-              <div className="grid grid-cols-2 gap-2 text-left">
-                {users.slice(0, 4).map((user) => (
-                  <button
-                    key={user.id}
-                    onClick={() => {
-                      setLoginEmail(user.email);
-                      setLoginPassword('Enterprise2026!');
-                      setLoginError('');
-                    }}
-                    type="button"
-                    className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all duration-150 text-left cursor-pointer flex flex-col group"
-                  >
-                    <span className="font-semibold text-slate-200 text-[10px] group-hover:text-blue-400 transition-colors truncate">
-                      {user.first_name} {user.last_name}
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-medium tracking-tight truncate mt-0.5">
-                      {user.role}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              
-              <p className="text-[9px] text-slate-600 mt-3 text-center leading-normal">
-                Al seleccionar cualquiera, se cargará su correo oficial y la clave genérica corporativa.
-              </p>
-            </div>
+
           </div>
 
           <div className="mt-6 text-center text-[10px] text-slate-600 leading-normal border-t border-slate-850 pt-4">
@@ -3810,7 +3803,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         <input
                           type="email"
                           required
-                          placeholder="sofia.ortiz@empresa.com"
+                          placeholder="nombre.apellido@campestre.com.sv"
                           value={newEmail}
                           onChange={(e) => setNewEmail(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none"
