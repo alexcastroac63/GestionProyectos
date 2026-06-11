@@ -57,7 +57,8 @@ export default function KPIDashboard({
   const [selectedLeaderFilter, setSelectedLeaderFilter] = useState<string>('ALL');
   const [selectedScrumFilter, setSelectedScrumFilter] = useState<string>('ALL');
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string[]>(['DESARROLLO', 'PRUEBAS']);
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -242,7 +243,7 @@ export default function KPIDashboard({
       // 7. Team Selector
       if (selectedTeamFilter !== 'ALL' && p.team_id !== selectedTeamFilter) return false;
       // 8. Status Selector
-      if (selectedStatusFilter !== 'ALL' && p.EstadoProyecto !== selectedStatusFilter) return false;
+      if (selectedStatusFilter.length > 0 && !selectedStatusFilter.includes(p.EstadoProyecto)) return false;
       // 9. Type Selector
       if (selectedTypeFilter !== 'ALL' && p.TipoProyecto !== selectedTypeFilter) return false;
       
@@ -306,7 +307,7 @@ export default function KPIDashboard({
     setSelectedLeaderFilter('ALL');
     setSelectedScrumFilter('ALL');
     setSelectedTeamFilter('ALL');
-    setSelectedStatusFilter('ALL');
+    setSelectedStatusFilter([]);
     setSelectedTypeFilter('ALL');
     setSearchQuery('');
   };
@@ -318,7 +319,7 @@ export default function KPIDashboard({
     selectedLeaderFilter !== 'ALL' ||
     selectedScrumFilter !== 'ALL' ||
     selectedTeamFilter !== 'ALL' ||
-    selectedStatusFilter !== 'ALL' ||
+    selectedStatusFilter.length > 0 ||
     selectedTypeFilter !== 'ALL' ||
     searchQuery !== '';
 
@@ -512,20 +513,91 @@ export default function KPIDashboard({
           </div>
 
           {/* Estado Proyecto */}
-          <div>
+          <div className="relative">
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Estado Ciclo de Vida
+              Estado Ciclo de Vida (Múltiple)
             </label>
-            <select
-              value={selectedStatusFilter}
-              onChange={e => setSelectedStatusFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+            <button
+              type="button"
+              onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 text-left cursor-pointer font-bold flex justify-between items-center whitespace-nowrap overflow-hidden min-h-[34px]"
             >
-              <option value="ALL">Cualquier Estado ({projectStatuses.length})</option>
-              {projectStatuses.map(status => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
+              <span className="truncate">
+                {selectedStatusFilter.length === 6
+                  ? '🟢 Todos los Estados'
+                  : selectedStatusFilter.length === 0
+                  ? '⚠️ Cualquier Estado (Sin filtro)'
+                  : selectedStatusFilter.map(val => {
+                      const matching = [
+                        { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
+                        { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
+                        { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
+                        { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
+                        { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
+                        { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
+                      ].find(s => s.value === val);
+                      return matching ? `${matching.icon} ${matching.label}` : val;
+                    }).join(', ')}
+              </span>
+              <span className="text-slate-400 text-[9px] ml-1">▼</span>
+            </button>
+            
+            {isStatusDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setIsStatusDropdownOpen(false)} 
+                />
+                <div className="absolute right-0 left-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl p-2 z-20 space-y-1">
+                  <div className="flex justify-between items-center pb-1.5 mb-1.5 border-b border-slate-100 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter(['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS', 'FINALIZADO', 'CANCELADO'])}
+                      className="text-indigo-600 font-extrabold hover:underline"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter([])}
+                      className="text-slate-500 font-extrabold hover:underline"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                  {[
+                    { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
+                    { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
+                    { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
+                    { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
+                    { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
+                    { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
+                  ].map(option => {
+                    const isChecked = selectedStatusFilter.includes(option.value);
+                    return (
+                      <label 
+                        key={option.value} 
+                        className="flex items-center gap-2 p-1 px-2 hover:bg-slate-50 rounded cursor-pointer text-xs font-semibold select-none text-slate-705"
+                      >
+                        <input 
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setSelectedStatusFilter(selectedStatusFilter.filter(s => s !== option.value));
+                            } else {
+                              setSelectedStatusFilter([...selectedStatusFilter, option.value]);
+                            }
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer w-3.5 h-3.5"
+                        />
+                        <span>{option.icon} {option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Active stats indicator summary */}
@@ -1387,7 +1459,7 @@ export default function KPIDashboard({
 
       {/* FOOTER AUDITING */}
       <div className="bg-slate-900 border border-slate-800 text-slate-400 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center text-[10px] tracking-wide uppercase font-mono">
-        <span>GCP Integrated Control Platform • PMO Systems v3.4</span>
+        <span>GCP Integrated Control Platform • PMO Systems v3.4 • Autor: Alex Castro</span>
         <span className="text-indigo-400 py-1 sm:py-0">Aseguramiento de Calidad y Gobierno Ágil</span>
       </div>
     </div>

@@ -678,7 +678,7 @@ export const INITIAL_GITHUB_CONNECTION: GitHubConnection = {
 export const INITIAL_COMMITS: GitCommit[] = [
   {
     id: 'c-1',
-    author: 'Andrés Mendoza',
+    author: 'Alex Castro',
     message: 'feat(dba): add postgresql DDL tables and composite index unique definitions',
     branch: 'main',
     hash: 'aef783b',
@@ -686,7 +686,7 @@ export const INITIAL_COMMITS: GitCommit[] = [
   },
   {
     id: 'c-2',
-    author: 'Valentina Rojas',
+    author: 'Alex Castro',
     message: 'test(qa): add multi-tenant assertion and mockup drag test cases',
     branch: 'release-1.0',
     hash: '7cd5a14',
@@ -694,7 +694,7 @@ export const INITIAL_COMMITS: GitCommit[] = [
   },
   {
     id: 'c-3',
-    author: 'Andrés Mendoza',
+    author: 'Alex Castro',
     message: 'fix(gantt): solve date offset boundary in finishes dependency link',
     branch: 'main',
     hash: '410abf2',
@@ -707,7 +707,7 @@ export const INITIAL_PRS: PullRequest[] = [
     id: 'pr-1',
     number: 142,
     title: 'Integrate dynamic interactive Mockup Canvas using SVG and local coordinates',
-    author: 'Andrés Mendoza',
+    author: 'Alex Castro',
     status: 'OPEN',
     created_at: '2026-05-26T09:00:00Z'
   },
@@ -715,7 +715,7 @@ export const INITIAL_PRS: PullRequest[] = [
     id: 'pr-2',
     number: 140,
     title: 'QA automated test suite integration panel + visual logs',
-    author: 'Valentina Rojas',
+    author: 'Alex Castro',
     status: 'MERGED',
     created_at: '2026-05-24T11:20:00Z'
   }

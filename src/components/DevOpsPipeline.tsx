@@ -11,6 +11,108 @@ import {
   Activity, Search, Plus, X, Users, Settings, StopCircle
 } from 'lucide-react';
 
+export interface DevRepository {
+  id: string;
+  name: string;
+  url: string;
+  branch: string;
+  type: 'Frontend' | 'Backend' | 'Infrastructure' | 'Fullstack' | 'Database';
+  description: string;
+  lastCommit?: string;
+  status: 'active' | 'archived' | 'experimental';
+}
+
+export interface InstallationStep {
+  id: string;
+  phase: 'Requisitos' | 'Clonación' | 'Variables de Entorno' | 'Instalación' | 'Ejecución';
+  title: string;
+  command: string;
+  notes: string;
+  category: 'frontend' | 'backend' | 'docker' | 'general';
+  isCompleted?: boolean;
+}
+
+const INITIAL_REPOS: DevRepository[] = [
+  {
+    id: 'repo-1',
+    name: 'pmo-web-ui',
+    url: 'https://github.com/empresa-pmo/pmo-web-ui.git',
+    branch: 'main',
+    type: 'Frontend',
+    description: 'Interface de usuario principal construida con React 18, Vite y Tailwind CSS. Dashboard consolidado y control PMO.',
+    lastCommit: 'aef783b - feat: add postgresql DDL tables (Alex Castro)',
+    status: 'active'
+  },
+  {
+    id: 'repo-2',
+    name: 'pmo-backend-microservices',
+    url: 'https://github.com/empresa-pmo/pmo-backend-microservices.git',
+    branch: 'development',
+    type: 'Backend',
+    description: 'Monorepo de microservicios desarrollados en Node.js, Express y TypeScript. Incluye módulos de Teams, Scrum, Proyectos y QA.',
+    lastCommit: '4f2910c - fix: resolve memory leak on workspace telemetry (Alex Castro)',
+    status: 'active'
+  },
+  {
+    id: 'repo-3',
+    name: 'pmo-devops-infra',
+    url: 'https://github.com/empresa-pmo/pmo-devops-infra.git',
+    branch: 'main',
+    type: 'Infrastructure',
+    description: 'Scripts de automatización de infraestructura, configuración de Nginx Gateway, Terraform Docker, y provisionamiento.',
+    lastCommit: 'bd77121 - chore: update minio mc release version (Alex Castro)',
+    status: 'active'
+  }
+];
+
+const INITIAL_INSTALLATION_STEPS: InstallationStep[] = [
+  {
+    id: 'step-1',
+    phase: 'Requisitos',
+    title: 'Instalar PNPM y Node.js LTS (v20+)',
+    command: 'npm install -g pnpm',
+    notes: 'Asegúrese de tener Node v20 o superior instalado. Se recomienda usar nvm si tiene múltiples versiones.',
+    category: 'general',
+    isCompleted: true
+  },
+  {
+    id: 'step-2',
+    phase: 'Clonación',
+    title: 'Clonar Repositorio Principal Monorepo',
+    command: 'git clone https://github.com/empresa-pmo/pmo-backend-microservices.git',
+    notes: 'Clona el repositorio que contiene toda la lógica de backend para la PMO.',
+    category: 'backend',
+    isCompleted: false
+  },
+  {
+    id: 'step-3',
+    phase: 'Variables de Entorno',
+    title: 'Configurar variables de entorno .env',
+    command: 'cp .env.example .env',
+    notes: 'Defina las variables de base de datos Postgres y el token secreto de seguridad JWT.',
+    category: 'general',
+    isCompleted: false
+  },
+  {
+    id: 'step-4',
+    phase: 'Instalación',
+    title: 'Instalar Dependencias de las Capas',
+    command: 'pnpm install',
+    notes: 'Utiliza pnpm para resolver las dependencias rápidamente respetando el lockfile definido.',
+    category: 'general',
+    isCompleted: false
+  },
+  {
+    id: 'step-5',
+    phase: 'Ejecución',
+    title: 'Levantar el stack de desarrollo local',
+    command: 'docker-compose up -d',
+    notes: 'Inicia postgres, nginx, y el almacenamiento simulated localmente de forma automatizada.',
+    category: 'docker',
+    isCompleted: false
+  }
+];
+
 interface PipelineLogStep {
   name: string;
   command: string;
@@ -89,11 +191,81 @@ const INITIAL_PORTAINER_CONTAINERS: PortainerContainer[] = [
 export default function DevOpsPipeline() {
   const [running, setRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
-  const [activeTab, setActiveTab] = useState<'cicd' | 'docker' | 'storage'>('cicd');
+  const [activeTab, setActiveTab] = useState<'repos' | 'installation' | 'docker' | 'storage'>('repos');
+
+  // New DevOps repos and installation steps states
+  const [repos, setRepos] = useState<DevRepository[]>(() => {
+    const saved = localStorage.getItem('gcp_devops_repos_list');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_REPOS;
+  });
+
+  const [installSteps, setInstallSteps] = useState<InstallationStep[]>(() => {
+    const saved = localStorage.getItem('gcp_devops_installation_steps_list');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_INSTALLATION_STEPS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gcp_devops_repos_list', JSON.stringify(repos));
+  }, [repos]);
+
+  useEffect(() => {
+    localStorage.setItem('gcp_devops_installation_steps_list', JSON.stringify(installSteps));
+  }, [installSteps]);
+
+  // Repos Form states
+  const [showRepoModal, setShowRepoModal] = useState(false);
+  const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
+  const [repoName, setRepoName] = useState('');
+  const [repoUrl, setRepoUrl] = useState('');
+  const [repoBranch, setRepoBranch] = useState('main');
+  const [repoType, setRepoType] = useState<DevRepository['type']>('Backend');
+  const [repoDesc, setRepoDesc] = useState('');
+
+  // Setup Step Form states
+  const [showStepModal, setShowStepModal] = useState(false);
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [stepPhase, setStepPhase] = useState<InstallationStep['phase']>('Requisitos');
+  const [stepTitle, setStepTitle] = useState('');
+  const [stepCommand, setStepCommand] = useState('');
+  const [stepNotes, setStepNotes] = useState('');
+  const [stepCategory, setStepCategory] = useState<InstallationStep['category']>('general');
+
+  // Interactive filters
+  const [repoSearch, setRepoSearch] = useState('');
+  const [installationFilter, setInstallationFilter] = useState<'all' | 'general' | 'frontend' | 'backend' | 'docker'>('all');
 
   // Portainer IO States
-  const [portainerNavTab, setPortainerNavTab] = useState<'dashboard' | 'containers' | 'images' | 'volumes' | 'networks'>('dashboard');
+  const [portainerNavTab, setPortainerNavTab] = useState<'dashboard' | 'containers' | 'images' | 'volumes' | 'networks' | 'npm_network'>('dashboard');
   const [portainerContainers, setPortainerContainers] = useState<PortainerContainer[]>(INITIAL_PORTAINER_CONTAINERS);
+  
+  // Custom NPM Network & SSL states
+  const [dockerHostIp, setDockerHostIp] = useState('192.168.200.47');
+  const [dockerSubnet, setDockerSubnet] = useState('/24');
+  const [dockerPort, setDockerPort] = useState('9000');
+  const [sslCertificates, setSslCertificates] = useState([
+    { id: 'ssl-1', name: 'pmo-lifecycle.corp (Wildcard)', issuer: "Let's Encrypt", expires: '2026-09-15', containersBound: ['pmo-nginx-gateway', 'pmo-web-ui'] },
+    { id: 'ssl-2', name: '192.168.200.47 SSL Cert (Self-Signed)', issuer: 'Local Root CA', expires: '2028-12-01', containersBound: ['pmo-storage-simulator'] },
+    { id: 'ssl-3', name: 'api-gateway.pmo.internal', issuer: 'DigiCert PMO', expires: '2027-04-18', containersBound: [] }
+  ]);
+  const [selectedSslContainer, setSelectedSslContainer] = useState('');
+  const [selectedSslCert, setSelectedSslCert] = useState('ssl-1');
+  const [newSslName, setNewSslName] = useState('');
+  const [newSslIssuer, setNewSslIssuer] = useState('Let\'s Encrypt');
+  const [isVerifyingIp, setIsVerifyingIp] = useState(false);
   const [selectedContainerLogs, setSelectedContainerLogs] = useState<PortainerContainer | null>(null);
   const [portainerLogs, setPortainerLogs] = useState<string[]>([]);
   const [portainerSearchQuery, setPortainerSearchQuery] = useState('');
@@ -386,6 +558,65 @@ export default function DevOpsPipeline() {
     showToast(`✓ Contenedor Portainer '${cleanName}' creado con éxito`);
   };
 
+  // NPM_NETWORK SSL binding and host IP verification handlers
+  const handleBindSsl = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSslContainer || !selectedSslCert) {
+      showToast("⚠️ Seleccione un contenedor y un certificado válido");
+      return;
+    }
+    
+    const container = portainerContainers.find(c => c.id === selectedSslContainer);
+    const cert = sslCertificates.find(c => c.id === selectedSslCert);
+    
+    if (container && cert) {
+      if (cert.containersBound.includes(container.name)) {
+        showToast(`⚠️ El contenedor ${container.name} ya está asociado a este certificado`);
+        return;
+      }
+      
+      setSslCertificates(prev => prev.map(c => {
+        if (c.id === selectedSslCert) {
+          return {
+            ...c,
+            containersBound: [...c.containersBound, container.name]
+          };
+        }
+        return c;
+      }));
+      
+      triggerPortainerAlert(`Enlace SSL Exitoso: El contenedor ${container.name} se unió al certificado ${cert.name} en NPM_NETWORK`);
+      showToast(`✓ Certificado ${cert.name} vinculado a ${container.name}`);
+    }
+  };
+
+  const handleCreateSsl = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSslName) return;
+    
+    const newCert = {
+      id: `ssl-${Date.now()}`,
+      name: newSslName.trim(),
+      issuer: newSslIssuer,
+      expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      containersBound: []
+    };
+    
+    setSslCertificates(prev => [...prev, newCert]);
+    setNewSslName('');
+    triggerPortainerAlert(`Certificado '${newCert.name}' generado y registrado en NPM_NETWORK`);
+    showToast(`✓ Nuevo certificado SSL ${newCert.name} registrado`);
+  };
+
+  const handleVerifyHostIp = () => {
+    setIsVerifyingIp(true);
+    setTimeout(() => {
+      setIsVerifyingIp(false);
+      triggerPortainerAlert(`Verificación exitosa: Tráfico enrutado por http://${dockerHostIp}:${dockerPort}${dockerSubnet === '/24' ? '' : dockerSubnet}`);
+      showToast(`✓ Host ${dockerHostIp}:${dockerPort} verificado`);
+    }, 1000);
+  };
+
   // Inspect logs
   const handleInspectContainerLogs = (c: PortainerContainer) => {
     setSelectedContainerLogs(c);
@@ -498,6 +729,140 @@ export default function DevOpsPipeline() {
     const interval = setInterval(loadStorageObjects, 2500);
     return () => clearInterval(interval);
   }, []);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // --- Repositories handlers ---
+  const handleAddOrEditRepo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!repoName.trim() || !repoUrl.trim()) return;
+
+    if (editingRepoId) {
+      setRepos(prev => prev.map(r => r.id === editingRepoId ? {
+        ...r,
+        name: repoName.trim(),
+        url: repoUrl.trim(),
+        branch: repoBranch,
+        type: repoType,
+        description: repoDesc.trim()
+      } : r));
+      setNotification(`✓ Repositorio '${repoName}' actualizado correctamente.`);
+    } else {
+      const newRepo: DevRepository = {
+        id: `repo-${Date.now()}`,
+        name: repoName.trim(),
+        url: repoUrl.trim(),
+        branch: repoBranch,
+        type: repoType,
+        description: repoDesc.trim(),
+        lastCommit: `Creado el ${new Date().toISOString().slice(0, 10)} - (PMO Builder)`,
+        status: 'active'
+      };
+      setRepos(prev => [...prev, newRepo]);
+      setNotification(`✓ Repositorio '${repoName}' registrado con éxito.`);
+    }
+
+    // Reset Form
+    setRepoName('');
+    setRepoUrl('');
+    setRepoBranch('main');
+    setRepoType('Backend');
+    setRepoDesc('');
+    setEditingRepoId(null);
+    setShowRepoModal(false);
+  };
+
+  const handleEditRepo = (repo: DevRepository) => {
+    setEditingRepoId(repo.id);
+    setRepoName(repo.name);
+    setRepoUrl(repo.url);
+    setRepoBranch(repo.branch);
+    setRepoType(repo.type);
+    setRepoDesc(repo.description);
+    setShowRepoModal(true);
+  };
+
+  const handleDeleteRepo = (id: string, name: string) => {
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Repositorio',
+      message: `¿Está seguro de que desea eliminar el repositorio '${name}' del listado? Esta acción no se puede deshacer.`,
+      onConfirm: () => {
+        setRepos(prev => prev.filter(r => r.id !== id));
+        setNotification(`✗ Repositorio '${name}' eliminado.`);
+        setDeleteConfirmState(null);
+      }
+    });
+  };
+
+  // --- Installation steps handlers ---
+  const handleAddOrEditStep = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stepTitle.trim() || !stepCommand.trim()) return;
+
+    if (editingStepId) {
+      setInstallSteps(prev => prev.map(s => s.id === editingStepId ? {
+        ...s,
+        phase: stepPhase,
+        title: stepTitle.trim(),
+        command: stepCommand.trim(),
+        notes: stepNotes.trim(),
+        category: stepCategory
+      } : s));
+      setNotification(`✓ Paso '${stepTitle}' actualizado.`);
+    } else {
+      const newStep: InstallationStep = {
+        id: `step-${Date.now()}`,
+        phase: stepPhase,
+        title: stepTitle.trim(),
+        command: stepCommand.trim(),
+        notes: stepNotes.trim(),
+        category: stepCategory,
+        isCompleted: false
+      };
+      setInstallSteps(prev => [...prev, newStep]);
+      setNotification(`✓ Paso de instalación '${stepTitle}' agregado.`);
+    }
+
+    // Reset fields
+    setStepTitle('');
+    setStepCommand('');
+    setStepNotes('');
+    setEditingStepId(null);
+    setShowStepModal(false);
+  };
+
+  const handleEditStep = (step: InstallationStep) => {
+    setEditingStepId(step.id);
+    setStepPhase(step.phase);
+    setStepTitle(step.title);
+    setStepCommand(step.command);
+    setStepNotes(step.notes);
+    setStepCategory(step.category);
+    setShowStepModal(true);
+  };
+
+  const handleDeleteStep = (id: string, title: string) => {
+    setDeleteConfirmState({
+      isOpen: true,
+      title: 'Eliminar Paso de Instalación',
+      message: `¿Está seguro de desea eliminar el paso de instalación '${title}'?`,
+      onConfirm: () => {
+        setInstallSteps(prev => prev.filter(s => s.id !== id));
+        setNotification(`✗ Paso '${title}' eliminado.`);
+        setDeleteConfirmState(null);
+      }
+    });
+  };
+
+  const toggleStepCompleted = (id: string) => {
+    setInstallSteps(prev => prev.map(s => s.id === id ? { ...s, isCompleted: !s.isCompleted } : s));
+  };
 
   const startPipeline = () => {
     if (running) return;
@@ -661,12 +1026,12 @@ export default function DevOpsPipeline() {
       {/* DevOps Header */}
       <div className="p-6 border-b border-slate-100 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
-          <h3 className="font-semibold text-slate-900 text-lg flex items-center gap-2">
+          <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
             <Cpu className="w-5 h-5 text-indigo-600" />
-            Consola DevOps & Storage Clientes
+            Repositorios, Instalación & Contenedores del Proyecto
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Gobernabilidad de micro-servicios Docker, pipelines de despliegue GitHub Actions, y simulación de repositorios de almacenamiento local.
+            Gobernabilidad de repositorios Git, guías de instalación y setup del entorno de desarrollo, y control sobre los contenedores locales de Docker.
           </p>
         </div>
 
@@ -674,20 +1039,28 @@ export default function DevOpsPipeline() {
           {/* Toggle Tab */}
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60">
             <button
-               onClick={() => setActiveTab('cicd')}
+               onClick={() => setActiveTab('repos')}
                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                 activeTab === 'cicd' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                 activeTab === 'repos' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'
                }`}
             >
-              GitHub CI/CD Runner
+              Repositorios Código
+            </button>
+            <button
+               onClick={() => setActiveTab('installation')}
+               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                 activeTab === 'installation' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'
+               }`}
+            >
+              Guía de Instalación
             </button>
             <button
                onClick={() => setActiveTab('docker')}
                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                 activeTab === 'docker' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                 activeTab === 'docker' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-800'
                }`}
             >
-              Servicios Docker Stack
+              Contenedores Docker
             </button>
             <button
                onClick={() => setActiveTab('storage')}
@@ -696,110 +1069,536 @@ export default function DevOpsPipeline() {
                }`}
             >
               <Server className="w-3.5 h-3.5" />
-              Repositorio Secure Local
+              S3 PMO Bucket
             </button>
           </div>
         </div>
       </div>
 
-      {activeTab === 'cicd' && (
-        <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-100 animate-fadeIn">
-          {/* Steps Left Panel */}
-          <div className="md:col-span-2 p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Flujo de Compilación</span>
-              <button
-                onClick={startPipeline}
-                disabled={running}
-                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:opacity-50 text-white font-medium text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5" />
-                {running ? 'Ejecutando...' : 'Lanzar Actions Runner'}
-              </button>
+      {activeTab === 'repos' && (
+        <div className="p-6 space-y-6 animate-fadeIn">
+          {/* Controls Panel */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar repositorios por nombre, tipo o descripción..."
+                value={repoSearch}
+                onChange={e => setRepoSearch(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 font-sans"
+              />
+              {repoSearch && (
+                <button 
+                  onClick={() => setRepoSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-mono text-[11px]"
+                >
+                  ×
+                </button>
+              )}
             </div>
 
-            <div className="space-y-3">
-              {steps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg border transition ${
-                    step.status === 'RUNNING' ? 'border-amber-400 bg-amber-50/40 shadow-xs' :
-                    step.status === 'SUCCESS' ? 'border-indigo-200 bg-indigo-50/20' : 'border-slate-150 bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs font-semibold text-slate-800 block">{step.name}</span>
-                    {step.status === 'RUNNING' && (
-                      <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase animate-pulse">
-                        EN CURSO
-                      </span>
-                    )}
-                    {step.status === 'SUCCESS' && (
-                      <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
-                        ÉXITO
-                      </span>
-                    )}
-                    {step.status === 'IDLE' && (
-                      <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
-                        EN COLA
-                      </span>
-                    )}
-                  </div>
-                  <code className="text-[10px] text-slate-500 font-mono block mt-1">{step.command}</code>
-                </div>
-              ))}
-            </div>
+            <button
+              onClick={() => {
+                setEditingRepoId(null);
+                setRepoName('');
+                setRepoUrl('');
+                setRepoBranch('main');
+                setRepoType('Backend');
+                setRepoDesc('');
+                setShowRepoModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Registrar Repositorio
+            </button>
           </div>
 
-          {/* Terminal Outputs Right Panel */}
-          <div className="md:col-span-3 p-6 bg-slate-950 text-slate-350 min-h-[400px] flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between border-b border-slate-850 pb-3 mb-4 font-mono">
-                <div className="flex items-center gap-2 font-mono">
-                  <Terminal className="w-4 h-4 text-indigo-400" />
-                  <span className="font-mono text-xs font-bold text-slate-200">Terminal de Logs Runner (stdout)</span>
-                </div>
-                <span className="text-[10px] text-slate-500 font-mono">Job ID: hub-storage-actions-run-9</span>
-              </div>
+          {/* Repositories Grid */}
+          {repos.filter(r => 
+            r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
+            r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
+            r.description.toLowerCase().includes(repoSearch.toLowerCase())
+          ).length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+              <Code className="w-8 h-8 text-slate-350 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-700">No se encontraron repositorios</p>
+              <p className="text-xs text-slate-400 mt-1">Intente cambiar el parámetro de búsqueda o agregue un nuevo repositorio relacionado al proyecto.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {repos.filter(r => 
+                r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
+                r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
+                r.description.toLowerCase().includes(repoSearch.toLowerCase())
+              ).map(repo => {
+                const isFrontend = repo.type === 'Frontend';
+                const isBackend = repo.type === 'Backend';
+                const isInfra = repo.type === 'Infrastructure';
+                const isDb = repo.type === 'Database';
+                const typeColorClass = 
+                  isFrontend ? 'bg-teal-50 text-teal-700 border-teal-200/50' :
+                  isBackend ? 'bg-indigo-50 text-indigo-700 border-indigo-200/50' :
+                  isInfra ? 'bg-purple-50 text-purple-700 border-purple-200/50' :
+                  isDb ? 'bg-amber-50 text-amber-700 border-amber-200/50' :
+                  'bg-slate-50 text-slate-700 border-slate-200/50';
 
-              {/* Console Code */}
-              <div className="space-y-4 font-mono text-[11px] leading-relaxed max-h-96 overflow-y-auto">
-                {steps.map((step, idx) => {
-                  if (step.status === 'IDLE') return null;
-                  return (
-                    <div key={idx} className="space-y-1">
-                      <div className="text-slate-400 font-bold border-b border-slate-900 pb-0.5 flex gap-2 items-center">
-                        {step.status === 'RUNNING' ? (
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-                        )}
-                        <span>$ {step.command} ({step.duration}ms)</span>
+                const leftColorClass = 
+                  isFrontend ? 'bg-teal-500' :
+                  isBackend ? 'bg-indigo-500' :
+                  isInfra ? 'bg-purple-500' :
+                  isDb ? 'bg-amber-500' :
+                  'bg-slate-500';
+
+                return (
+                  <div key={repo.id} className="bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-md transition duration-250 flex flex-col justify-between overflow-hidden relative">
+                    {/* Left category accent strip */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${leftColorClass}`} />
+                    
+                    <div className="p-5 pl-7 space-y-4">
+                      {/* Top Row: Type Pill & Status */}
+                      <div className="flex justify-between items-center">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${typeColorClass} font-mono`}>
+                          {repo.type}
+                        </span>
+                        <span className={`w-2 h-2 rounded-full ${repo.status === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'} animate-pulse`} title={`Estado: ${repo.status}`} />
                       </div>
-                      <div className="pl-3 space-y-0.5 text-slate-400 border-l border-slate-900">
-                        {step.outputs.map((out, oIdx) => (
-                          <div key={oIdx} className={step.status === 'RUNNING' && oIdx === step.outputs.length - 1 ? 'text-amber-300 animate-pulse' : ''}>
-                            {out}
-                          </div>
-                        ))}
+
+                      {/* Info block */}
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5 truncate">
+                          <Code className="w-4 h-4 text-slate-500" />
+                          {repo.name}
+                        </h4>
+                        
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1 font-mono font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                          <span>Rama activa: <strong className="text-slate-650 font-semibold">{repo.branch}</strong></span>
+                        </div>
+
+                        <p className="text-xs text-slate-500 mt-3 line-clamp-3 leading-relaxed">
+                          {repo.description}
+                        </p>
+                      </div>
+
+                      {/* Git URL Monospace Display */}
+                      <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-150 flex items-center justify-between gap-1">
+                        <code className="text-[10px] font-mono text-slate-600 truncate flex-1">{repo.url}</code>
+                        <button
+                          onClick={() => copyToClipboard(`git clone ${repo.url}`, repo.id)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition shrink-0 cursor-pointer"
+                          title="Copiar comando git clone"
+                        >
+                          {copiedId === repo.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Last Commit Log mock snippet */}
+                      {repo.lastCommit && (
+                        <div className="p-2 border-l-2 border-slate-200 bg-slate-50/50 text-[10.5px] italic text-slate-450 font-sans block max-w-full truncate">
+                          <span className="font-semibold not-italic text-slate-500">Último commit: </span>
+                          {repo.lastCommit}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions footer */}
+                    <div className="bg-slate-50/80 px-5 py-3 border-t border-slate-100/85 pl-7 flex justify-between items-center gap-2">
+                      <a 
+                        href={repo.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="text-indigo-600 hover:text-indigo-800 font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer"
+                      >
+                        Abrir URL
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => handleEditRepo(repo)}
+                          className="p-1 px-2.5 bg-white border border-slate-200 hover:border-slate-355 rounded text-xs text-slate-600 font-semibold cursor-pointer shadow-3xs"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRepo(repo.id, repo.name)}
+                          className="p-1 px-2.5 bg-white border border-red-100 hover:bg-red-50 hover:border-red-200 rounded text-xs text-red-650 cursor-pointer shadow-3xs"
+                        >
+                          Eliminar
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
-                {steps.every(s => s.status === 'IDLE') && (
-                  <p className="text-slate-500 italic text-[11px] py-12 text-center">Consola asíncrona inactiva. Haz clic en "Lanzar Actions Runner" para verificar la integración y construcción de servicios.</p>
-                )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Repo Creation / Edit Overlay Modal */}
+          {showRepoModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-250 animate-scaleUp">
+                <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+                  <h4 className="font-bold text-sm tracking-wide font-sans">{editingRepoId ? 'Editar Detalle de Repositorio' : 'Registrar Nuevo Repositorio Git'}</h4>
+                  <button onClick={() => setShowRepoModal(false)} className="text-slate-400 hover:text-white font-mono text-base font-bold">×</button>
+                </div>
+                <form onSubmit={handleAddOrEditRepo} className="p-6 space-y-4">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Nombre del Repositorio</label>
+                    <input
+                      required
+                      type="text"
+                      value={repoName}
+                      onChange={e => setRepoName(e.target.value)}
+                      placeholder="Ej: pmo-api-gateway"
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Rama Principal / Activa</label>
+                      <input
+                        required
+                        type="text"
+                        value={repoBranch}
+                        onChange={e => setRepoBranch(e.target.value)}
+                        placeholder="Ej: main o development"
+                        className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Tipo de Módulo</label>
+                      <select
+                        value={repoType}
+                        onChange={e => setRepoType(e.target.value as DevRepository['type'])}
+                        className="w-full bg-slate-50 border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="Backend">Backend / API</option>
+                        <option value="Frontend">Frontend / UI</option>
+                        <option value="Infrastructure">Infraestructura / DevOps</option>
+                        <option value="Database">Base de Datos</option>
+                        <option value="Fullstack">Fullstack Codebase</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">URL del Repositorio (Git Clone link)</label>
+                    <input
+                      required
+                      type="url"
+                      value={repoUrl}
+                      onChange={e => setRepoUrl(e.target.value)}
+                      placeholder="Ej: https://github.com/..."
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Descripción del Propósito</label>
+                    <textarea
+                      value={repoDesc}
+                      onChange={e => setRepoDesc(e.target.value)}
+                      placeholder="Breve explicación de las tecnologías implementadas, dependencias o para qué sirve este repositorio."
+                      rows={3}
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowRepoModal(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 font-bold text-xs rounded-lg cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer shadow-3xs"
+                    >
+                      {editingRepoId ? 'Sincronizar Cambios' : 'Registrar'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
+          )}
+        </div>
+      )}
 
-            {/* Docker Deployment Status Hook */}
-            <div className="mt-8 border-t border-slate-900 pt-3 flex justify-between items-center text-xs">
-              <span className="text-slate-500 font-sans">Despliegue de microservicios con:</span>
-              <span className="font-mono text-indigo-400 font-bold bg-indigo-950/40 px-3 py-1 rounded-md border border-indigo-900/30">
-                ACTIVE MULTI-CONTAINER CLUSTER
-              </span>
+      {activeTab === 'installation' && (
+        <div className="p-6 space-y-6 animate-fadeIn">
+          {/* Header Progress panel */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 bg-slate-50 border border-slate-200 rounded-xl p-5 items-center gap-6">
+            <div className="lg:col-span-2">
+              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-500" />
+                Guía de Instalación del Entorno
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                Pasos secuenciales interactivos para que un desarrollador configure las variables de entorno, descargue el código, e instale las dependencias desde cero.
+              </p>
+            </div>
+
+            <div className="bg-white border border-slate-150 p-4 rounded-lg shadow-3xs flex flex-col justify-center space-y-2.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-slate-500">Progreso del setup:</span>
+                <span className="font-black text-indigo-600">
+                  {installSteps.filter(s => s.isCompleted).length} de {installSteps.length} Pasos ({Math.round((installSteps.filter(s => s.isCompleted).length / (installSteps.length || 1)) * 100)}%)
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2">
+                <div 
+                  className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round((installSteps.filter(s => s.isCompleted).length / (installSteps.length || 1)) * 100)}%` }}
+                />
+              </div>
             </div>
           </div>
+
+          {/* Categories Segment Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-wrap bg-slate-100 p-1 rounded-lg border gap-0.5 self-start">
+              {(['all', 'general', 'frontend', 'backend', 'docker'] as const).map(cat => {
+                const isSelected = installationFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setInstallationFilter(cat)}
+                    className={`px-3 py-1 text-xs font-bold rounded transition ${isSelected ? 'bg-white shadow-3xs text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {cat === 'all' ? 'Todos' : cat.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => {
+                setEditingStepId(null);
+                setStepPhase('Requisitos');
+                setStepTitle('');
+                setStepCommand('');
+                setStepNotes('');
+                setStepCategory('general');
+                setShowStepModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Nuevo Paso Setup
+            </button>
+          </div>
+
+          {/* Steps list */}
+          <div className="space-y-4">
+            {installSteps.filter(s => installationFilter === 'all' || s.category === installationFilter).length === 0 ? (
+              <div className="text-center py-12 border border-slate-200 rounded-xl bg-slate-50/50">
+                <Info className="w-6 h-6 text-slate-350 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-700">No hay guías de instalación en esta categoría</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Haga clic en 'Nuevo Paso Setup' para añadir una instrucción interactiva.</p>
+              </div>
+            ) : (
+              installSteps.filter(s => installationFilter === 'all' || s.category === installationFilter).map((step, index) => {
+                let categoryColor = 'bg-slate-100 text-slate-600';
+                if (step.category === 'frontend') categoryColor = 'bg-teal-50 text-teal-700 border border-teal-100';
+                if (step.category === 'backend') categoryColor = 'bg-indigo-50 text-indigo-700 border border-indigo-100';
+                if (step.category === 'docker') categoryColor = 'bg-cyan-50 text-cyan-705 border border-cyan-100';
+
+                return (
+                  <div 
+                    key={step.id} 
+                    className={`border rounded-xl p-5 transition duration-200 bg-white ${step.isCompleted ? 'border-indigo-100 bg-indigo-50/5' : 'border-slate-200 shadow-3xs'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+                      {/* Checkbox + Title block */}
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={step.isCompleted}
+                          onChange={() => toggleStepCompleted(step.id)}
+                          className="w-4 h-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 mt-1 shrink-0 cursor-pointer"
+                          title="Haga clic para tachar este paso como completado"
+                        />
+                        
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider font-mono">PASO {index + 1}</span>
+                            <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.2 rounded font-mono ${categoryColor}`}>
+                              {step.category}
+                            </span>
+                            <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.2 rounded font-mono">
+                              {step.phase}
+                            </span>
+                          </div>
+
+                          <h5 className={`font-bold mt-1 text-slate-900 text-sm ${step.isCompleted ? 'line-through text-slate-400' : ''}`}>
+                            {step.title}
+                          </h5>
+                          
+                          {step.notes && (
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              {step.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Small edit action tools */}
+                      <div className="flex gap-1.5 shrink-0 ml-auto sm:ml-0">
+                        <button
+                          onClick={() => handleEditStep(step)}
+                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-55 bg-slate-50 border border-slate-200 rounded transition cursor-pointer"
+                          title="Editar instrucción de setup"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStep(step.id, step.title)}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 bg-slate-50 border border-slate-200 rounded transition cursor-pointer"
+                          title="Eliminar instrucción de setup"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Monospace Code commands Block */}
+                    {step.command && (
+                      <div className="mt-4 bg-slate-950 text-slate-200 rounded-lg p-3 pt-2 pl-4 flex items-center justify-between gap-3 font-mono border border-slate-850">
+                        <div className="flex items-center gap-2 font-mono overflow-x-auto min-w-0 flex-1 py-1">
+                          <span className="text-indigo-400 select-none font-bold font-mono">$</span>
+                          <code className="text-[10.5px] font-mono whitespace-nowrap text-slate-300">{step.command}</code>
+                        </div>
+
+                        <button
+                          onClick={() => copyToClipboard(step.command, step.id)}
+                          className="bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 px-3 py-1.5 rounded-md text-[10px] font-mono font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer"
+                        >
+                          {copiedId === step.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              Copiado!
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                              Copiar Comando
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Phase Addition Modal overlay */}
+          {showStepModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-250 animate-scaleUp">
+                <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+                  <h4 className="font-bold text-sm tracking-wide font-sans">{editingStepId ? 'Editar Paso de Setup' : 'Agregar Instrucción de Setup'}</h4>
+                  <button onClick={() => setShowStepModal(false)} className="text-slate-400 hover:text-white font-mono text-base font-bold">×</button>
+                </div>
+                <form onSubmit={handleAddOrEditStep} className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Fase del Config</label>
+                      <select
+                        value={stepPhase}
+                        onChange={e => setStepPhase(e.target.value as InstallationStep['phase'])}
+                        className="w-full bg-slate-50 border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="Requisitos">Requisitos Previos</option>
+                        <option value="Clonación">Clonación / Git</option>
+                        <option value="Variables de Entorno">Variables de Entorno</option>
+                        <option value="Instalación">Instalación npm/pnpm</option>
+                        <option value="Ejecución">Ejecución / Run</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Categoría Módulo</label>
+                      <select
+                        value={stepCategory}
+                        onChange={e => setStepCategory(e.target.value as InstallationStep['category'])}
+                        className="w-full bg-slate-50 border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="general">Global / General</option>
+                        <option value="frontend">Frontend Stack</option>
+                        <option value="backend">Backend API Services</option>
+                        <option value="docker">Contenedores Docker</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Título del Paso</label>
+                    <input
+                      required
+                      type="text"
+                      value={stepTitle}
+                      onChange={e => setStepTitle(e.target.value)}
+                      placeholder="Ej: Instalar paquetes adicionales"
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Comando Shell (bash)</label>
+                    <input
+                      required
+                      type="text"
+                      value={stepCommand}
+                      onChange={e => setStepCommand(e.target.value)}
+                      placeholder="Ej: pnpm install --frozen-lockfile"
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Notas Adicionales / Tips</label>
+                    <textarea
+                      value={stepNotes}
+                      onChange={e => setStepNotes(e.target.value)}
+                      placeholder="Explique condiciones de error comunes o configuraciones extras requeridas para esta instrucción."
+                      rows={3}
+                      className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans text-slate-650"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowStepModal(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 font-bold text-xs rounded-lg cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer shadow-3xs"
+                    >
+                      {editingStepId ? 'Guardar Paso' : 'Agregar Paso'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -882,6 +1681,15 @@ export default function DevOpsPipeline() {
                   >
                     <Server className="w-3.5 h-3.5 text-violet-400" />
                     Redes Virtuales (3)
+                  </button>
+                  <button
+                    onClick={() => setPortainerNavTab('npm_network')}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left cursor-pointer ${
+                      portainerNavTab === 'npm_network' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                    Servidor NPM_NETWORK (SSL)
                   </button>
                   <button
                     onClick={() => setPortainerNavTab('volumes')}
@@ -1549,6 +2357,271 @@ export default function DevOpsPipeline() {
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW: NPM_NETWORK */}
+              {portainerNavTab === 'npm_network' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Top Header */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                    <div>
+                      <h4 className="text-md font-bold text-slate-100 flex items-center gap-2">
+                        <Shield className="w-5 h-5 text-emerald-400" />
+                        Nginx Proxy Manager - Puerta SSL (NPM_NETWORK)
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Gestor unificado de redes virtuales inversas y certificados SSL corporativos para la infraestructura del ciclo de vida del proyecto.
+                      </p>
+                    </div>
+                    <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-mono text-slate-450">
+                      <span className="px-2.5 py-1 bg-slate-900 border border-slate-800 text-teal-400 rounded font-bold uppercase font-mono">
+                        NPM ACTIVE NODE
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 1. Host IP and Port Verification Section */}
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center gap-2 text-indigo-400">
+                      <Server className="w-4 h-4" />
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-sans">
+                        Configuración de Enlace de Red y Visualización del Host
+                      </h5>
+                    </div>
+                    
+                    <p className="text-xs text-slate-400">
+                      Ajuste la dirección IP fija de la subred del host, la máscara de red y el puerto externo en el que se visualizan los contenedores docker.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">Dirección IP del Host</label>
+                        <input
+                          type="text"
+                          value={dockerHostIp}
+                          onChange={(e) => setDockerHostIp(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-750 focus:border-indigo-505 focus:ring-1 focus:ring-indigo-500 rounded px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
+                          placeholder="e.g. 192.168.200.47"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">Máscara / Subred</label>
+                        <input
+                          type="text"
+                          value={dockerSubnet}
+                          onChange={(e) => setDockerSubnet(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-755 focus:border-indigo-505 focus:ring-1 focus:ring-indigo-500 rounded px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
+                          placeholder="e.g. /24"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">Puerto Visualización</label>
+                        <input
+                          type="text"
+                          value={dockerPort}
+                          onChange={(e) => setDockerPort(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-755 focus:border-indigo-505 focus:ring-1 focus:ring-indigo-500 rounded px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
+                          placeholder="e.g. 9000"
+                        />
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={handleVerifyHostIp}
+                          disabled={isVerifyingIp}
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1.5 px-4 rounded text-xs transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 font-sans"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingIp ? 'animate-spin text-teal-400' : 'text-white'}`} />
+                          {isVerifyingIp ? 'Probando Enlace...' : 'Verificar Enlace'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Verification Status Indicator */}
+                    <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-emerald-950/80 p-2 rounded-lg border border-emerald-800/30">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-200 font-sans">Enlace Activo Verificado</p>
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            Los contenedores asocian su panel reverso sobre <code className="text-teal-400 bg-slate-950 px-1 py-0.5 rounded font-mono font-semibold">{dockerHostIp}:{dockerPort}{dockerSubnet}</code>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse animate-duration-1000" />
+                        <span className="text-[10px] uppercase font-bold text-emerald-400 font-mono">CONEXIÓN SEGURA</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. SSL Certificates List Panel */}
+                  <div className="space-y-3">
+                    <div>
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-sans">
+                        Certificados SSL Existentes Registrados
+                      </h5>
+                      <p className="text-[11px] text-slate-400 font-sans">
+                        Certificados emitidos disponibles para encriptación de tráfico de servicios vinculados a la subred del host.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px] font-sans">
+                          <tr>
+                            <th className="p-3 pl-5">Certificado / Dominio</th>
+                            <th className="p-3">Emisor Autoridad</th>
+                            <th className="p-3">Expiración</th>
+                            <th className="p-3">Contenedores Docker Unidos</th>
+                            <th className="p-3 text-right pr-5">Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850 font-mono text-[11px]">
+                          {sslCertificates.map(cert => (
+                            <tr key={cert.id} className="hover:bg-slate-950/30 transition">
+                              <td className="p-3.5 pl-5 font-bold text-teal-400 flex items-center gap-1.5">
+                                <Lock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <span>{cert.name}</span>
+                              </td>
+                              <td className="p-3.5 text-slate-300 font-sans">{cert.issuer}</td>
+                              <td className="p-3.5 text-slate-400">{cert.expires}</td>
+                              <td className="p-3.5 font-sans">
+                                {cert.containersBound.length === 0 ? (
+                                  <span className="text-slate-600 text-[10px] italic font-sans">Ningún contenedor vinculado</span>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1">
+                                    {cert.containersBound.map(containerName => (
+                                      <span 
+                                        key={containerName} 
+                                        className="text-[9px] bg-slate-900 border border-slate-800 text-teal-400 px-2 py-0.5 rounded font-mono font-semibold"
+                                      >
+                                        🐳 {containerName}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-right pr-5 font-sans">
+                                <span className="text-[9px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-900/50 px-2 py-0.5 rounded-full font-sans">
+                                  VÁLIDO
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* 3. Actions Grid: Bind SSL and Add New Certificate */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-2">
+                    {/* BIND CONTAINER FORM */}
+                    <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 text-indigo-400">
+                        <Layers className="w-4 h-4 text-teal-400" />
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-sans">
+                          Vincular Contenedor Docker a Certificado SSL
+                        </h5>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-sans">
+                        Configure el Proxy Reverso en la red <code className="text-teal-400 font-mono">NPM_NETWORK</code> para asegurar el tráfico con un certificado de seguridad activo.
+                      </p>
+
+                      <form onSubmit={handleBindSsl} className="space-y-4 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">1. Seleccionar Contenedor Docker Activo</label>
+                          <select
+                            value={selectedSslContainer}
+                            onChange={(e) => setSelectedSslContainer(e.target.value)}
+                            className="w-full bg-slate-905 bg-slate-900 border border-slate-750 hover:border-slate-700 rounded px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none cursor-pointer"
+                          >
+                            <option value="">-- Seleccionar Contenedor --</option>
+                            {portainerContainers.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.status === 'running' ? 'RUNNING' : 'STOPPED'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">2. Seleccione Certificado SSL Existente</label>
+                          <select
+                            value={selectedSslCert}
+                            onChange={(e) => setSelectedSslCert(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-750 hover:border-slate-700 rounded px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none cursor-pointer"
+                          >
+                            {sslCertificates.map(cert => (
+                              <option key={cert.id} value={cert.id}>
+                                {cert.name} (Emisor: {cert.issuer})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded text-xs transition cursor-pointer flex items-center justify-center gap-1.5 font-sans"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Unir Contenedor al Certificado SSL
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* ISSUE NEW SSL CERTIFICATE */}
+                    <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 text-indigo-400">
+                        <Lock className="w-4 h-4 text-emerald-400" />
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-sans">
+                          Emitir / Registrar Nuevo Certificado SSL
+                        </h5>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-sans">
+                        Añada un certificado de seguridad SSL para poder encriptar tráfico de nuevos subdominios creados del ciclo de vida del proyecto.
+                      </p>
+
+                      <form onSubmit={handleCreateSsl} className="space-y-4 text-xs font-sans">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">Nombre de Dominio Certificado (FQLD)</label>
+                          <input
+                            type="text"
+                            value={newSslName}
+                            onChange={(e) => setNewSslName(e.target.value)}
+                            placeholder="e.g. *.pmo-internal-services.org"
+                            className="w-full bg-slate-900 border border-slate-750 focus:border-indigo-500 rounded px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-sans">Autoridad Emisora SSL</label>
+                          <select
+                            value={newSslIssuer}
+                            onChange={(e) => setNewSslIssuer(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-750 hover:border-slate-700 rounded px-3 py-2 text-xs text-slate-200 font-sans focus:outline-none cursor-pointer"
+                          >
+                            <option value="Let's Encrypt">Let's Encrypt (CA Autorizada)</option>
+                            <option value="Local Root CA">Autoridad de Certificados Local (Self-Signed)</option>
+                            <option value="DigiCert Corporate CA">DigiCert Enterprise Gateway CA</option>
+                            <option value="Cloudflare SSL API">Cloudflare Origin CA Certificate</option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full bg-slate-800 hover:bg-slate-750 text-indigo-300 hover:text-white border border-slate-700 hover:border-indigo-600 font-bold py-2 px-4 rounded text-xs transition cursor-pointer flex items-center justify-center gap-1.5 font-sans"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-indigo-400 font-semibold" />
+                          Generar y Registrar SSL en NPM
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 </div>
               )}

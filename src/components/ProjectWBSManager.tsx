@@ -72,6 +72,7 @@ export interface WBSEvidence {
   fileSize: string;
   uploadedAt: string;
   uploadedBy: string;
+  externalUrl?: string;
 }
 
 export interface WBSBaseline {
@@ -514,6 +515,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [wbsAttachmentMode, setWbsAttachmentMode] = useState<'file' | 'link'>('file');
+  const [wbsSupportUrl, setWbsSupportUrl] = useState('');
 
   // Custom confirmation modal state to bypass iframe window.confirm blocks
   const [deleteConfirmState, setDeleteConfirmState] = useState<{
@@ -1436,6 +1439,79 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     if (files && files.length > 0) {
       simulateFileUpload(files[0]);
     }
+  };
+
+  const handleAddWbsLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isDevRole) {
+      alert('La carga de evidencias de WBS está restringida.');
+      return;
+    }
+    if (!activeItemId || !wbsSupportUrl.trim()) return;
+
+    const urlStr = wbsSupportUrl.trim();
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
+      alert('Por favor, inserte un enlace URL válido con http:// o https://');
+      return;
+    }
+
+    const namePart = urlStr.split('/').pop()?.split('?')[0] || 'Enlace externo';
+    const newEvidence: WBSEvidence = {
+      id: `ev-gen-${Date.now()}`,
+      fileName: namePart,
+      fileSize: 'Enlace Web',
+      uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      uploadedBy: 'Carlos Pérez (PM)',
+      externalUrl: urlStr
+    };
+
+    setItems(prev => {
+      return prev.map(it => {
+        if (it.id === activeItemId) {
+          return {
+            ...it,
+            evidenceFiles: [...it.evidenceFiles, newEvidence]
+          };
+        }
+        return it;
+      });
+    });
+
+    // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
+    try {
+      const customLocal = localStorage.getItem('gcp_storage_custom_files');
+      let custom: any[] = [];
+      if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+        try {
+          const parsed = JSON.parse(customLocal);
+          if (Array.isArray(parsed)) {
+            custom = parsed;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      let cleanKey = `wbs/task_${activeItemId}/${namePart.trim().replace(/\s+/g, '_').toLowerCase()}`;
+      
+      const newObject = {
+        id: `sim-wbs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        key: cleanKey,
+        name: namePart,
+        size: 'Enlace Web',
+        url: urlStr,
+        uploadedAt: new Date().toISOString().substring(0, 10),
+        type: 'text/html'
+      };
+
+      custom.push(newObject);
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+    } catch (err) {
+      console.error("Error writing WBS evidence link to simulated storage", err);
+    }
+
+    addLog('Carlos Pérez (PM)', `Vinculó el enlace de evidencia "${namePart}" de forma segura en el repositorio virtual S3.`);
+    setWbsSupportUrl('');
+    setWbsAttachmentMode('file');
   };
 
   const simulateFileUpload = (file: File) => {
@@ -2997,46 +3073,106 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                 <Paperclip className="w-4 h-4 text-blue-600 font-mono" />
                 <span>Documentos de Evidencia de Entrega</span>
               </h5>
-              
-              {/* Drag and drop zone */}
-              <div
-                onDragOver={e => { e.preventDefault(); setIsDraggingFile(true); }}
-                onDragLeave={() => setIsDraggingFile(false)}
-                onDrop={handleFileDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition ${isDraggingFile ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
-              >
-                <span className="block text-[11px] text-slate-500 font-semibold">Deslice un archivo de soporte o haga clic</span>
-                <span className="block text-[9px] text-slate-400 mt-0.5">Almacenamiento seguro para guardar logs de pruebas</span>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
+
+              {/* Mode toggler */}
+              <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+                <button
+                  type="button"
+                  onClick={() => setWbsAttachmentMode('file')}
+                  className={`flex-1 text-[11px] font-bold py-1 rounded transition ${wbsAttachmentMode === 'file' ? 'bg-white shadow-3xs text-blue-600' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Archivo Local
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWbsAttachmentMode('link')}
+                  className={`flex-1 text-[11px] font-bold py-1 rounded transition ${wbsAttachmentMode === 'link' ? 'bg-white shadow-3xs text-blue-600' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Enlace Web (URL)
+                </button>
               </div>
+              
+              {wbsAttachmentMode === 'file' ? (
+                /* Drag and drop zone */
+                <div
+                  onDragOver={e => { e.preventDefault(); setIsDraggingFile(true); }}
+                  onDragLeave={() => setIsDraggingFile(false)}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition ${isDraggingFile ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
+                >
+                  <span className="block text-[11px] text-slate-500 font-semibold">Deslice un archivo de soporte o haga clic</span>
+                  <span className="block text-[9px] text-slate-440 mt-0.5">Almacenamiento seguro para guardar logs de pruebas</span>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div className="bg-white border text-slate-700 border-slate-200 rounded-xl p-3 space-y-2.5">
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase font-mono">Vincular Recurso Externo / Enlace Nube</span>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      value={wbsSupportUrl}
+                      onChange={e => setWbsSupportUrl(e.target.value)}
+                      placeholder="Pegue el enlace aquí (ej: https://drive.google.com/...)"
+                      className="flex-1 bg-slate-50 focus:bg-white border border-slate-250 rounded-md p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddWbsLink}
+                      disabled={!wbsSupportUrl.trim()}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs px-3.5 rounded-lg transition-all cursor-pointer shadow-3xs"
+                    >
+                      Vincular
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* File List */}
               {selectedItem.evidenceFiles.length > 0 ? (
                 <div className="space-y-1.5 pt-1">
-                  {selectedItem.evidenceFiles.map(ev => (
-                    <div key={ev.id} className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex justify-between items-center">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <div className="truncate">
-                          <span className="block text-[11px] font-bold text-slate-700 truncate">{ev.fileName}</span>
-                          <span className="block text-[9px] text-slate-400 font-mono font-medium">{ev.fileSize} • Subido por: {ev.uploadedBy}</span>
+                  {selectedItem.evidenceFiles.map(ev => {
+                    const isLink = ev.externalUrl || ev.fileName.startsWith('http://') || ev.fileName.startsWith('https://');
+                    return (
+                      <div key={ev.id} className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex justify-between items-center">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {isLink ? (
+                            <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                          ) : (
+                            <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          )}
+                          <div className="truncate flex-1">
+                            {isLink ? (
+                              <a 
+                                href={ev.externalUrl || ev.fileName} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="block text-[11px] font-bold text-blue-600 hover:underline truncate animate-pulse"
+                                title="Haga clic para abrir el enlace externo en nueva pestaña"
+                              >
+                                {ev.fileName} ↗
+                              </a>
+                            ) : (
+                              <span className="block text-[11px] font-bold text-slate-700 truncate">{ev.fileName}</span>
+                            )}
+                            <span className="block text-[9px] text-slate-400 font-mono font-medium">{ev.fileSize} • Subido por: {ev.uploadedBy}</span>
+                          </div>
                         </div>
+                        <button
+                          onClick={() => handleDeleteEvidence(ev.id)}
+                          className="text-slate-400 hover:text-red-500 p-1 rounded-md text-sm cursor-pointer ml-1"
+                          title="Eliminar soporte"
+                        >
+                          ×
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleDeleteEvidence(ev.id)}
-                        className="text-slate-400 hover:text-red-500 p-1 rounded-md"
-                        title="Eliminar soporte"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-[10px] text-slate-400 italic text-center py-1">Ninguna evidencia cargada en esta tarea.</p>

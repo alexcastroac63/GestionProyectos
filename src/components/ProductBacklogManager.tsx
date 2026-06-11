@@ -231,7 +231,7 @@ export default function ProductBacklogManager({
 }: ProductBacklogManagerProps) {
   
   // --- Simulating Roles ---
-  const [currentRole, setCurrentRole] = useState<BacklogRole>('PROJECT_MANAGER');
+  const [currentRole, setCurrentRole] = useState<BacklogRole>('ADMIN_PMO');
   
   // Custom dialog to bypass iframe window.confirm blocks
   const [deleteConfirmState, setDeleteConfirmState] = useState<{
@@ -311,6 +311,12 @@ export default function ProductBacklogManager({
   const [isDragOver, setIsDragOver] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<StoryAttachment | null>(null);
   const [confirmDeleteCritIdx, setConfirmDeleteCritIdx] = useState<number | null>(null);
+
+  // Backlog link support states
+  const [backlogCreateMode, setBacklogCreateMode] = useState<'file' | 'link'>('file');
+  const [backlogCreateUrl, setBacklogCreateUrl] = useState('');
+  const [backlogDetailMode, setBacklogDetailMode] = useState<'file' | 'link'>('file');
+  const [backlogDetailUrl, setBacklogDetailUrl] = useState('');
 
   // New Comment state
   const [newCommentText, setNewCommentText] = useState('');
@@ -1017,6 +1023,83 @@ export default function ProductBacklogManager({
     });
   };
 
+  const handleBacklogAddLink = (isCreationForm = false) => {
+    const urlStr = isCreationForm ? backlogCreateUrl.trim() : backlogDetailUrl.trim();
+    if (!urlStr) return;
+
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
+      alert('Por favor proporcione un enlace válido con http:// o https://');
+      return;
+    }
+
+    const namePart = urlStr.split('/').pop()?.split('?')[0] || 'Enlace externo';
+    const isImage = urlStr.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null;
+
+    const newAttachment: StoryAttachment = {
+      id: `att-link-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      fileName: namePart,
+      fileType: isImage ? 'image/png' : 'application/octet-stream',
+      fileUrl: urlStr,
+      uploadedBy: 'Carlos Pérez',
+      uploadedAt: new Date().toISOString().slice(0, 10)
+    };
+
+    if (isCreationForm) {
+      setStoryForm(prev => ({
+        ...prev,
+        attachments: [...(prev.attachments || []), newAttachment]
+      }));
+      setBacklogCreateUrl('');
+      setBacklogCreateMode('file');
+    } else {
+      if (!selectedStoryId) return;
+      setStories(prev => prev.map(s => {
+        if (s.id === selectedStoryId) {
+          return {
+            ...s,
+            attachments: [...(s.attachments || []), newAttachment]
+          };
+        }
+        return s;
+      }));
+      setBacklogDetailUrl('');
+      setBacklogDetailMode('file');
+      addLog('Gestor Adjuntos', `Vínculo exitoso del enlace externo: ${urlStr}`);
+    }
+
+    // Sincronizar en LocalStorage para Docker (soporte-pmo-storage)
+    try {
+      const customLocal = localStorage.getItem('gcp_storage_custom_files');
+      let custom: any[] = [];
+      if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+        try {
+          const parsed = JSON.parse(customLocal);
+          if (Array.isArray(parsed)) {
+            custom = parsed;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      
+      let cleanKey = `backlog/story_${selectedStoryId || 'new'}/${namePart.trim().replace(/\s+/g, '_').toLowerCase()}`;
+      const newObject = {
+        id: `sim-backlog-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        key: cleanKey,
+        name: namePart,
+        size: 'Enlace Web',
+        url: urlStr,
+        uploadedAt: new Date().toISOString().substring(0, 10),
+        type: isImage ? 'image/png' : 'text/html'
+      };
+
+      custom.push(newObject);
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+    } catch (err) {
+      console.error("Error writing backlog file to simulated storage", err);
+    }
+  };
+
   // --- Add Acceptance Criterion ---
   const handleAddCrit = () => {
     if (!newCritDesc.trim() || !selectedStoryId) return;
@@ -1257,24 +1340,9 @@ export default function ProductBacklogManager({
           </div>
           <div>
             <h3 className="font-bold text-sm tracking-wide">Plataforma Avanzada de Backlog & Épicas</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] text-slate-400 font-mono">Simulador de Permisos Corporativos:</span>
-              <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-[10px] text-teal-400 font-bold">
-                <Shield className="w-3 h-3" />
-                <select 
-                  value={currentRole} 
-                  onChange={e => setCurrentRole(e.target.value as BacklogRole)}
-                  className="bg-transparent border-none text-[10px] uppercase font-bold text-teal-400 font-sans focus:outline-none cursor-pointer"
-                >
-                  <option value="ADMIN_PMO">Administrador PMO (Full Access)</option>
-                  <option value="PROJECT_MANAGER">Project Manager (PM)</option>
-                  <option value="PRODUCT_OWNER">Product Owner / Demand (PO)</option>
-                  <option value="DEVELOPER">Líder Técnico / Desarrollador</option>
-                  <option value="QA_TESTER">QA / Tester Asegurador</option>
-                  <option value="CONSULTA">Consulta Planificación / Invitado</option>
-                </select>
-              </div>
-            </div>
+            <p className="text-[11px] text-teal-405/90 mt-1 font-sans font-medium">
+              Bandeja Ágil e Historias de Usuario bajo el Estándar PMO Scrum
+            </p>
           </div>
         </div>
 
@@ -2213,28 +2281,69 @@ export default function ProductBacklogManager({
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                 <span className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider">Adjuntar Imágenes y Archivos (General)</span>
                 
-                <div 
-                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                  onDragLeave={() => setIsDragOver(false)}
-                  onDrop={(e) => handleFileDropOrSelect(e, true)}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
-                    isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-slate-50'
-                  }`}
-                  onClick={() => document.getElementById('file-input-creation')?.click()}
-                >
-                  <Paperclip className="w-7 h-7 text-slate-400" />
-                  <p className="text-xs text-slate-600 font-bold">
-                    Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
-                  </p>
-                  <p className="text-[10px] text-slate-400">Archivos e imágenes se guardan de forma local</p>
-                  <input 
-                    type="file" 
-                    id="file-input-creation" 
-                    className="hidden" 
-                    multiple 
-                    onChange={(e) => handleFileDropOrSelect(e, true)} 
-                  />
+                {/* Tabs */}
+                <div className="flex bg-slate-200/50 p-1 rounded-lg gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setBacklogCreateMode('file')}
+                    className={`flex-1 text-[10.5px] font-bold py-1 rounded transition ${backlogCreateMode === 'file' ? 'bg-white shadow-3xs text-teal-600' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    Archivo Local
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBacklogCreateMode('link')}
+                    className={`flex-1 text-[10.5px] font-bold py-1 rounded transition ${backlogCreateMode === 'link' ? 'bg-white shadow-3xs text-teal-600' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    Enlace Web (URL)
+                  </button>
                 </div>
+
+                {backlogCreateMode === 'file' ? (
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={(e) => handleFileDropOrSelect(e, true)}
+                    className={`border-2 border-dashed rounded-xl p-5 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
+                      isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-slate-50'
+                    }`}
+                    onClick={() => document.getElementById('file-input-creation')?.click()}
+                  >
+                    <Paperclip className="w-7 h-7 text-slate-400" />
+                    <p className="text-xs text-slate-600 font-bold">
+                      Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400">Archivos e imágenes se guardan de forma local</p>
+                    <input 
+                      type="file" 
+                      id="file-input-creation" 
+                      className="hidden" 
+                      multiple 
+                      onChange={(e) => handleFileDropOrSelect(e, true)} 
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-white border text-slate-705 border-slate-200 rounded-xl p-3 space-y-2.5">
+                    <span className="block text-[10.5px] font-bold text-slate-500 uppercase font-mono">Pegar enlace de adjunto en línea (Google Drive, Figma, Miro, etc.)</span>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        value={backlogCreateUrl}
+                        onChange={e => setBacklogCreateUrl(e.target.value)}
+                        placeholder="Pegue la URL del recurso externo..."
+                        className="flex-1 bg-slate-50 focus:bg-white border border-slate-200 rounded-md p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleBacklogAddLink(true)}
+                        disabled={!backlogCreateUrl.trim()}
+                        className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold text-xs px-3.5 rounded-lg transition-all cursor-pointer shadow-3xs"
+                      >
+                        Vincular
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* View attachments list in creation form */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
@@ -2367,7 +2476,7 @@ export default function ProductBacklogManager({
                 </span>
                 <div>
                   <h3 className="font-extrabold text-sm tracking-wide text-white">{selectedStory.title}</h3>
-                  <p className="text-[10px] text-slate-400 font-mono">Modo de Verificación e Historial | Rol actual: {currentRole}</p>
+                  <p className="text-[10px] text-slate-400 font-mono">Modo de Verificación e Historial</p>
                 </div>
               </div>
 
@@ -2418,7 +2527,7 @@ export default function ProductBacklogManager({
               {/* TABS: GENERAL */}
               {detailTab === 'general' && (
                 <div className="space-y-6 animate-fadeIn">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-slate-50 p-3 rounded-lg border">
                       <span className="block text-[8.5px] uppercase font-bold text-slate-400">Tipo</span>
                       <span className="font-extrabold text-slate-800 text-xs">{selectedStory.type}</span>
@@ -2426,10 +2535,6 @@ export default function ProductBacklogManager({
                     <div className="bg-slate-50 p-3 rounded-lg border">
                       <span className="block text-[8.5px] uppercase font-bold text-slate-400">Prioridad</span>
                       <span className="font-extrabold text-slate-800 text-xs text-red-700">{selectedStory.priority}</span>
-                    </div>
-                    <div className="bg-slate-50 p-3 rounded-lg border">
-                      <span className="block text-[8.5px] uppercase font-bold text-slate-400">Story Points (Complejidad)</span>
-                      <span className="font-extrabold text-slate-800 text-xs font-mono">{selectedStory.storyPoints} pts ({selectedStory.complexity})</span>
                     </div>
                   </div>
 
@@ -2477,28 +2582,69 @@ export default function ProductBacklogManager({
                       </span>
                     </div>
 
-                    <div 
-                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                      onDragLeave={() => setIsDragOver(false)}
-                      onDrop={(e) => handleFileDropOrSelect(e, false)}
-                      className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
-                        isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-white'
-                      }`}
-                      onClick={() => document.getElementById('file-input-detail')?.click()}
-                    >
-                      <Paperclip className="w-8 h-8 text-slate-400" />
-                      <p className="text-xs text-slate-650 font-bold">
-                        Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-medium">PNG, JPG, PDF, DOCX (Se almacena en memoria local del navegador)</p>
-                      <input 
-                        type="file" 
-                        id="file-input-detail" 
-                        className="hidden" 
-                        multiple 
-                        onChange={(e) => handleFileDropOrSelect(e, false)} 
-                      />
+                    {/* Tabs */}
+                    <div className="flex bg-slate-200/50 p-1 rounded-lg gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setBacklogDetailMode('file')}
+                        className={`flex-1 text-[10.5px] font-bold py-1 rounded transition ${backlogDetailMode === 'file' ? 'bg-white shadow-3xs text-teal-600' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Archivo Local
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBacklogDetailMode('link')}
+                        className={`flex-1 text-[10.5px] font-bold py-1 rounded transition ${backlogDetailMode === 'link' ? 'bg-white shadow-3xs text-teal-600' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Enlace Web (URL)
+                      </button>
                     </div>
+
+                    {backlogDetailMode === 'file' ? (
+                      <div 
+                        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={(e) => handleFileDropOrSelect(e, false)}
+                        className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
+                          isDragOver ? 'border-teal-500 bg-teal-50/20' : 'border-slate-300 hover:border-teal-500 hover:bg-white'
+                        }`}
+                        onClick={() => document.getElementById('file-input-detail')?.click()}
+                      >
+                        <Paperclip className="w-8 h-8 text-slate-400" />
+                        <p className="text-xs text-slate-650 font-bold">
+                          Arrastra y suelta imágenes o archivos aquí, o <span className="text-teal-600 underline">haz clic para elegir</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">PNG, JPG, PDF, DOCX (Se almacena en memoria local del navegador)</p>
+                        <input 
+                          type="file" 
+                          id="file-input-detail" 
+                          className="hidden" 
+                          multiple 
+                          onChange={(e) => handleFileDropOrSelect(e, false)} 
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-white border text-slate-705 border-slate-200 rounded-xl p-3 space-y-2.5">
+                        <span className="block text-[10.5px] font-bold text-slate-500 uppercase font-mono">Pegar enlace de adjunto en línea (Google Drive, Figma, Miro, etc.)</span>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            value={backlogDetailUrl}
+                            onChange={e => setBacklogDetailUrl(e.target.value)}
+                            placeholder="Pegue la URL del recurso externo..."
+                            className="flex-1 bg-slate-50 focus:bg-white border border-slate-200 rounded-md p-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleBacklogAddLink(false)}
+                            disabled={!backlogDetailUrl.trim()}
+                            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold text-xs px-3.5 rounded-lg transition-all cursor-pointer shadow-3xs"
+                          >
+                            Vincular
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Lista visual de adjuntos con previsualización */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -2980,7 +3126,16 @@ export default function ProductBacklogManager({
                 Almacenado localmente en sesion
               </span>
               <div className="flex gap-2">
-                {previewAttachment.fileUrl && previewAttachment.fileUrl !== '#' ? (
+                {previewAttachment.fileUrl && (previewAttachment.fileUrl.startsWith('http://') || previewAttachment.fileUrl.startsWith('https://')) ? (
+                  <a
+                    href={previewAttachment.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-2xs cursor-pointer"
+                  >
+                    Abrir Enlace Web ↗
+                  </a>
+                ) : previewAttachment.fileUrl && previewAttachment.fileUrl !== '#' ? (
                   <a
                     href={previewAttachment.fileUrl}
                     download={previewAttachment.fileName}
