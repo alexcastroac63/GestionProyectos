@@ -109,7 +109,9 @@ export const INITIAL_PROJECTS: Project[] = [
     end_date: '2026-12-31',
     sprint_size_weeks: 2,
     sprint_size_days: 10,
-    budget_total: 150000
+    budget_total: 150000,
+    desarrollo: 'Interno',
+    categoria: 'Mediano'
   }
 ];
 

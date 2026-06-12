@@ -176,7 +176,7 @@ export default function ScrumBoardAndQaManager({
       id: 'u-admin',
       first_name: 'Carlos',
       last_name: 'Pérez',
-      email: 'carlos@campestre.com',
+      email: 'carlos@empresa.com',
       role: 'Administrador PMO',
       status: 'ACTIVE'
     };
@@ -1128,17 +1128,36 @@ export default function ScrumBoardAndQaManager({
               )}
             </div>
 
-            <div className="mt-2.5 flex items-center gap-3">
+            <div className="mt-2.5 flex flex-wrap items-center gap-3">
               <h2 className="text-xl md:text-2xl font-black tracking-tight">{currentSprint ? formatSprintName(currentSprint.name) : 'Sin Sprint Activo'}</h2>
-              <select
-                value={selectedSprintId}
-                onChange={e => setSelectedSprintId(e.target.value)}
-                className="bg-slate-800 border border-slate-700 hover:border-slate-600 px-3 py-1.5 text-xs font-bold text-teal-400 rounded-xl cursor-pointer focus:ring-1 focus:ring-teal-500 outline-none"
-              >
-                {SprintsForProject.map(sp => (
-                  <option key={sp.id} value={sp.id}>{formatSprintName(sp.name)}</option>
-                ))}
-              </select>
+              
+              {/* Selector de Proyecto Activo */}
+              <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-705 hover:border-slate-600 px-3 py-1.5 rounded-xl cursor-pointer">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest font-mono">PROYECTO:</span>
+                <select
+                  value={selectedProjectId}
+                  onChange={e => setSelectedProjectId(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-white rounded cursor-pointer focus:outline-none max-w-[220px]"
+                >
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id} className="bg-slate-900 text-white">{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selector de Sprint */}
+              <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-705 hover:border-slate-600 px-3 py-1.5 rounded-xl cursor-pointer">
+                <span className="text-[10px] font-extrabold text-teal-400 uppercase tracking-widest font-mono">SPRINT:</span>
+                <select
+                  value={selectedSprintId}
+                  onChange={e => setSelectedSprintId(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-teal-400 rounded cursor-pointer focus:outline-none"
+                >
+                  {SprintsForProject.map(sp => (
+                    <option key={sp.id} value={sp.id} className="bg-slate-900 text-teal-450">{formatSprintName(sp.name)}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <p className="text-xs text-slate-400 mt-2 max-w-2xl italic">
@@ -1147,18 +1166,6 @@ export default function ScrumBoardAndQaManager({
 
             <div className="flex flex-wrap gap-4 mt-4 text-[11px] text-slate-350">
               <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60">📅 <strong>Fechas:</strong> {currentSprint?.start_date || 'N/A'} al {currentSprint?.end_date || 'N/A'}</span>
-              <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60">👥 <strong>User Activo (Sim.):</strong> 
-                <select 
-                  value={currentUser.id}
-                  onChange={(e) => {
-                    const u = users.find(x => x.id === e.target.value);
-                    if (u) setCurrentUser(u);
-                  }}
-                  className="bg-transparent border-none text-[11px] font-bold text-teal-400 ml-1 cursor-pointer focus:outline-none focus:ring-0"
-                >
-                  {users.map(u => <option key={u.id} value={u.id} className="bg-slate-800">{u.first_name} {u.last_name} ({u.role})</option>)}
-                </select>
-              </span>
             </div>
           </div>
 
@@ -1263,63 +1270,13 @@ export default function ScrumBoardAndQaManager({
         </div>
       </div>
 
-      {/* Sub menu tabs */}
+      {/* Sub menu tabs - dedicated strictly to development scrum sprint board */}
       <div className="bg-slate-100 p-1.5 rounded-xl border border-slate-200 flex flex-wrap gap-1.5">
         <button
           onClick={() => setScrumSubTab('main_board')}
-          className={`px-4 py-2 font-bold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            scrumSubTab === 'main_board' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-650 hover:bg-slate-200'
-          }`}
+          className="px-4 py-2 font-bold text-xs rounded-lg bg-slate-900 text-white shadow-sm flex items-center gap-2"
         >
-          📋 Tablero de Desarrollo
-        </button>
-
-        <button
-          onClick={() => setScrumSubTab('qa_board')}
-          disabled={(currentSprint?.status as any) !== 'EN_QA' && currentSprint?.status !== 'FINALIZADO'}
-          className={`px-4 py-2 font-bold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
-            scrumSubTab === 'qa_board' 
-              ? 'bg-teal-800 text-white shadow-sm' 
-              : 'text-teal-700 hover:bg-teal-50'
-          }`}
-          title={(currentSprint?.status as any) !== 'EN_QA' ? 'Disponible al pasar el sprint a En QA' : ''}
-        >
-          🧪 Tablero Especial de QA
-        </button>
-
-        <button
-          onClick={() => setScrumSubTab('dashboard')}
-          className={`px-4 py-2 font-bold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            scrumSubTab === 'dashboard' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-650 hover:bg-slate-200'
-          }`}
-        >
-          📊 Métricas QA &amp; Sprint Dashboard
-        </button>
-
-        <button
-          onClick={() => setScrumSubTab('detail')}
-          className={`px-4 py-2 font-bold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            scrumSubTab === 'detail' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-650 hover:bg-slate-200'
-          }`}
-        >
-          ✍️ Criterios de Aceptación &amp; Casos QA
-        </button>
-
-        <button
-          onClick={() => setScrumSubTab('logs')}
-          className={`px-4 py-2 font-bold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer ${
-            scrumSubTab === 'logs' 
-              ? 'bg-slate-900 text-white shadow-sm' 
-              : 'text-slate-650 hover:bg-slate-200'
-          }`}
-        >
-          🪵 Bitácora de Trazabilidad ({auditLogs.length})
+          📋 Tablero de Desarrollo Scrum
         </button>
       </div>
 

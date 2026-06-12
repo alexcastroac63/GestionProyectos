@@ -53,6 +53,7 @@ import ProjectWBSManager from './components/ProjectWBSManager';
 import ProductBacklogManager from './components/ProductBacklogManager';
 import ScrumBoardAndQaManager from './components/ScrumBoardAndQaManager';
 import KPIDashboard from './components/KPIDashboard';
+import QaSuiteWorkspace from './components/QaSuiteWorkspace';
 
 // Icons Import
 import {
@@ -102,7 +103,9 @@ import {
   LogOut,
   Eye,
   EyeOff,
-  Settings
+  Settings,
+  Tag,
+  ShieldCheck
 } from 'lucide-react';
 
 function safeLoad<T>(key: string, defaultValue: T): T {
@@ -398,7 +401,7 @@ export default function App() {
 
   // Project List Filters
   const [projectSearch, setProjectSearch] = useState('');
-  const [projectStatusFilter, setProjectStatusFilter] = useState<string[]>(['DESARROLLO', 'PRUEBAS']);
+  const [projectStatusFilter, setProjectStatusFilter] = useState<string[]>(['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS']);
   const [isStatusFilterDropdownOpen, setIsStatusFilterDropdownOpen] = useState(false);
   const [projectPriorityFilter, setProjectPriorityFilter] = useState<string>('ALL');
   const [projectClientFilter, setProjectClientFilter] = useState<string>('ALL');
@@ -523,6 +526,8 @@ export default function App() {
   const [newProjBudget, setNewProjBudget] = useState(150000);
   const [newProjCode, setNewProjCode] = useState('');
   const [newProjSprintSizeDays, setNewProjSprintSizeDays] = useState(10);
+  const [newProjDesarrollo, setNewProjDesarrollo] = useState<'Interno' | 'Mixto' | 'Externo' | 'Sin desarrollo'>('Interno');
+  const [newProjCategoria, setNewProjCategoria] = useState<'Pequeño' | 'Mediano' | 'Grande' | 'Muy Grande'>('Mediano');
 
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
@@ -547,7 +552,9 @@ export default function App() {
       sprint_size_weeks: 2,
       sprint_size_days: Number(newProjSprintSizeDays) || 10,
       budget_total: budgetVal,
-      tenant_id: loggedInUser?.tenant_id || 'grupo-campestre'
+      tenant_id: loggedInUser?.tenant_id || 'grupo-campestre',
+      desarrollo: newProjDesarrollo,
+      categoria: newProjCategoria
     };
     setProjects(prev => [...prev, newProj]);
     setCategoryBudgets(prev => ({
@@ -565,6 +572,8 @@ export default function App() {
     setNewProjClient('');
     setNewProjSponsor('');
     setNewProjSprintSizeDays(10);
+    setNewProjDesarrollo('Interno');
+    setNewProjCategoria('Mediano');
     setIsCreateProjectModalOpen(false);
     addLog('Carlos Pérez (PM)', `Creó el proyecto de negocio [${newProj.code}] ${newProj.name}`);
   };
@@ -1466,6 +1475,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
         { id: 'projects', label: 'Proyectos', icon: Briefcase },
         { id: 'backlog', label: 'Backlog del Producto', icon: Layers },
         { id: 'kanban', label: 'Tablero Scrum Board', icon: CheckSquare },
+        { id: 'qa', label: 'Gestión Calidad QA (QAS)', icon: ShieldCheck },
         { id: 'mockup', label: 'Lienzo Mockups Visuales', icon: Monitor },
       ]
     },
@@ -1525,7 +1535,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           type="email"
                           value={forgotPasswordEmail}
                           onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                          placeholder="ejemplo@campestre.com.sv"
+                          placeholder="ejemplo@empresa.com"
                           className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
                         />
                       </div>
@@ -1864,7 +1874,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       type="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="ejemplo@campestre.com.sv"
+                      placeholder="ejemplo@empresa.com"
                       className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
                     />
                   </div>
@@ -2328,16 +2338,20 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Filtrar por Cliente</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Filtrar por Sponsor</label>
                         <select
                           value={projectClientFilter}
                           onChange={e => setProjectClientFilter(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none cursor-pointer font-bold"
                         >
-                          <option value="ALL">🏢 Todos los Clientes</option>
-                          {Array.from(new Set(segmentedProjects.map(p => p.client).filter(Boolean))).map(client => (
-                            <option key={client} value={client}>🏢 {client}</option>
-                          ))}
+                          <option value="ALL">👤 Todos los Sponsors</option>
+                          {Array.from(new Set(segmentedProjects.map(p => p.sponsor).filter(Boolean))).map(sponsor => {
+                            const foundSponsor = users.find(u => u.id === sponsor);
+                            const nameLabel = foundSponsor ? `${foundSponsor.first_name} ${foundSponsor.last_name}` : sponsor || 'Sponsor Principal';
+                            return (
+                              <option key={sponsor} value={sponsor}>👤 {nameLabel}</option>
+                            );
+                          })}
                         </select>
                       </div>
                     </div>
@@ -2381,7 +2395,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                                                   proj.client.toLowerCase().includes(projectSearch.toLowerCase());
                               const matchesStatus = projectStatusFilter.length === 0 || projectStatusFilter.includes(proj.status);
                               const matchesPriority = projectPriorityFilter === 'ALL' || proj.priority === projectPriorityFilter;
-                              const matchesClient = projectClientFilter === 'ALL' || proj.client === projectClientFilter;
+                              const matchesClient = projectClientFilter === 'ALL' || proj.sponsor === projectClientFilter;
                               return matchesSearch && matchesStatus && matchesPriority && matchesClient;
                             });
 
@@ -2425,9 +2439,23 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                                         <span className="text-[9px] bg-blue-600 text-white font-bold px-1.5 py-0.2 rounded shrink-0">Global</span>
                                       )}
                                     </div>
+                                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                        ⚙️ {proj.desarrollo || 'Interno'}
+                                      </span>
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100/40">
+                                        🏷️ {proj.categoria || 'Mediano'}
+                                      </span>
+                                    </div>
                                   </td>
                                   <td className="p-3 text-slate-500">
-                                    {proj.client}
+                                    <div className="font-semibold text-slate-800">{proj.client}</div>
+                                    <div className="text-[10px] text-slate-500 font-medium mt-0.5 whitespace-nowrap">
+                                      👤 Sponsor: {(() => {
+                                        const foundSponsor = users.find(u => u.id === proj.sponsor);
+                                        return foundSponsor ? `${foundSponsor.first_name} ${foundSponsor.last_name}` : proj.sponsor || 'Sponsor Principal';
+                                      })()}
+                                    </div>
                                   </td>
                                   <td className="p-3 font-mono font-bold text-slate-800">
                                     {isDevRole ? '••••••' : `$${proj.budget_total.toLocaleString('en-US')} USD`}
@@ -2628,7 +2656,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                   </div>
 
                   {/* PROJECT CONFIGURATION METADATA RIBBON */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white border border-slate-200 rounded-xl p-4 mt-4 shadow-3xs text-xs animate-fadeIn">
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-4 bg-white border border-slate-200 rounded-xl p-4 mt-4 shadow-3xs text-xs animate-fadeIn">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
                         <Briefcase className="w-4 h-4" />
@@ -2650,6 +2678,30 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             const foundSponsor = users.find(u => u.id === activeProject.sponsor);
                             return foundSponsor ? `${foundSponsor.first_name} ${foundSponsor.last_name}` : activeProject.sponsor || 'Sponsor Principal';
                           })()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-slate-100 text-slate-700 rounded-lg shrink-0">
+                        <Cpu className="w-4 h-4 text-slate-600" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Desarrollo</span>
+                        <span className="font-semibold text-slate-800 text-[11px] truncate block whitespace-nowrap">
+                          {activeProject.desarrollo || 'Interno'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                        <Tag className="w-4 h-4 text-blue-500" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Categoría</span>
+                        <span className="font-semibold text-slate-800 text-[11px] truncate block whitespace-nowrap">
+                          {activeProject.categoria || 'Mediano'}
                         </span>
                       </div>
                     </div>
@@ -2679,9 +2731,9 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         <Clock className="w-4 h-4" />
                       </div>
                       <div>
-                        <span className="block text-[10px] uppercase font-bold text-slate-400">Tamaño del Sprint</span>
-                        <span className="font-semibold text-sky-850 font-bold bg-sky-50 border border-sky-100 px-2.5 py-0.5 rounded text-[11px] block mt-0.5 w-fit">
-                          {activeProject.sprint_size_days !== undefined ? activeProject.sprint_size_days : 10} días hábiles
+                        <span className="block text-[10px] uppercase font-bold text-slate-400">Sprint</span>
+                        <span className="font-semibold text-sky-850 font-bold bg-sky-50 border border-sky-100 px-2 py-0.5 rounded text-[11px] block mt-0.5 w-fit">
+                          {activeProject.sprint_size_days !== undefined ? activeProject.sprint_size_days : 10}d
                         </span>
                       </div>
                     </div>
@@ -3490,6 +3542,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 projects={segmentedProjects}
                 users={segmentedUsers}
                 sprints={sprints}
+                setSprints={setSprints}
                 addLog={addLog}
                 workItems={workItems}
                 setWorkItems={setWorkItems}
@@ -3521,152 +3574,24 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
           {/* 5. TAB: QA TESTING SUITE */}
           {activeTab === 'qa' && (
-            <div className="space-y-6 animate-fadeIn" id="tab-qa">
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div>
-                    <h3 className="font-semibold text-slate-900 text-base">Suites de Pruebas & Casos Asegurados</h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Ejecuciones verificadas por Aseguramiento de Calidad (QAS) para certificar historias de usuario.
-                    </p>
-                  </div>
-                  <form onSubmit={handleCreateTestSuite} className="flex gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={newSuiteName}
-                      onChange={e => setNewSuiteName(e.target.value)}
-                      placeholder="Nueva Suite (ej. API Github)"
-                      className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-850"
-                    />
-                    <button type="submit" className="bg-teal-600 hover:bg-teal-700 text-white text-xs px-3.5 py-1 rounded-lg">
-                      Nueva Suite
-                    </button>
-                  </form>
-                </div>
-
-                {/* Suites toggler list */}
-                <div className="flex gap-2 mt-6 border-b border-slate-100 pb-3">
-                  {testSuites.map(ste => (
-                    <button
-                      key={ste.id}
-                      onClick={() => setActiveSuiteId(ste.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        activeSuiteId === ste.id
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'bg-slate-100 hover:bg-slate-250 text-slate-600'
-                      }`}
-                    >
-                      {ste.name}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Grid to create cases and list cases */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-                  {/* Create Case Form */}
-                  <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl space-y-4">
-                    <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block">Registrar Caso de Prueba</span>
-                    <form onSubmit={handleCreateTestCase} className="space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Título del caso*</label>
-                        <input
-                          type="text"
-                          required
-                          value={newTestCaseTitle}
-                          onChange={e => setNewTestCaseTitle(e.target.value)}
-                          placeholder="Ej. Comprobar bloqueo de tarjetas sin rol"
-                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-800 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Trazabilidad (Enlaza a Requ. HU/T)</label>
-                        <select
-                          value={testCaseHUId}
-                          onChange={e => setTestCaseHUId(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-800"
-                        >
-                          <option value="">Selecciona HU asignada...</option>
-                          {workItems.map(wi => (
-                            <option key={wi.id} value={wi.id}>[{wi.key}] {wi.title}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Resultado Esperado*</label>
-                        <input
-                          type="text"
-                          value={newTestCaseExpected}
-                          onChange={e => setNewTestCaseExpected(e.target.value)}
-                          placeholder="Ej. Status 200 y filtrado organization_id"
-                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-800 focus:outline-none"
-                        />
-                      </div>
-
-                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs py-2 rounded font-semibold">
-                        Añadir Caso
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* List and interactive run triggers */}
-                  <div className="lg:col-span-2 space-y-4">
-                    <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block">Ejecutor de Casos en Tiempo Real</span>
-                    
-                    <div className="space-y-3">
-                      {testCases.filter(c => c.suite_id === activeSuiteId).map(c => {
-                        const linkedHU = workItems.find(item => item.id === c.work_item_id);
-                        return (
-                          <div key={c.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-xs transition duration-150">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h5 className="font-bold text-slate-850 text-xs">
-                                  {c.title}
-                                </h5>
-                                {linkedHU && (
-                                  <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded inline-block mt-1 font-mono">
-                                    Trazas: {linkedHU.key} - {linkedHU.title}
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase shrink-0 ${
-                                c.status === 'PASSED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                c.status === 'FAILED' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-slate-100 text-slate-500'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </div>
-
-                            <div className="bg-slate-50 p-2.5 rounded text-[10.5px] text-slate-650 space-y-1 my-3">
-                              <p><strong>Pasos QA:</strong> 1. Abrir consola de depuración local. 2. Examinar base de datos PostgreSQL. 3. Lanzar pipeline.</p>
-                              <p><strong>Esperado:</strong> {c.expected}</p>
-                            </div>
-
-                            {/* Runner trigger tools */}
-                            <div className="flex gap-2 justify-end border-t border-slate-100 pt-3">
-                              <button
-                                onClick={() => executeTestCase(c.id, 'PASSED', 'Verificado de forma correcta.')}
-                                className="bg-emerald-50 hover:bg-emerald-150 text-emerald-700 font-semibold px-2.5 py-1 px-1.5 rounded text-[10px] transition cursor-pointer"
-                              >
-                                Certificar PASSED ✅
-                              </button>
-                              <button
-                                onClick={() => executeTestCase(c.id, 'FAILED', 'Fallo de integridad referencial.')}
-                                className="bg-red-50 hover:bg-red-150 text-red-700 font-semibold px-2.5 py-1 px-1.5 rounded text-[10px] transition cursor-pointer"
-                              >
-                                Reportar FAILED ❌
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <QaSuiteWorkspace
+              selectedProjectId={selectedProjectId}
+              setSelectedProjectId={setSelectedProjectId}
+              projects={segmentedProjects}
+              users={segmentedUsers}
+              sprints={sprints}
+              setSprints={setSprints}
+              workItems={workItems}
+              setWorkItems={setWorkItems}
+              testCases={testCases}
+              setTestCases={setTestCases}
+              testSuites={testSuites}
+              setTestSuites={setTestSuites}
+              testRuns={testRuns}
+              setTestRuns={setTestRuns}
+              addLog={addLog}
+              loggedInUser={loggedInUser || undefined}
+            />
           )}
 
           {/* 6. TAB: MOCKUPS LIVE CANVAS */}
@@ -4015,7 +3940,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           <input
                             type="text"
                             required
-                            placeholder="Ej: Sofía"
+                            placeholder="Ingrese nombre"
                             value={newFirstName}
                             onChange={(e) => setNewFirstName(e.target.value)}
                             className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none"
@@ -4026,7 +3951,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           <input
                             type="text"
                             required
-                            placeholder="Ej: Ortiz"
+                            placeholder="Ingrese apellido"
                             value={newLastName}
                             onChange={(e) => setNewLastName(e.target.value)}
                             className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none"
@@ -4039,7 +3964,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         <input
                           type="email"
                           required
-                          placeholder="nombre.apellido@campestre.com.sv"
+                          placeholder="nombre.apellido@empresa.com"
                           value={newEmail}
                           onChange={(e) => setNewEmail(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none"
@@ -4388,7 +4313,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             setSmtpAccount(e.target.value);
                             localStorage.setItem('gcp_smtp_account', e.target.value);
                           }}
-                          placeholder="proyectosticampestre@gmail.com"
+                          placeholder="notificaciones-pmo@example.com"
                           className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition shadow-xs"
                         />
                       </div>
@@ -5166,7 +5091,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             <input
                               type="text"
                               name="tenantId"
-                              placeholder="ej: pollo-campestre"
+                              placeholder="ej: corporacion-global"
                               required
                               className="w-full bg-white border border-slate-205 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold outline-none focus:ring-1 focus:ring-teal-500 shadow-3xs"
                             />
@@ -5182,7 +5107,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             <input
                               type="text"
                               name="tenantName"
-                              placeholder="Pollo Campestre S.A. de C.V."
+                              placeholder="Corporación Global S.A. de C.V."
                               required
                               className="w-full bg-white border border-slate-205 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold outline-none focus:ring-1 focus:ring-teal-500 shadow-3xs"
                             />
@@ -5195,7 +5120,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             <input
                               type="text"
                               name="tenantDomain"
-                              placeholder="campestre.com.sv"
+                              placeholder="empresa.com"
                               required
                               className="w-full bg-white border border-slate-205 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold outline-none focus:ring-1 focus:ring-teal-500 shadow-3xs"
                             />
@@ -5584,6 +5509,36 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                   </select>
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tipo de Desarrollo</label>
+                    <select
+                      value={projectConfigModalTarget.desarrollo || 'Interno'}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, desarrollo: e.target.value as any } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      <option value="Interno">⚙️ Interno</option>
+                      <option value="Mixto">🔄 Mixto</option>
+                      <option value="Externo">📦 Externo</option>
+                      <option value="Sin desarrollo">🚫 Sin desarrollo</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Categoría del Proyecto</label>
+                    <select
+                      value={projectConfigModalTarget.categoria || 'Mediano'}
+                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, categoria: e.target.value as any } : null)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      <option value="Pequeño">🟢 Pequeño</option>
+                      <option value="Mediano">🟡 Mediano</option>
+                      <option value="Grande">🟠 Grande</option>
+                      <option value="Muy Grande">🔴 Muy Grande</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2 text-xs pt-4 border-t border-slate-100">
                   <button
                     type="button"
@@ -5763,6 +5718,36 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       onChange={e => setNewProjSprintSizeDays(Number(e.target.value))}
                       className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tipo de Desarrollo</label>
+                    <select
+                      value={newProjDesarrollo}
+                      onChange={e => setNewProjDesarrollo(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      <option value="Interno">⚙️ Interno</option>
+                      <option value="Mixto">🔄 Mixto</option>
+                      <option value="Externo">📦 Externo</option>
+                      <option value="Sin desarrollo">🚫 Sin desarrollo</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Categoría</label>
+                    <select
+                      value={newProjCategoria}
+                      onChange={e => setNewProjCategoria(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
+                    >
+                      <option value="Pequeño">🟢 Pequeño</option>
+                      <option value="Mediano">🟡 Mediano</option>
+                      <option value="Grande">🟠 Grande</option>
+                      <option value="Muy Grande">🔴 Muy Grande</option>
+                    </select>
                   </div>
                 </div>
 

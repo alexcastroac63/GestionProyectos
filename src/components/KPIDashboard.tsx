@@ -264,7 +264,12 @@ export default function KPIDashboard({
         avgPresupuesto: 0,
         avgAvance: 0,
         avgVelocidad: 0,
-        avgCalidad: 0
+        avgCalidad: 0,
+        maxSponsorName: 'Ninguno',
+        sponsorConcentration: 0,
+        maxCompanyName: 'Ninguno',
+        companyBudgetConcentration: 0,
+        totalBudget: 0
       };
     }
 
@@ -278,6 +283,43 @@ export default function KPIDashboard({
     const sumCalidad = filteredProjects.reduce((acc, p) => acc + p.percentCalidad, 0);
     const sumVelocidad = filteredProjects.reduce((acc, p) => acc + p.sprintCumplimientoPoints, 0);
 
+    // Sponsor workload concentration
+    const sponsorCounts: { [key: string]: number } = {};
+    filteredProjects.forEach(p => {
+      const sp = p.sponsor || 'Sponsor Principal';
+      sponsorCounts[sp] = (sponsorCounts[sp] || 0) + 1;
+    });
+    let maxSponsorName = 'Sponsor Principal';
+    let maxSponsorCount = 0;
+    Object.entries(sponsorCounts).forEach(([name, val]) => {
+      if (val > maxSponsorCount) {
+        maxSponsorCount = val;
+        maxSponsorName = name;
+      }
+    });
+    // Resolve sponsor name if user exists
+    const sponsorUser = users.find(u => u.id === maxSponsorName);
+    const sponsorDisplayName = sponsorUser ? `${sponsorUser.first_name} ${sponsorUser.last_name}` : maxSponsorName;
+    const sponsorConcentration = Math.round((maxSponsorCount / totalCount) * 100);
+
+    // Company Budget Concentration
+    const companyBudgets: { [key: string]: number } = {};
+    let totalBudget = 0;
+    filteredProjects.forEach(p => {
+      const co = p.client || 'Cliente General';
+      companyBudgets[co] = (companyBudgets[co] || 0) + (p.budget_total || 0);
+      totalBudget += (p.budget_total || 0);
+    });
+    let maxCompanyName = 'Empresa General';
+    let maxCompanyBudget = 0;
+    Object.entries(companyBudgets).forEach(([name, costVal]) => {
+      if (costVal > maxCompanyBudget) {
+        maxCompanyBudget = costVal;
+        maxCompanyName = name;
+      }
+    });
+    const companyBudgetConcentration = totalBudget > 0 ? Math.round((maxCompanyBudget / totalBudget) * 100) : 0;
+
     return {
       total: totalCount,
       verde: verdeCount,
@@ -287,9 +329,14 @@ export default function KPIDashboard({
       avgPresupuesto: Math.round(sumPresupuesto / totalCount),
       avgAvance: Math.round(sumAvance / totalCount),
       avgVelocidad: Math.round(sumVelocidad / totalCount),
-      avgCalidad: Math.round(sumCalidad / totalCount)
+      avgCalidad: Math.round(sumCalidad / totalCount),
+      maxSponsorName: sponsorDisplayName,
+      sponsorConcentration,
+      maxCompanyName: maxCompanyName,
+      companyBudgetConcentration,
+      totalBudget
     };
-  }, [filteredProjects]);
+  }, [filteredProjects, users]);
 
   const handleSelectOperProject = (pId: string) => {
     setOperDetailProjId(pId);
@@ -617,7 +664,7 @@ export default function KPIDashboard({
         <div className="space-y-6 animate-fadeIn">
           
           {/* Executive Widgets grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             
             {/* KPI WIDGET 1: Active amount */}
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative overflow-hidden">
@@ -720,8 +767,38 @@ export default function KPIDashboard({
               <h4 className="text-3xl font-extrabold text-slate-900 font-mono mt-3 text-teal-700">
                 {globalSummary.avgCalidad}%
               </h4>
-              <div className="mt-2 text-[10px] text-slate-500">
+              <div className="mt-2 text-[10px] text-slate-500 font-medium">
                 Aprobados sin reproceso
+              </div>
+            </div>
+
+            {/* KPI WIDGET 6: Carga de Sponsors */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative overflow-hidden">
+              <div className="absolute top-0 left-0 bg-blue-500 h-1 w-full" />
+              <div className="flex justify-between items-start text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <span>Carga de Sponsor</span>
+                <Users className="w-4 h-4 text-blue-500" />
+              </div>
+              <h4 className="text-3xl font-extrabold text-slate-900 font-mono mt-3 text-blue-600">
+                {globalSummary.sponsorConcentration}%
+              </h4>
+              <div className="mt-2 text-[10px] text-slate-500 truncate block font-semibold text-slate-700">
+                👤 {globalSummary.maxSponsorName}
+              </div>
+            </div>
+
+            {/* KPI WIDGET 7: Concentración Empresa */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative overflow-hidden">
+              <div className="absolute top-0 left-0 bg-amber-500 h-1 w-full" />
+              <div className="flex justify-between items-start text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <span>Inversión Compañía</span>
+                <TrendingUp className="w-4 h-4 text-amber-500" />
+              </div>
+              <h4 className="text-3xl font-extrabold text-slate-900 font-mono mt-3 text-amber-600">
+                {globalSummary.companyBudgetConcentration}%
+              </h4>
+              <div className="mt-2 text-[10px] text-slate-500 truncate block font-semibold text-slate-700">
+                🏢 {globalSummary.maxCompanyName}
               </div>
             </div>
 
@@ -732,7 +809,7 @@ export default function KPIDashboard({
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-slate-900 font-extrabold text-base flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-indigo-600" /> 5 Indicadores Clave de Desempeño (KPIs)
+                  <Activity className="w-5 h-5 text-indigo-600" /> 7 Indicadores Clave de Desempeño (KPIs)
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
                   Revise los objetivos analíticos establecidos, las fórmulas de cálculo exactas y las directrices de color. Haga clic en un indicador para expandir.
@@ -740,7 +817,7 @@ export default function KPIDashboard({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3" id="indicators-kpis-accordion">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3" id="indicators-kpis-accordion">
               {[
                 {
                   id: 1,
@@ -802,6 +879,30 @@ export default function KPIDashboard({
                   average: globalSummary.avgCalidad,
                   color: 'teal',
                   icon: ShieldCheck
+                },
+                {
+                  id: 6,
+                  title: 'Carga Máxima de Sponsor',
+                  obj: 'Monitorear la concentración de proyectos acumulados en un solo Sponsor estratégico.',
+                  formula: 'Carga Máxima de Sponsor = (Proyectos en Sponsor Mayoritario / Total de Proyectos Activos) × 100',
+                  req: 'Proyecto, Nombre del Sponsor, Fase del proyecto, ID Inversionista',
+                  sem: 'Verde: <= 35% (Distribución saludable) | Amarillo: > 35% y <= 50% (Atención recomendada) | Rojo: > 50% (Riesgo de sobrecarga de aprobaciones)',
+                  inter: 'Mide el grado de dependencia en la toma de decisiones por parte de los patrocinadores clave.',
+                  average: globalSummary.sponsorConcentration,
+                  color: 'blue',
+                  icon: Users
+                },
+                {
+                  id: 7,
+                  title: 'Concentración Presupuesto Empresa',
+                  obj: 'Evaluar la distribución o concentración del presupuesto total aprobado entre las empresas demandantes.',
+                  formula: 'Concentración Presupuesto = (Presupuesto de la Empresa Líder / Inversión Total del Portafolio) × 100',
+                  req: 'Proyecto, Presupuesto Total, Cliente / Empresa, ID Transaccional',
+                  sem: 'Verde: <= 30% (Estructura diversificada) | Amarillo: > 30% y <= 45% (Gasto concentrado) | Rojo: > 45% (Riesgo de dependencia presupuestaria)',
+                  inter: 'Informa sobre la distribución financiera por sponsor empresa. Una tasa alta indica alta influencia de un solo cliente corporativo.',
+                  average: globalSummary.companyBudgetConcentration,
+                  color: 'amber',
+                  icon: TrendingUp
                 }
               ].map((item) => {
                 const Icon = item.icon;
@@ -811,7 +912,7 @@ export default function KPIDashboard({
                     key={item.id}
                     className={`border rounded-xl transition-all ${
                       isSelected
-                        ? 'border-indigo-500 bg-indigo-50/25 col-span-5 md:col-span-1 shadow-md'
+                        ? 'border-indigo-500 bg-indigo-50/25 col-span-1 sm:col-span-2 lg:col-span-7 shadow-md'
                         : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50'
                     } p-4 cursor-pointer`}
                     onClick={() => setActiveIndicatorInfo(isSelected ? null : item.id)}

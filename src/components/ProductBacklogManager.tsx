@@ -213,6 +213,7 @@ interface ProductBacklogManagerProps {
   projects: any[];
   users: any[];
   sprints: any[];
+  setSprints?: React.Dispatch<React.SetStateAction<any[]>>;
   onSprintUpdate?: () => void;
   addLog: (user: string, action: string) => void;
   workItems?: any[];
@@ -225,6 +226,7 @@ export default function ProductBacklogManager({
   projects,
   users,
   sprints,
+  setSprints,
   addLog,
   workItems,
   setWorkItems
@@ -288,7 +290,32 @@ export default function ProductBacklogManager({
   });
 
   // --- UI/Tab management ---
-  const [backlogSubTab, setBacklogSubTab] = useState<'dashboard' | 'list' | 'epics'>('list');
+  const [backlogSubTab, setBacklogSubTab] = useState<'dashboard' | 'list' | 'epics' | 'sprints'>('list');
+  
+  // --- Sprint creation and association states ---
+  const [backlogSelectedSprintId, setBacklogSelectedSprintId] = useState<string>('');
+  const [newSprintName, setNewSprintName] = useState<string>('');
+  const [newSprintGoal, setNewSprintGoal] = useState<string>('');
+  const [newSprintStartDate, setNewSprintStartDate] = useState<string>('2026-06-12');
+  const [newSprintEndDate, setNewSprintEndDate] = useState<string>('2026-06-25');
+  const [newSprintCapacity, setNewSprintCapacity] = useState<number>(35);
+  const [newSprintVelocity, setNewSprintVelocity] = useState<number>(30);
+  const [newSprintStatus, setNewSprintStatus] = useState<string>('NO_INICIADO');
+
+  // Synchronize default selected sprint when project or sprints list changes
+  useEffect(() => {
+    const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
+    if (projectSprints.length > 0) {
+      // Keep existing selection if still valid for this project, otherwise pick first
+      const exists = projectSprints.some(s => s.id === backlogSelectedSprintId);
+      if (!exists) {
+        setBacklogSelectedSprintId(projectSprints[0].id);
+      }
+    } else {
+      setBacklogSelectedSprintId('');
+    }
+  }, [selectedProjectId, sprints]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -423,7 +450,7 @@ export default function ProductBacklogManager({
           description: 'Cálculo algorítmico automatizado que cruza existencias y tránsitos contra órdenes de producción abiertas.',
           type: 'Funcional',
           priority: 'Crítica',
-          status: 'En desarrollo',
+          status: 'Ready',
           businessValue: 5,
           risk: 3,
           urgency: 4,
@@ -436,7 +463,7 @@ export default function ProductBacklogManager({
           functionalOwnerId: 'u-2',
           technicalOwnerId: 'u-3',
           requesterId: 'u-2',
-          company: 'Cervecería Campestre S.A.',
+          company: 'Corporación Logística S.A.',
           branch: 'Planta Principal',
           createdAt: '2026-05-15',
           startDate: '2026-06-01',
@@ -542,7 +569,7 @@ export default function ProductBacklogManager({
           functionalOwnerId: 'u-2',
           technicalOwnerId: 'u-4', // No developer yet
           requesterId: 'u-2',
-          company: 'Cervecería Campestre S.A.',
+          company: 'Corporación Logística S.A.',
           createdAt: '2026-05-18',
           startDate: '2026-06-12',
           dorChecklist: DEFAULT_DOR_ITEMS.reduce((acc, curr, idx) => ({ ...acc, [curr]: idx < 6 }), {}),
@@ -696,6 +723,91 @@ export default function ProductBacklogManager({
     }));
 
     addLog('Gestor Backlog', `Cambió estado de ${story.code} de ${prevStatus} a ${newStatus} bajo el rol ${currentRole}`);
+  };
+
+  // --- Sprint creation and assignment handlers inside product backlog ---
+  const handleCreateSprintInBacklog = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentRole === 'CONSULTA') {
+      alert('⚠️ No cuenta con privilegios para crear sprints.');
+      return;
+    }
+    if (!newSprintName.trim()) {
+      alert('❌ Validación: El nombre del sprint es obligatorio.');
+      return;
+    }
+
+    const newSp = {
+      id: `sprint-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      project_id: selectedProjectId,
+      name: newSprintName,
+      goal: newSprintGoal,
+      start_date: newSprintStartDate,
+      end_date: newSprintEndDate,
+      status: newSprintStatus as any,
+      velocity: newSprintVelocity,
+      capacity: newSprintCapacity
+    };
+
+    if (setSprints) {
+      setSprints(prev => [...prev, newSp]);
+    }
+    
+    setBacklogSelectedSprintId(newSp.id);
+    
+    // Clear form
+    setNewSprintName('');
+    setNewSprintGoal('');
+    setNewSprintStartDate('2026-06-12');
+    setNewSprintEndDate('2026-06-25');
+    setNewSprintCapacity(35);
+    setNewSprintVelocity(30);
+    setNewSprintStatus('NO_INICIADO');
+
+    addLog('Sofía Ramírez (Scrum Master)', `Creó el Sprint: "${newSp.name}" en el Planificador de Backlog.`);
+  };
+
+  const handleAssignStoryToSprint = (storyId: string, sprintId: string) => {
+    if (currentRole === 'CONSULTA') {
+      alert('⚠️ No cuenta con privilegios para asociar historias.');
+      return;
+    }
+    const targetStory = stories.find(s => s.id === storyId);
+    const targetSprint = sprints.find(s => s.id === sprintId);
+    if (!targetStory || !targetSprint) return;
+
+    if (targetStory.sprint_id && targetStory.sprint_id !== sprintId) {
+      const currentSprintName = sprints.find(s => s.id === targetStory.sprint_id)?.name || 'otro Sprint';
+      alert(`⚠️ Esta Historia de Usuario (${targetStory.code}) ya está asignada al "${currentSprintName}". Primero debes quitarla de ese Sprint para poder reasignarla.`);
+      return;
+    }
+
+    setStories(prev => prev.map(s => {
+      if (s.id === storyId) {
+        return { ...s, sprint_id: sprintId };
+      }
+      return s;
+    }));
+
+    addLog('Sofía Ramírez (Scrum Master)', `Asoció la HU "${targetStory.code}: ${targetStory.title}" al Sprint "${targetSprint.name}".`);
+  };
+
+  const handleUnassignStoryFromSprint = (storyId: string) => {
+    if (currentRole === 'CONSULTA') {
+      alert('⚠️ No cuenta con privilegios para quitar historias del sprint.');
+      return;
+    }
+    const targetStory = stories.find(s => s.id === storyId);
+    if (!targetStory) return;
+
+    setStories(prev => prev.map(s => {
+      if (s.id === storyId) {
+        return { ...s, sprint_id: undefined };
+      }
+      return s;
+    }));
+
+    addLog('Sofía Ramírez (Scrum Master)', `Desvinculó la HU "${targetStory.code}: ${targetStory.title}" de su Sprint asignado.`);
   };
 
   // --- Create or Update User Story Handler ---
@@ -1335,7 +1447,7 @@ export default function ProductBacklogManager({
   const storyTypesEnum: StoryType[] = ['Funcional', 'Técnica', 'Bug', 'Mejora', 'Spike', 'Integración', 'Reporte'];
   const storyPrioritiesEnum: StoryPriority[] = ['Baja', 'Media', 'Alta', 'Crítica'];
   const storyStatusesEnum: StoryStatus[] = [
-    'Borrador', 'En refinamiento', 'Ready', 'En desarrollo', 'En pruebas internas', 'En validación usuario', 'Aprobada', 'Cerrada', 'Bloqueada', 'Rechazada', 'Cancelada'
+    'Borrador', 'En refinamiento', 'Ready'
   ];
 
   return (
@@ -1429,6 +1541,16 @@ export default function ProductBacklogManager({
           }`}
         >
           🗺️ Catálogo de Épicas ({projectEpics.length})
+        </button>
+        <button
+          onClick={() => setBacklogSubTab('sprints')}
+          className={`px-4 py-2.5 font-bold text-xs border-b-2 transition ${
+            backlogSubTab === 'sprints'
+              ? 'border-teal-600 text-teal-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          🏃‍♂️ Planificador de Sprints ({projectSprints.length})
         </button>
       </div>
 
@@ -2001,6 +2123,330 @@ export default function ProductBacklogManager({
                 Aún no existen Épicas registradas para este proyecto de portafolio. ¡Crea una hoy desde el panel!
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 3D: SPRINT PLANNER SUBTAB */}
+      {backlogSubTab === 'sprints' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header bar and info */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h4 className="font-bold text-slate-905 text-sm md:text-base">Planificador Integrado de Sprints</h4>
+              <p className="text-xs text-slate-500 mt-1">
+                Crea nuevos sprints de manera ágil y asocia historias de usuario (HUs) del backlog para planificar tus entregas.
+              </p>
+            </div>
+            <div className="bg-teal-50 text-teal-800 border border-teal-100 text-[11px] font-bold px-3 py-1.5 rounded-lg font-mono">
+              Sesión: Scrum Master / Product Owner Activo
+            </div>
+          </div>
+
+          {/* Dual form layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* 1. SPRINT CREATION FORM (Left side) */}
+            <div className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs space-y-4">
+              <h5 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-teal-600" />
+                Crear Nuevo Sprint
+              </h5>
+
+              <form onSubmit={handleCreateSprintInBacklog} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Nombre del Sprint *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newSprintName}
+                    onChange={e => setNewSprintName(e.target.value)}
+                    placeholder="Ej. Sprint 5 - API de Envío"
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-teal-500 rounded-lg px-3 py-2 transition outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Objetivo / Meta del Sprint</label>
+                  <textarea
+                    rows={2}
+                    value={newSprintGoal}
+                    onChange={e => setNewSprintGoal(e.target.value)}
+                    placeholder="Ej. Integrar servicios de tracking y notificaciones push."
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-teal-500 rounded-lg px-3 py-2 transition outline-none resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Fecha de Inicio</label>
+                    <input
+                      type="date"
+                      value={newSprintStartDate}
+                      onChange={e => setNewSprintStartDate(e.target.value)}
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none text-[11px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Fecha de Fin</label>
+                    <input
+                      type="date"
+                      value={newSprintEndDate}
+                      onChange={e => setNewSprintEndDate(e.target.value)}
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none text-[11px]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Capacidad (SP) *</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={newSprintCapacity}
+                      onChange={e => setNewSprintCapacity(Number(e.target.value))}
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Velocidad Requerida</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={newSprintVelocity}
+                      onChange={e => setNewSprintVelocity(Number(e.target.value))}
+                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Estado Inicial</label>
+                  <select
+                    value={newSprintStatus}
+                    onChange={e => setNewSprintStatus(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 transition outline-none cursor-pointer"
+                  >
+                    <option value="NO_INICIADO">Planificado (No iniciado)</option>
+                    <option value="EN_CURSO">En Curso (Ejecución)</option>
+                    <option value="EN_QA">En Pruebas (En QA)</option>
+                    <option value="FINALIZADO">Finalizado</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl transition shadow-3xs cursor-pointer flex items-center justify-center gap-1.5 duration-150"
+                >
+                  <Plus className="w-4 h-4" />
+                  Crear y Seleccionar Sprint
+                </button>
+              </form>
+            </div>
+
+            {/* 2. HU ASSOCIATION WORKSPACE */}
+            <div className="lg:col-span-8 bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs space-y-5">
+              
+              {/* Selector of sprint */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-slate-100 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs font-bold text-slate-650 uppercase tracking-widest font-mono">Sprint destino:</span>
+                  <select
+                    value={backlogSelectedSprintId}
+                    onChange={e => setBacklogSelectedSprintId(e.target.value)}
+                    className="bg-slate-900 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-800 cursor-pointer outline-none"
+                  >
+                    <option value="">-- Elige un Sprint --</option>
+                    {projectSprints.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.status})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {backlogSelectedSprintId && (() => {
+                  const currentSprintNode = projectSprints.find(s => s.id === backlogSelectedSprintId);
+                  if (!currentSprintNode) return null;
+                  const sprStories = stories.filter(st => st.project_id === selectedProjectId && st.sprint_id === currentSprintNode.id);
+                  const sprCommittedSp = sprStories.reduce((acc, st) => acc + (st.storyPoints || 0), 0);
+                  const sprCapacity = currentSprintNode.capacity || 35;
+                  const sprPct = Math.min(100, Math.round((sprCommittedSp / sprCapacity) * 100));
+                  return (
+                    <div className="flex items-center gap-4 text-xs font-mono">
+                      <span className="text-[11px] font-bold text-slate-500">
+                        Comprometido: <strong className="text-slate-900">{sprCommittedSp} / {sprCapacity} SP</strong> ({sprPct}%)
+                      </span>
+                      <div className="w-20 bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            sprPct > 100 ? 'bg-red-500' : sprPct > 80 ? 'bg-amber-500' : 'bg-teal-600'
+                          }`}
+                          style={{ width: `${sprPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Association workspace */}
+              {!backlogSelectedSprintId ? (
+                <div className="text-center py-16 bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 space-y-2">
+                  <Layers className="w-10 h-10 mx-auto text-slate-300 animate-pulse" />
+                  <h6 className="font-bold text-slate-700 text-sm">Ningún Sprint Seleccionado</h6>
+                  <p className="text-xs max-w-sm mx-auto text-slate-500">
+                    Selecciona o crea un Sprint en el panel de la izquierda para ver y gestionar la asignación de historias de usuario.
+                  </p>
+                </div>
+              ) : (() => {
+                const currentSprintNode = projectSprints.find(s => s.id === backlogSelectedSprintId);
+                if (!currentSprintNode) return null;
+
+                // Backlog Stories of THIS project that are NOT in ANY sprint (strictly in the product backlog)
+                const availableBacklog = stories.filter(st => 
+                  st.project_id === selectedProjectId && 
+                  !st.sprint_id
+                );
+
+                // Stories that ARE in this sprint
+                const sprintAssignedStories = stories.filter(st => 
+                  st.project_id === selectedProjectId && 
+                  st.sprint_id === currentSprintNode.id
+                );
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    
+                    {/* AVAILABLE STORIES column */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col h-[400px]">
+                      <div className="bg-slate-200/70 border-b border-slate-200 px-3 py-2.5 flex justify-between items-center shrink-0">
+                        <div>
+                          <h6 className="font-bold text-slate-800 text-[11px] uppercase tracking-wide">
+                            Disponibles en Backlog ({availableBacklog.length})
+                          </h6>
+                          <p className="text-[9.5px] text-slate-500">Asigna historias a este sprint.</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3 overflow-y-auto space-y-2 flex-grow">
+                        {availableBacklog.map(st => {
+                          const linkedSprint = sprints.find(s => s.id === st.sprint_id);
+                          return (
+                            <div 
+                              key={st.id} 
+                              className="bg-white border border-slate-250 hover:border-slate-350 p-2.5 rounded-lg flex justify-between items-start gap-2 text-xs transition shadow-3xs"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-[9px] font-extrabold text-slate-600 bg-slate-100 px-1 rounded">
+                                    {st.code}
+                                  </span>
+                                  <span className="font-bold text-slate-800 text-[11px] truncate block max-w-[140px]">
+                                    {st.title}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
+                                  <span className="font-mono">SP: {st.storyPoints || 0}</span>
+                                  <span>•</span>
+                                  <span className={`px-1 rounded ${
+                                    st.priority === 'Crítica' || st.priority === 'Alta' ? 'text-red-650 font-bold' : 'text-slate-600'
+                                  }`}>
+                                    {st.priority}
+                                  </span>
+                                  {linkedSprint && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-amber-700 bg-amber-50 px-1.5 rounded truncate max-w-[80px]" title={`Asignada en ${linkedSprint.name}`}>
+                                        En: {linkedSprint.name}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => handleAssignStoryToSprint(st.id, currentSprintNode.id)}
+                                type="button"
+                                className="bg-teal-50 hover:bg-teal-600 hover:text-white text-teal-800 font-bold px-2 py-1 rounded text-[10px] transition shrink-0 cursor-pointer flex items-center gap-0.5 duration-100"
+                              >
+                                Asignar ➔
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {availableBacklog.length === 0 && (
+                          <div className="text-center py-12 text-slate-400 italic text-[11px]">
+                            No quedan historias de usuario disponibles para asignar en este proyecto.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* SPRINT ASSIGNED STORIES column */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-emerald-50/25 flex flex-col h-[400px]">
+                      <div className="bg-teal-50 border-b border-teal-100 px-3 py-2.5 flex justify-between items-center shrink-0">
+                        <div>
+                          <h6 className="font-bold text-teal-900 text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-teal-600 animate-pulse" />
+                            Historias en este Sprint ({sprintAssignedStories.length})
+                          </h6>
+                          <p className="text-[9.5px] text-teal-800">Compromisos contemplados para el equipo.</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3 overflow-y-auto space-y-2 flex-grow">
+                        {sprintAssignedStories.map(st => (
+                          <div 
+                            key={st.id} 
+                            className="bg-white border border-teal-150 hover:border-teal-250 p-2.5 rounded-lg flex justify-between items-start gap-2 text-xs transition shadow-3xs"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-[9px] font-extrabold text-teal-700 bg-teal-50 px-1 rounded">
+                                  {st.code}
+                                </span>
+                                <span className="font-bold text-slate-800 text-[11px] truncate block max-w-[140px]">
+                                  {st.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
+                                <span className="font-mono text-teal-850 font-bold">SP: {st.storyPoints || 0}</span>
+                                <span>•</span>
+                                <span>{st.priority}</span>
+                                <span>•</span>
+                                <span className="bg-slate-100 px-1 rounded text-slate-600">
+                                  {st.status}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleUnassignStoryFromSprint(st.id)}
+                              type="button"
+                              className="bg-red-50 hover:bg-red-550 hover:text-white text-red-700 font-bold px-2 py-1 rounded text-[10px] transition shrink-0 cursor-pointer flex items-center gap-0.5 duration-100"
+                            >
+                              ✕ Quitar
+                            </button>
+                          </div>
+                        ))}
+
+                        {sprintAssignedStories.length === 0 && (
+                          <div className="text-center py-12 text-slate-400 italic text-[11px]">
+                            Aún no has asociado ninguna historia de usuario a este Sprint.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })()}
+            </div>
+
           </div>
         </div>
       )}
