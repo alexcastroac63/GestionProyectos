@@ -1,0 +1,12 @@
+# Ignore local development dependencies and artifacts
+node_modules
+npm-debug.log
+dist
+.env
+.git
+.gitignore
+*.md
+docker-compose.yml
+.dockerignore
+package-lock.json
+build

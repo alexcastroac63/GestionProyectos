@@ -31,8 +31,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'Administración',
     email: 'sa@campestre.com.sv',
     role: 'Sponsor / Directora',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   },
   {
     id: 'u-109903678',
@@ -40,8 +39,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'CASTRO RAMOS',
     email: 'alex.castro@campestre.com.sv',
     role: 'Project Manager',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   },
   {
     id: 'u-113944672',
@@ -49,8 +47,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'SEGOVIA TORRES',
     email: 'elmer.segovia@campestre.com.sv',
     role: 'Project Manager',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   },
   {
     id: 'u-121952036',
@@ -58,8 +55,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'FLORES PRIVADO',
     email: 'kevin.flores@campestre.com.sv',
     role: 'Project Manager',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   },
   {
     id: 'u-695768487',
@@ -67,8 +63,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'RODRIGUEZ DE GUZMAN',
     email: 'Cecilia.Rodriguez@campestre.com.sv',
     role: 'Project Manager',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   },
   {
     id: 'u-121973398',
@@ -76,8 +71,7 @@ export const INITIAL_USERS: User[] = [
     last_name: 'GALEAS ARIAS',
     email: 'rodolfo.galeas@campestre.com.sv',
     role: 'Project Manager',
-    status: 'ACTIVE',
-    password: 'Camp2026+Prub28'
+    status: 'ACTIVE'
   }
 ];
 export const INITIAL_PORTFOLIOS: Portfolio[] = [

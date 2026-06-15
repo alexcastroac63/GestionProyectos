@@ -488,6 +488,9 @@ export default function App() {
       try {
         const parsed = JSON.parse(local);
         if (parsed && typeof parsed === 'object') {
+          if ('user' in parsed && parsed.user) {
+            return parsed.user as User;
+          }
           return parsed as User;
         }
       } catch (e) {
@@ -496,6 +499,32 @@ export default function App() {
     }
     return null;
   });
+
+  // Finding 2: Active session integrity loop check to detect and prevent LS tampering
+  useEffect(() => {
+    const verifySessionOnBackend = async () => {
+      const local = localStorage.getItem('gcp_logged_in_user');
+      if (local && local !== "undefined" && local !== "null") {
+        try {
+          const parsed = JSON.parse(local);
+          if (parsed && typeof parsed === 'object' && parsed.token) {
+            const res = await fetch('/api/verify-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: parsed.token })
+            });
+            if (!res.ok) {
+              console.warn("Session signature mismatch or expired. Log out triggered.");
+              handleLogout();
+            }
+          }
+        } catch (e) {
+          console.error("Failed to verify signature", e);
+        }
+      }
+    };
+    verifySessionOnBackend();
+  }, []);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -1070,7 +1099,7 @@ export default function App() {
   };
 
   // --- Session & Security Handlers ---
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
     
@@ -1111,22 +1140,42 @@ export default function App() {
       return;
     }
 
-    // Secure password matching validation for live implementation
-    if (foundUser.password && loginPassword !== foundUser.password) {
-      setLoginError('La contraseña ingresada es incorrecta.');
-      return;
-    }
-
-    // Proceed with simulated authentication loop
     setIsLoggingIn(true);
-    setTimeout(() => {
+    try {
+      // Secure password matching validation for live implementation via server check (Finding 2)
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: emailToFind,
+          password: loginPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setLoginError(data.message || 'La contraseña ingresada es incorrecta.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Proceed with authenticated secure session
       setLoggedInUser(foundUser);
-      localStorage.setItem('gcp_logged_in_user', JSON.stringify(foundUser));
+      localStorage.setItem('gcp_logged_in_user', JSON.stringify({
+        user: foundUser,
+        token: data.token
+      }));
       setIsLoggingIn(false);
       setLoginEmail('');
       setLoginPassword('');
       addLog(`${foundUser.first_name} ${foundUser.last_name} (${foundUser.role})`, 'Inició sesión en la plataforma multi-tenant de manera segura.');
-    }, 1000);
+
+    } catch (err: any) {
+      setLoginError(`Error de comunicación con el Directorio de Autenticación: ${err.message || 'Error general de red.'}`);
+      setIsLoggingIn(false);
+    }
   };
 
   const handleLogout = () => {
@@ -2254,13 +2303,14 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                               setIsSendingForgotPassword(false);
 
                               if (res.ok && data.success) {
-                                setForgotPasswordVerificationCode(data.tempToken);
+                                // Finding 5: Do NOT return or store the code client-side, let the secure backend verify it
+                                setForgotPasswordVerificationCode('EXISTS_SERVER_SIDE_VAL');
                                 setForgotPasswordStep('verify');
                                 setForgotPasswordStatus({
                                   type: 'success',
                                   message: `✅ ¡CÓDIGO DE RECUPERACIÓN DESPACHADO CON ÉXITO!\n\nServidor SMTP: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Por favor consulte su buzón (incluso Correo no Deseado/Spam) para encontrar el código aleatorio e ingréselo a continuación.`
                                 });
-                                addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} con código de verificación ${data.tempToken}`);
+                                addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} (secreto guardado en servidor de forma segura)`);
                               } else {
                                 setForgotPasswordStatus({
                                   type: 'error',
@@ -2369,21 +2419,12 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         type="button"
                         onClick={() => {
                           const typedCode = forgotPasswordCodeInput.trim().toUpperCase();
-                          const expectedCode = forgotPasswordVerificationCode.trim().toUpperCase();
                           const emailToFind = forgotPasswordEmail.trim().toLowerCase();
                           
                           if (!typedCode) {
                             setForgotPasswordStatus({
                               type: 'error',
                               message: 'Por favor, ingrese el código de verificación enviado.'
-                            });
-                            return;
-                          }
-
-                          if (typedCode !== expectedCode) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: `❌ CÓDIGO DE SEGURIDAD INCORRECTO.\n\nEl código ingresado no coincide con el código de recuperación enviado.`
                             });
                             return;
                           }
@@ -2405,21 +2446,53 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             return;
                           }
 
-                          // Update password!
-                          setUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, password: forgotPasswordNewPassword.trim() } : u));
-                          setForgotPasswordSuccessMessage(`¡Contraseña restablecida correctamente para ${targetUser.first_name}!\n\nSu cuenta se ha actualizado en la base de datos local de Lifecycle PM. Volviendo a la ventana de login en 3 segundos...`);
-                          setForgotPasswordStatus(null);
-                          addLog('Seguridad', `Restableció con éxito su propia contraseña para la cuenta de ${targetUser.email} mediante verificación de token de seguridad.`);
-                          
-                          setTimeout(() => {
-                            setShowLoginForgotPassword(false);
-                            setForgotPasswordEmail('');
-                            setForgotPasswordStatus(null);
-                            setForgotPasswordStep('request');
-                            setForgotPasswordCodeInput('');
-                            setForgotPasswordNewPassword('');
-                            setForgotPasswordSuccessMessage('');
-                          }, 3500);
+                          // Call server-side verification and reset logic (Finding 5)
+                          (async () => {
+                            try {
+                              const res = await fetch('/api/reset-password', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                  email: emailToFind,
+                                  code: typedCode,
+                                  newPassword: forgotPasswordNewPassword.trim()
+                                })
+                              });
+
+                              const data = await res.json();
+                              if (!res.ok || !data.success) {
+                                setForgotPasswordStatus({
+                                  type: 'error',
+                                  message: data.message || 'El código de seguridad ingresado es incorrecto o ha expirado.'
+                                });
+                                return;
+                              }
+
+                              // Update parent state
+                              setUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, password: forgotPasswordNewPassword.trim() } : u));
+                              setForgotPasswordSuccessMessage(`¡Contraseña restablecida correctamente para ${targetUser.first_name}!\n\nSu cuenta se ha actualizado en el servidor de forma segura. Volviendo a la ventana de login en 3 segundos...`);
+                              setForgotPasswordStatus(null);
+                              addLog('Seguridad', `Restableció con éxito su propia contraseña para la cuenta de ${targetUser.email} mediante verificación de token de seguridad.`);
+                              
+                              setTimeout(() => {
+                                setShowLoginForgotPassword(false);
+                                setForgotPasswordEmail('');
+                                setForgotPasswordStatus(null);
+                                setForgotPasswordStep('request');
+                                setForgotPasswordCodeInput('');
+                                setForgotPasswordNewPassword('');
+                                setForgotPasswordSuccessMessage('');
+                              }, 3500);
+
+                            } catch (err: any) {
+                              setForgotPasswordStatus({
+                                type: 'error',
+                                message: `Fallo de comunicación con la plataforma: ${err.message || 'Error general de red.'}`
+                              });
+                            }
+                          })();
                         }}
                         className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
                       >
