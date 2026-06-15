@@ -2774,30 +2774,48 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 </p>
               </div>
             </div>
+            
+            {/* Quick Logout inside the Sidebar card block */}
+            <button
+              onClick={handleLogout}
+              className="p-1.5 bg-slate-800 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border border-slate-700/50 hover:border-red-900/50 rounded-lg transition-all duration-200 cursor-pointer shrink-0"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
+
+          {/* Explicit, high-visibility block logout button for Mobile viewports */}
+          <button
+            onClick={handleLogout}
+            className="w-full mt-2.5 flex items-center justify-center gap-2 py-2 bg-red-650/10 hover:bg-red-650/25 text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/45 rounded-xl text-[11px] font-bold cursor-pointer transition-all duration-200 md:hidden"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Cerrar Sesión</span>
+          </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-hidden w-full">
         {/* Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 md:px-8 shrink-0 gap-4">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* Hamburger toggle button for Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="p-1.5 -ml-1 text-slate-650 hover:text-slate-900 md:hidden hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+              className="p-1.5 -ml-1 text-slate-650 hover:text-slate-900 md:hidden hover:bg-slate-100 rounded-lg transition-all cursor-pointer shrink-0"
               aria-label="Abrir menú"
             >
               <Menu className="w-5.5 h-5.5" />
             </button>
-            <h1 className="text-base font-bold text-slate-800 truncate">
+            <h1 className="text-sm sm:text-base font-bold text-slate-800 truncate max-w-[140px] xs:max-w-[180px] sm:max-w-none">
               Gestión Integral de proyectos
             </h1>
           </div>
 
           {/* User Session and Tenant Header Tools */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             {/* Tenant Status Tag */}
             <div className="hidden lg:flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-full px-3 py-1">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
@@ -2807,7 +2825,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
             </div>
 
             {/* Profile Avatar & Stack */}
-            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
+            <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200 shrink-0">
               <div className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center justify-center font-bold text-xs uppercase cursor-help shrink-0 font-mono" title={`${loggedInUser?.first_name} ${loggedInUser?.last_name} (${loggedInUser?.role})`}>
                 {loggedInUser ? `${loggedInUser.first_name[0]}${loggedInUser.last_name[0]}` : 'US'}
               </div>
@@ -2824,11 +2842,11 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
             {/* Logout interactive Button */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-650 border border-slate-200 hover:border-red-200 rounded-xl text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-650 border border-slate-200 hover:border-red-200 rounded-xl text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer shadow-xs shrink-0"
               title="Cerrar sesión de forma segura"
             >
               <LogOut className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden md:inline">Cerrar Sesión</span>
+              <span className="hidden sm:inline">Cerrar Sesión</span>
             </button>
           </div>
         </header>
