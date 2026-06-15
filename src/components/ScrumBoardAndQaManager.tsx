@@ -213,6 +213,9 @@ export default function ScrumBoardAndQaManager({
   // Active Sub-tab in Scrum Board
   const [scrumSubTab, setScrumSubTab] = useState<'main_board' | 'qa_board' | 'dashboard' | 'detail' | 'logs'>('main_board');
 
+  // Collapsible state for top controls, defaulted to false (collapsed)
+  const [isTopControlsExpanded, setIsTopControlsExpanded] = useState<boolean>(false);
+
   // Load and manage our extended custom data models from local storage
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>(() => {
     const raw = localStorage.getItem('scrum_criteria');
@@ -1104,35 +1107,38 @@ export default function ScrumBoardAndQaManager({
   return (
     <div className="space-y-6" id="wbs-product-backlog-manager">
       
-      {/* top controls, Sprint metrics & selector */}
-      <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+      {/* top controls, Sprint metrics & selector (Collapsible - starts collapsed by default) */}
+      <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden transition-all duration-300">
         {/* Background mesh ornament styling */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
         
-        <div className="flex flex-col xl:flex-row justify-between gap-6 relative z-10">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="bg-teal-500/20 text-teal-300 font-mono text-[10px] font-bold uppercase py-0.5 px-2 rounded-full border border-teal-500/30">
+        {/* Siempre visible: Cabecera interactiva y selectores */}
+        <div className="p-5 relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/60">
+          <div className="flex flex-col md:flex-row md:items-center gap-3.5 flex-1 min-w-0">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="bg-teal-500/20 text-teal-300 font-mono text-[9px] font-bold uppercase py-0.5 px-2 rounded-full border border-teal-500/30 tracking-wider">
                 SCRUM &amp; SUITE DE PRUEBAS (DUAL)
               </span>
               {(currentSprint?.status as any) === 'EN_QA' && (
-                <span className="bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold uppercase py-0.5 px-2 rounded-full border border-amber-500/30 flex items-center gap-1.5 animate-pulse">
+                <span className="bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold uppercase py-0.5 px-2 rounded-full border border-amber-500/30 flex items-center gap-1.5 animate-pulse shrink-0">
                   <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" />
                   Tablero QA Activo
                 </span>
               )}
             </div>
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-3">
-              <h2 className="text-xl md:text-2xl font-black tracking-tight">{currentSprint ? formatSprintName(currentSprint.name) : 'Sin Sprint Activo'}</h2>
-              
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+              <h2 className="text-sm md:text-base font-black tracking-tight shrink-0 text-slate-100">
+                {currentSprint ? formatSprintName(currentSprint.name) : 'Sin Sprint Activo'}
+              </h2>
+
               {/* Selector de Proyecto Activo */}
-              <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-705 hover:border-slate-600 px-3 py-1.5 rounded-xl cursor-pointer">
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest font-mono">PROYECTO:</span>
+              <div className="flex items-center gap-1.5 bg-slate-850 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-xl cursor-pointer">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-mono">PROYECTO:</span>
                 <select
                   value={selectedProjectId}
                   onChange={e => setSelectedProjectId(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-white rounded cursor-pointer focus:outline-none max-w-[220px]"
+                  className="bg-transparent text-[11px] font-bold text-white rounded cursor-pointer focus:outline-none max-w-[150px]"
                 >
                   {projects.map(p => (
                     <option key={p.id} value={p.id} className="bg-slate-900 text-white">{p.name}</option>
@@ -1141,12 +1147,12 @@ export default function ScrumBoardAndQaManager({
               </div>
 
               {/* Selector de Sprint */}
-              <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-705 hover:border-slate-600 px-3 py-1.5 rounded-xl cursor-pointer">
-                <span className="text-[10px] font-extrabold text-teal-400 uppercase tracking-widest font-mono">SPRINT:</span>
+              <div className="flex items-center gap-1.5 bg-slate-855 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-xl cursor-pointer">
+                <span className="text-[9px] font-extrabold text-teal-400 uppercase tracking-widest font-mono">SPRINT:</span>
                 <select
                   value={selectedSprintId}
                   onChange={e => setSelectedSprintId(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-teal-400 rounded cursor-pointer focus:outline-none"
+                  className="bg-transparent text-[11px] font-bold text-teal-400 rounded cursor-pointer focus:outline-none"
                 >
                   {SprintsForProject.map(sp => (
                     <option key={sp.id} value={sp.id} className="bg-slate-900 text-teal-450">{formatSprintName(sp.name)}</option>
@@ -1154,115 +1160,143 @@ export default function ScrumBoardAndQaManager({
                 </select>
               </div>
             </div>
-
-            <p className="text-xs text-slate-400 mt-2 max-w-2xl italic">
-              <strong>Objetivo:</strong> {currentSprint?.goal || 'No se tiene un objetivo explícito parametrizado para este sprint de desarrollo.'}
-            </p>
-
-            <div className="flex flex-wrap gap-4 mt-4 text-[11px] text-slate-350">
-              <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60">📅 <strong>Fechas:</strong> {currentSprint?.start_date || 'N/A'} al {currentSprint?.end_date || 'N/A'}</span>
-            </div>
           </div>
 
-          {/* Action controller for Sprint Status (Specification 2, 18) */}
-          <div className="flex flex-col justify-center sm:items-end gap-3 shrink-0">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Controles de Transición del Sprint</span>
-            
-            <div className="flex flex-wrap gap-2">
-              {currentSprint?.status === 'NO_INICIADO' && (
-                <button
-                  onClick={() => handleSprintStatusToggle('EN_CURSO')}
-                  className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                >
-                  🚀 Iniciar Sprint a "En Ejecución"
-                </button>
-              )}
-
-              {currentSprint?.status === 'EN_CURSO' && (
-                <button
-                  onClick={() => handleSprintStatusToggle('EN_QA')}
-                  className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-950/40"
-                >
-                  🧪 Activar Fase "En QA" (Configuración QA)
-                </button>
-              )}
-
-              {(currentSprint?.status as any) === 'EN_QA' && (
-                <button
-                  onClick={() => handleSprintStatusToggle('FINALIZADO')}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
-                >
-                  🏁 Finalizar &amp; Cerrar Sprint (Check DoD)
-                </button>
-              )}
-
-              {currentSprint?.status === 'FINALIZADO' && (
-                <span className="bg-slate-800 text-slate-400 font-mono text-xs font-bold py-2 px-4 rounded-xl border border-slate-700/60 block text-center">
-                  🔒 SPRINT COMPLETADO &amp; CERRADO
-                </span>
-              )}
-            </div>
-
-            {/* Error logs banner if DoD fails */}
-            {sprintCloseErrors.length > 0 && (
-              <div className="bg-red-500/15 border border-red-500/45 rounded-xl p-3 max-w-md text-[11px] text-red-200">
-                <span className="font-bold block text-red-400 mb-1">⚠️ Error al finalizar (Falta DoD):</span>
-                <ul className="list-disc pl-4 space-y-0.5">
-                  {sprintCloseErrors.map((err, i) => <li key={i}>{err}</li>)}
-                </ul>
+          <div className="flex items-center gap-3 shrink-0 self-end lg:self-auto">
+            {/* Quick compact metric pill when collapsed */}
+            {!isTopControlsExpanded && (
+              <div className="hidden sm:flex items-center gap-2 bg-slate-850/80 border border-slate-800/80 rounded-xl px-2.5 py-1 text-[10px] font-mono font-medium">
+                <span className="text-teal-400">Avance Scrum: <strong className="font-bold">{sprintProgressPercent}%</strong></span>
+                <span className="text-slate-700">|</span>
+                <span className="text-purple-400">QA: <strong className="font-bold">{qaProgressPercent}%</strong></span>
               </div>
             )}
+
+            <button
+              onClick={() => setIsTopControlsExpanded(!isTopControlsExpanded)}
+              className="bg-slate-805 hover:bg-slate-700 border border-slate-755 text-slate-200 hover:text-white font-bold text-[11px] px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer select-none"
+            >
+              <span>{isTopControlsExpanded ? 'Ocultar Indicadores' : 'Ver Indicadores y Métricas'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isTopControlsExpanded ? 'rotate-180' : ''}`} />
+            </button>
           </div>
         </div>
 
-        {/* Dashboard KPIs strip (Specification 19) */}
-        <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">AVANCE SCRUM</span>
-            <span className="text-xl font-extrabold text-teal-400 font-mono">{sprintProgressPercent}%</span>
-            <div className="w-full bg-slate-800 h-1 rounded-full mt-1.5 overflow-hidden">
-              <div className="bg-teal-400 h-1 rounded-full" style={{ width: `${sprintProgressPercent}%` }} />
+        {/* CONTENIDO DESPLEGABLE */}
+        {isTopControlsExpanded && (
+          <div className="p-6 space-y-6 relative z-10 animate-fadeIn">
+            <div className="flex flex-col xl:flex-row justify-between gap-6 relative z-10">
+              <div>
+                <p className="text-xs text-slate-400 mt-2 max-w-2xl italic">
+                  <strong>Objetivo:</strong> {currentSprint?.goal || 'No se tiene un objetivo explícito parametrizado para este sprint de desarrollo.'}
+                </p>
+
+                <div className="flex flex-wrap gap-4 mt-4 text-[11px] text-slate-350">
+                  <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60">📅 <strong>Fechas:</strong> {currentSprint?.start_date || 'N/A'} al {currentSprint?.end_date || 'N/A'}</span>
+                </div>
+              </div>
+
+              {/* Action controller for Sprint Status (Specification 2, 18) */}
+              <div className="flex flex-col justify-center sm:items-end gap-3 shrink-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Controles de Transición del Sprint</span>
+                
+                <div className="flex flex-wrap gap-2">
+                  {currentSprint?.status === 'NO_INICIADO' && (
+                    <button
+                      onClick={() => handleSprintStatusToggle('EN_CURSO')}
+                      className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      🚀 Iniciar Sprint a "En Ejecución"
+                    </button>
+                  )}
+
+                  {currentSprint?.status === 'EN_CURSO' && (
+                    <button
+                      onClick={() => handleSprintStatusToggle('EN_QA')}
+                      className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-950/40"
+                    >
+                      🧪 Activar Fase "En QA" (Configuración QA)
+                    </button>
+                  )}
+
+                  {(currentSprint?.status as any) === 'EN_QA' && (
+                    <button
+                      onClick={() => handleSprintStatusToggle('FINALIZADO')}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+                    >
+                      🏁 Finalizar &amp; Cerrar Sprint (Check DoD)
+                    </button>
+                  )}
+
+                  {currentSprint?.status === 'FINALIZADO' && (
+                    <span className="bg-slate-800 text-slate-400 font-mono text-xs font-bold py-2 px-4 rounded-xl border border-slate-700/60 block text-center">
+                      🔒 SPRINT COMPLETADO &amp; CERRADO
+                    </span>
+                  )}
+                </div>
+
+                {/* Error logs banner if DoD fails */}
+                {sprintCloseErrors.length > 0 && (
+                  <div className="bg-red-500/15 border border-red-500/45 rounded-xl p-3 max-w-md text-[11px] text-red-200">
+                    <span className="font-bold block text-red-400 mb-1">⚠️ Error al finalizar (Falta DoD):</span>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      {sprintCloseErrors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Dashboard KPIs strip (Specification 19) */}
+            <div className="mt-6 pt-6 border-t border-slate-850/60 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">AVANCE SCRUM</span>
+                <span className="text-xl font-extrabold text-teal-400 font-mono">{sprintProgressPercent}%</span>
+                <div className="w-full bg-slate-800 h-1 rounded-full mt-1.5 overflow-hidden">
+                  <div className="bg-teal-400 h-1 rounded-full" style={{ width: `${sprintProgressPercent}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">STORY POINTS</span>
+                <span className="text-xl font-extrabold text-slate-200 font-mono">{completedSpCount} <span className="text-xs text-slate-450">/ {totalSpCount}</span></span>
+                <span className="text-[9px] text-slate-500 block mt-1">SP de historias</span>
+              </div>
+
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">HISTORIAS (HU)</span>
+                <span className="text-xl font-extrabold text-slate-200 font-mono">{completedStoriesCount} <span className="text-xs text-slate-450">/ {activeStories.length}</span></span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">Completadas</span>
+              </div>
+
+              <div className="bg-slate-855 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">HISTORIAS BLOQUEADAS</span>
+                <span className={`text-xl font-extrabold font-mono ${blockedStoriesCount > 0 ? 'text-red-400' : 'text-slate-300'}`}>{blockedStoriesCount}</span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">En espera</span>
+              </div>
+
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">AVANCE QA</span>
+                <span className="text-xl font-extrabold text-slate-200 font-mono text-purple-400">{qaProgressPercent}%</span>
+                <div className="w-full bg-slate-800 h-1 rounded-full mt-1.5 overflow-hidden">
+                  <div className="bg-purple-400 h-1 rounded-full" style={{ width: `${qaProgressPercent}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">CASOS EJECUTADOS</span>
+                <span className="text-xl font-extrabold text-slate-200 font-mono">{passedTestsCount + failedTestsCount} <span className="text-xs text-slate-450">/ {totalTestsCount}</span></span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">Pruebas QA</span>
+              </div>
+
+              <div className="bg-slate-855 p-3 rounded-xl border border-slate-800/50">
+                <span className="text-[10px] text-slate-400 font-bold block">DEFECTOS ACTIVOS</span>
+                <span className={`text-xl font-extrabold font-mono ${activeBugsCount > 0 ? 'text-red-400' : 'text-slate-300'}`}>{activeBugsCount} <span className="text-xs text-slate-500">({criticalBugsCount} crít.)</span></span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">Defectos</span>
+              </div>
             </div>
           </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">STORY POINTS</span>
-            <span className="text-xl font-extrabold text-slate-200 font-mono">{completedSpCount} <span className="text-xs text-slate-450">/ {totalSpCount}</span></span>
-            <span className="text-[9px] text-slate-500 block mt-1">SP de historias</span>
-          </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">HISTORIAS (HU)</span>
-            <span className="text-xl font-extrabold text-slate-200 font-mono">{completedStoriesCount} <span className="text-xs text-slate-450">/ {activeStories.length}</span></span>
-            <span className="text-[9px] text-slate-500 block mt-0.5">Completadas</span>
-          </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">HISTORIAS BLOQUEADAS</span>
-            <span className={`text-xl font-extrabold font-mono ${blockedStoriesCount > 0 ? 'text-red-400' : 'text-slate-300'}`}>{blockedStoriesCount}</span>
-            <span className="text-[9px] text-slate-500 block mt-0.5">En espera</span>
-          </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">AVANCE QA</span>
-            <span className="text-xl font-extrabold text-slate-200 font-mono text-purple-400">{qaProgressPercent}%</span>
-            <div className="w-full bg-slate-800 h-1 rounded-full mt-1.5 overflow-hidden">
-              <div className="bg-purple-400 h-1 rounded-full" style={{ width: `${qaProgressPercent}%` }} />
-            </div>
-          </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">CASOS EJECUTADOS</span>
-            <span className="text-xl font-extrabold text-slate-200 font-mono">{passedTestsCount + failedTestsCount} <span className="text-xs text-slate-450">/ {totalTestsCount}</span></span>
-            <span className="text-[9px] text-slate-500 block mt-0.5">Pruebas QA</span>
-          </div>
-
-          <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
-            <span className="text-[10px] text-slate-400 font-bold block">DEFECTOS ACTIVOS</span>
-            <span className={`text-xl font-extrabold font-mono ${activeBugsCount > 0 ? 'text-red-400' : 'text-slate-300'}`}>{activeBugsCount} <span className="text-xs text-slate-500">({criticalBugsCount} crít.)</span></span>
-            <span className="text-[9px] text-slate-500 block mt-0.5">Defectos</span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Sub menu tabs - dedicated strictly to development scrum sprint board */}
