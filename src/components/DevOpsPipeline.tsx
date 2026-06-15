@@ -10,9 +10,11 @@ import {
   ExternalLink, Info, Code, Eye, HelpCircle, HardDrive, Lock,
   Activity, Search, Plus, X, Users, Settings, StopCircle
 } from 'lucide-react';
+import { Project } from '../types';
 
 export interface DevRepository {
   id: string;
+  project_id?: string;
   name: string;
   url: string;
   branch: string;
@@ -35,6 +37,7 @@ export interface InstallationStep {
 const INITIAL_REPOS: DevRepository[] = [
   {
     id: 'repo-1',
+    project_id: 'proj-1',
     name: 'pmo-web-ui',
     url: 'https://github.com/empresa-pmo/pmo-web-ui.git',
     branch: 'main',
@@ -45,6 +48,7 @@ const INITIAL_REPOS: DevRepository[] = [
   },
   {
     id: 'repo-2',
+    project_id: 'proj-1',
     name: 'pmo-backend-microservices',
     url: 'https://github.com/empresa-pmo/pmo-backend-microservices.git',
     branch: 'development',
@@ -55,6 +59,7 @@ const INITIAL_REPOS: DevRepository[] = [
   },
   {
     id: 'repo-3',
+    project_id: 'proj-1',
     name: 'pmo-devops-infra',
     url: 'https://github.com/empresa-pmo/pmo-devops-infra.git',
     branch: 'main',
@@ -188,7 +193,12 @@ const INITIAL_PORTAINER_CONTAINERS: PortainerContainer[] = [
   { id: 'c-ui', name: 'pmo-web-ui', image: 'node:20-alpine', status: 'running', cpu: 0.3, memory: '52.7 MB / 8.0 GB', ip: '172.24.0.11', ports: '3000:3000/tcp', role: 'Contenedor UI Principal Web en Puerto Externo 3000', created: '2026-06-01 08:31:35' }
 ];
 
-export default function DevOpsPipeline() {
+interface DevOpsPipelineProps {
+  selectedProjectId: string;
+  projects?: Project[];
+}
+
+export default function DevOpsPipeline({ selectedProjectId, projects = [] }: DevOpsPipelineProps) {
   const [running, setRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
   const [activeTab, setActiveTab] = useState<'repos' | 'installation' | 'docker' | 'storage'>('repos');
@@ -198,7 +208,13 @@ export default function DevOpsPipeline() {
     const saved = localStorage.getItem('gcp_devops_repos_list');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return parsed.map((r: any) => {
+          if (!r.project_id) {
+            return { ...r, project_id: 'proj-1' };
+          }
+          return r;
+        });
       } catch (e) {
         console.error(e);
       }
@@ -218,6 +234,15 @@ export default function DevOpsPipeline() {
     return INITIAL_INSTALLATION_STEPS;
   });
 
+  // Keep track of which project's repos we're currently viewing
+  const [filterProjectId, setFilterProjectId] = useState<string>(selectedProjectId);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      setFilterProjectId(selectedProjectId);
+    }
+  }, [selectedProjectId]);
+
   useEffect(() => {
     localStorage.setItem('gcp_devops_repos_list', JSON.stringify(repos));
   }, [repos]);
@@ -234,6 +259,7 @@ export default function DevOpsPipeline() {
   const [repoBranch, setRepoBranch] = useState('main');
   const [repoType, setRepoType] = useState<DevRepository['type']>('Backend');
   const [repoDesc, setRepoDesc] = useState('');
+  const [repoProjectId, setRepoProjectId] = useState<string>(selectedProjectId || 'proj-1');
 
   // Setup Step Form states
   const [showStepModal, setShowStepModal] = useState(false);
@@ -749,12 +775,14 @@ export default function DevOpsPipeline() {
         url: repoUrl.trim(),
         branch: repoBranch,
         type: repoType,
-        description: repoDesc.trim()
+        description: repoDesc.trim(),
+        project_id: repoProjectId
       } : r));
       setNotification(`✓ Repositorio '${repoName}' actualizado correctamente.`);
     } else {
       const newRepo: DevRepository = {
         id: `repo-${Date.now()}`,
+        project_id: repoProjectId,
         name: repoName.trim(),
         url: repoUrl.trim(),
         branch: repoBranch,
@@ -784,6 +812,7 @@ export default function DevOpsPipeline() {
     setRepoBranch(repo.branch);
     setRepoType(repo.type);
     setRepoDesc(repo.description);
+    setRepoProjectId(repo.project_id || selectedProjectId || 'proj-1');
     setShowRepoModal(true);
   };
 
@@ -1077,6 +1106,33 @@ export default function DevOpsPipeline() {
 
       {activeTab === 'repos' && (
         <div className="p-6 space-y-6 animate-fadeIn">
+          {/* Project Filter Selection Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-900 shadow-3xs">
+            <div className="flex items-center gap-2">
+              <Folder className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="font-bold text-indigo-950 font-sans text-[12px]">Gestión por Proyecto:</span>
+            </div>
+            <select
+              value={filterProjectId}
+              onChange={(e) => setFilterProjectId(e.target.value)}
+              className="bg-white border border-indigo-200 text-indigo-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold cursor-pointer max-w-sm"
+            >
+              <option value="">-- Todos los Proyectos --</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+              ))}
+            </select>
+            {filterProjectId ? (
+              <p className="sm:ml-auto text-[11px] text-indigo-600 font-medium">
+                Se muestran solo los repositorios del proyecto seleccionado.
+              </p>
+            ) : (
+              <p className="sm:ml-auto text-[11px] text-slate-500 italic">
+                Mostrando el catálogo consolidado de repositorios de todos los proyectos.
+              </p>
+            )}
+          </div>
+
           {/* Controls Panel */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
             <div className="relative flex-1 max-w-md">
@@ -1106,6 +1162,7 @@ export default function DevOpsPipeline() {
                 setRepoBranch('main');
                 setRepoType('Backend');
                 setRepoDesc('');
+                setRepoProjectId(selectedProjectId || 'proj-1');
                 setShowRepoModal(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 transition shadow-sm cursor-pointer self-start sm:self-auto"
@@ -1116,23 +1173,30 @@ export default function DevOpsPipeline() {
           </div>
 
           {/* Repositories Grid */}
-          {repos.filter(r => 
-            r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
-            r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
-            r.description.toLowerCase().includes(repoSearch.toLowerCase())
-          ).length === 0 ? (
+          {repos.filter(r => {
+            if (filterProjectId && r.project_id !== filterProjectId) return false;
+            return (
+              r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
+              r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
+              r.description.toLowerCase().includes(repoSearch.toLowerCase())
+            );
+          }).length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
               <Code className="w-8 h-8 text-slate-350 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-700">No se encontraron repositorios</p>
-              <p className="text-xs text-slate-400 mt-1">Intente cambiar el parámetro de búsqueda o agregue un nuevo repositorio relacionado al proyecto.</p>
+              <p className="text-xs text-slate-400 mt-1">Intente cambiar el parámetro de búsqueda, use otro filtro de proyecto o registre un nuevo repositorio para este proyecto.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {repos.filter(r => 
-                r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
-                r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
-                r.description.toLowerCase().includes(repoSearch.toLowerCase())
-              ).map(repo => {
+              {repos.filter(r => {
+                if (filterProjectId && r.project_id !== filterProjectId) return false;
+                return (
+                  r.name.toLowerCase().includes(repoSearch.toLowerCase()) || 
+                  r.type.toLowerCase().includes(repoSearch.toLowerCase()) || 
+                  r.description.toLowerCase().includes(repoSearch.toLowerCase())
+                );
+              }).map(repo => {
+                const associatedProject = projects.find(p => p.id === repo.project_id);
                 const isFrontend = repo.type === 'Frontend';
                 const isBackend = repo.type === 'Backend';
                 const isInfra = repo.type === 'Infrastructure';
@@ -1159,9 +1223,16 @@ export default function DevOpsPipeline() {
                     <div className="p-5 pl-7 space-y-4">
                       {/* Top Row: Type Pill & Status */}
                       <div className="flex justify-between items-center">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${typeColorClass} font-mono`}>
-                          {repo.type}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${typeColorClass} font-mono`}>
+                            {repo.type}
+                          </span>
+                          {associatedProject && (
+                            <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-bold font-sans tracking-wide border border-slate-200 shrink-0" title={associatedProject.name}>
+                              📁 {associatedProject.code}
+                            </span>
+                          )}
+                        </div>
                         <span className={`w-2 h-2 rounded-full ${repo.status === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'} animate-pulse`} title={`Estado: ${repo.status}`} />
                       </div>
 
@@ -1259,6 +1330,19 @@ export default function DevOpsPipeline() {
                       placeholder="Ej: pmo-api-gateway"
                       className="w-full bg-slate-50 focus:bg-white border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans font-medium"
                     />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Asociar a Proyecto de la Empresa</label>
+                    <select
+                      value={repoProjectId}
+                      onChange={e => setRepoProjectId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-220 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans font-semibold"
+                    >
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -2267,7 +2351,8 @@ export default function DevOpsPipeline() {
                   </div>
 
                   <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs min-w-[700px]">
                       <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
                         <tr>
                           <th className="p-3.5 pl-5">Identificador Hash</th>
@@ -2311,7 +2396,8 @@ export default function DevOpsPipeline() {
                     </table>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
               {/* VIEW: NETWORKS */}
               {portainerNavTab === 'networks' && (
@@ -2327,7 +2413,8 @@ export default function DevOpsPipeline() {
                   </div>
 
                   <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs min-w-[750px]">
                       <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
                         <tr>
                           <th className="p-3.5 pl-5">Nombre Red</th>
@@ -2359,7 +2446,8 @@ export default function DevOpsPipeline() {
                     </table>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
               {/* VIEW: NPM_NETWORK */}
               {portainerNavTab === 'npm_network' && (
@@ -2471,7 +2559,8 @@ export default function DevOpsPipeline() {
                     </div>
 
                     <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
-                      <table className="w-full text-left border-collapse text-xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs min-w-[780px]">
                         <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px] font-sans">
                           <tr>
                             <th className="p-3 pl-5">Certificado / Dominio</th>
@@ -2517,6 +2606,7 @@ export default function DevOpsPipeline() {
                       </table>
                     </div>
                   </div>
+                </div>
 
                   {/* 3. Actions Grid: Bind SSL and Add New Certificate */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-2">
@@ -2640,7 +2730,8 @@ export default function DevOpsPipeline() {
                   </div>
 
                   <div className="bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs min-w-[700px]">
                       <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 uppercase text-[10px]">
                         <tr>
                           <th className="p-3.5 pl-5">Nombre del Volumen</th>
@@ -2682,7 +2773,8 @@ export default function DevOpsPipeline() {
                     </table>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
             </div>
           </div>

@@ -16,7 +16,7 @@ export interface User {
   email: string;
   avatar_url?: string;
   role: string;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
   password?: string;
   tenant_id?: string;
 }

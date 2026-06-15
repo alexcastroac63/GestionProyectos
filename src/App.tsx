@@ -45,6 +45,7 @@ import {
 } from './data';
 
 // Component Imports
+import { googleSignIn, microsoftSignIn } from './firebase';
 import GanttChart from './components/GanttChart';
 import MockupCanvas from './components/MockupCanvas';
 import DbaSchema from './components/DbaSchema';
@@ -185,8 +186,8 @@ export default function App() {
     const rawClients = localStorage.getItem('gcp_clients_list');
     const rawSponsors = localStorage.getItem('gcp_sponsors_list');
     if (
-      (rawClients && (rawClients.includes('Fintech Corp') || !rawClients.includes('Pollo Campestre'))) ||
-      (rawSponsors && (rawSponsors.includes('Alejandra') || !rawSponsors.includes('Rene Mineros')))
+      (rawClients && (rawClients.includes('Fintech Corp') || !rawClients.includes('Grupo Campestre'))) ||
+      (rawSponsors && (rawSponsors.includes('Alejandra') || !rawSponsors.includes('Sponsor Principal')))
     ) {
       console.log('[Catalog Sync] Purging stale client/sponsor list caches...');
       localStorage.removeItem('gcp_clients_list');
@@ -462,14 +463,14 @@ export default function App() {
   // Dynamic Clients & Sponsors Lists
   const [clientsList, setClientsList] = useState<string[]>(() => {
     return safeLoad<string[]>('gcp_clients_list', [
-      'Pollo Campestre S.A de C.V', 
-      'Avicola Campestre S.A de C.V'
+      'Corporación Global S.A de C.V', 
+      'Distribuidora Logística S.A de C.V'
     ]);
   });
 
   const [sponsorsList, setSponsorsList] = useState<string[]>(() => {
     return safeLoad<string[]>('gcp_sponsors_list', [
-      'Rene Mineros'
+      'Sponsor Principal'
     ]);
   });
 
@@ -502,6 +503,26 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginTenant, setLoginTenant] = useState('grupo-campestre');
+  const [msOperationNotAllowed, setMsOperationNotAllowed] = useState(false);
+
+  // States for consultative registration is tenant exists or needs to be created
+  const [pendingNewUser, setPendingNewUser] = useState<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    avatar_url?: string;
+    source: 'Google' | 'Microsoft' | 'Microsoft Demo';
+  } | null>(null);
+  const [joinOrBrandOption, setJoinOrBrandOption] = useState<'join' | 'create'>('join');
+  const [selectedAssociationTenantId, setSelectedAssociationTenantId] = useState('grupo-campestre');
+  const [newTenantName, setNewTenantName] = useState('');
+  const [newTenantId, setNewTenantId] = useState('');
+  const [newTenantDescription, setNewTenantDescription] = useState('');
+  const [newTenantDomain, setNewTenantDomain] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
+  const [registrationSuccessMessage, setRegistrationSuccessMessage] = useState('');
+  const [approvalRoles, setApprovalRoles] = useState<{[userId: string]: string}>({});
 
   const isDevRole = false;
 
@@ -668,6 +689,386 @@ export default function App() {
     }, 2000);
   };
 
+  const handleGoogleLogin = async () => {
+    setLoginError('');
+    setIsLoggingIn(true);
+    try {
+      const gUser = await googleSignIn();
+      if (!gUser) {
+        setLoginError('No se pudo completar el inicio de sesión con Google.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (!gUser.email) {
+        setLoginError('No se pudo obtener un correo electrónico válido de su cuenta de Google.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      const emailToFind = gUser.email.toLowerCase();
+      
+      // Check if they exist in the current users state
+      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+
+      if (!foundUser) {
+        // Consult tenant registration/creation instead of auto-joining
+        const displayName = gUser.displayName || 'Usuario Google';
+        const parts = displayName.split(' ');
+        const first_name = parts[0] || 'Usuario';
+        const last_name = parts.slice(1).join(' ') || 'Google';
+
+        setPendingNewUser({
+          id: gUser.uid,
+          first_name,
+          last_name,
+          email: emailToFind,
+          avatar_url: gUser.photoURL || undefined,
+          source: 'Google'
+        });
+        setSelectedAssociationTenantId(loginTenant);
+        setRegistrationError('');
+      } else {
+        // User exists
+        if (foundUser.status === 'PENDING') {
+          const tenantObj = tenants.find(t => t.id === foundUser?.tenant_id);
+          const tenantName = tenantObj ? tenantObj.name : (foundUser?.tenant_id || '');
+          setLoginError(`Su solicitud para unirse al Tenant "${tenantName}" está pendiente de aprobación por el Administrador. El Administrador debe aprobar su ingreso e incluirlo con un perfil corporativo activo antes de que pueda iniciar sesión.`);
+          setIsLoggingIn(false);
+          return;
+        }
+        if (foundUser.status === 'INACTIVE') {
+          setLoginError('Esta cuenta se encuentra desactivada temporalmente en el panel administrativo.');
+          setIsLoggingIn(false);
+          return;
+        }
+
+        // Validate tenant or auto-switch to their tenant context gracefully
+        if (foundUser.tenant_id && foundUser.tenant_id !== loginTenant) {
+          setLoginTenant(foundUser.tenant_id);
+          addLog('Sistema Autenticación', `Redireccionando usuario Google al Tenant asociado (${foundUser.tenant_id}).`);
+        }
+
+        // Update avatar URL if needed
+        if (gUser.photoURL && foundUser.avatar_url !== gUser.photoURL) {
+          const updatedUser = { ...foundUser, avatar_url: gUser.photoURL };
+          foundUser = updatedUser;
+          setUsers(prev => {
+            const updated = prev.map(u => u.id === updatedUser.id ? updatedUser : u);
+            localStorage.setItem('gcp_users', JSON.stringify(updated));
+            return updated;
+          });
+        }
+
+        // Complete Login immediately for existing user
+        setLoggedInUser(foundUser);
+        localStorage.setItem('gcp_logged_in_user', JSON.stringify(foundUser));
+        setLoginEmail('');
+        setLoginPassword('');
+        addLog(`${foundUser.first_name} ${foundUser.last_name} (${foundUser.role})`, 'Inició sesión de manera segura con Google.');
+      }
+    } catch (error: any) {
+      if (error && error.code === 'auth/popup-closed-by-user') {
+        console.warn('Google Sign-In popup closed by user.');
+      } else {
+        console.error('Error in handleGoogleLogin:', error);
+        setLoginError(`Error de Google Auth: ${error?.message || error}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleMicrosoftLogin = async () => {
+    setLoginError('');
+    setMsOperationNotAllowed(false);
+    setIsLoggingIn(true);
+    try {
+      const mUser = await microsoftSignIn();
+      if (!mUser) {
+        setLoginError('No se pudo completar el inicio de sesión con Microsoft.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (!mUser.email) {
+        setLoginError('No se pudo obtener un correo electrónico válido de su cuenta de Microsoft.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      const emailToFind = mUser.email.toLowerCase();
+      
+      // Check if they exist in the current users state
+      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+
+      if (!foundUser) {
+        // Consult tenant registration/creation instead of auto-joining
+        const displayName = mUser.displayName || 'Usuario Microsoft';
+        const parts = displayName.split(' ');
+        const first_name = parts[0] || 'Usuario';
+        const last_name = parts.slice(1).join(' ') || 'Microsoft';
+
+        setPendingNewUser({
+          id: mUser.uid,
+          first_name,
+          last_name,
+          email: emailToFind,
+          avatar_url: mUser.photoURL || undefined,
+          source: 'Microsoft'
+        });
+        setSelectedAssociationTenantId(loginTenant);
+        setRegistrationError('');
+      } else {
+        // User exists
+        if (foundUser.status === 'PENDING') {
+          const tenantObj = tenants.find(t => t.id === foundUser?.tenant_id);
+          const tenantName = tenantObj ? tenantObj.name : (foundUser?.tenant_id || '');
+          setLoginError(`Su solicitud para unirse al Tenant "${tenantName}" está pendiente de aprobación por el Administrador. El Administrador debe aprobar su ingreso e incluirlo con un perfil corporativo activo antes de que pueda iniciar sesión.`);
+          setIsLoggingIn(false);
+          return;
+        }
+        if (foundUser.status === 'INACTIVE') {
+          setLoginError('Esta cuenta se encuentra desactivada temporalmente en el panel administrativo.');
+          setIsLoggingIn(false);
+          return;
+        }
+
+        // Validate tenant or auto-switch to their tenant context gracefully
+        if (foundUser.tenant_id && foundUser.tenant_id !== loginTenant) {
+          setLoginTenant(foundUser.tenant_id);
+          addLog('Sistema Autenticación', `Redireccionando usuario Microsoft al Tenant asociado (${foundUser.tenant_id}).`);
+        }
+
+        // Update avatar URL if needed
+        if (mUser.photoURL && foundUser.avatar_url !== mUser.photoURL) {
+          const updatedUser = { ...foundUser, avatar_url: mUser.photoURL };
+          foundUser = updatedUser;
+          setUsers(prev => {
+            const updated = prev.map(u => u.id === updatedUser.id ? updatedUser : u);
+            localStorage.setItem('gcp_users', JSON.stringify(updated));
+            return updated;
+          });
+        }
+
+        // Complete Login immediately for existing user
+        setLoggedInUser(foundUser);
+        localStorage.setItem('gcp_logged_in_user', JSON.stringify(foundUser));
+        setLoginEmail('');
+        setLoginPassword('');
+        addLog(`${foundUser.first_name} ${foundUser.last_name} (${foundUser.role})`, 'Inició sesión de manera segura con Microsoft.');
+      }
+    } catch (error: any) {
+      if (error && error.code === 'auth/operation-not-allowed') {
+        console.log('Microsoft auth not enabled in console config. Handled gracefully.');
+        setMsOperationNotAllowed(true);
+        setLoginError('Inicio de sesión de Microsoft no habilitado: El proveedor microsoft.com está desactivado en la configuración de Firebase.');
+      } else if (error && error.code === 'auth/popup-closed-by-user') {
+        console.warn('Microsoft Sign-In popup closed by user.');
+      } else {
+        console.error('Error in handleMicrosoftLogin:', error);
+        setLoginError(`Error de Microsoft Auth: ${error?.message || error}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleDemoMicrosoftLogin = () => {
+    setLoginError('');
+    setIsLoggingIn(true);
+    
+    // Simulate a successful Microsoft Login for testing purposes
+    setTimeout(() => {
+      const emailToFind = `microsoft.demo@${loginTenant}.com`;
+      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+
+      if (!foundUser) {
+        // Consult tenant registration/creation instead of autojoining
+        setPendingNewUser({
+          id: 'demo-ms-uid-123456',
+          first_name: 'Santiago',
+          last_name: 'Mendoza (MS Demo)',
+          email: emailToFind,
+          source: 'Microsoft Demo'
+        });
+        setSelectedAssociationTenantId(loginTenant);
+        setRegistrationError('');
+        setIsLoggingIn(false);
+        setMsOperationNotAllowed(false);
+      } else {
+        if (foundUser.status === 'PENDING') {
+          const tenantObj = tenants.find(t => t.id === foundUser?.tenant_id);
+          const tenantName = tenantObj ? tenantObj.name : (foundUser?.tenant_id || '');
+          setLoginError(`Su solicitud para unirse al Tenant "${tenantName}" está pendiente de aprobación por el Administrador. El Administrador debe asignar su rol e iniciar su cuenta antes de ingresar.`);
+          setIsLoggingIn(false);
+          setMsOperationNotAllowed(false);
+          return;
+        }
+        if (foundUser.status === 'INACTIVE') {
+          setLoginError('Esta cuenta se encuentra desactivada temporalmente en el panel administrativo.');
+          setIsLoggingIn(false);
+          setMsOperationNotAllowed(false);
+          return;
+        }
+        setLoggedInUser(foundUser);
+        localStorage.setItem('gcp_logged_in_user', JSON.stringify(foundUser));
+        setLoginEmail('');
+        setLoginPassword('');
+        addLog(`${foundUser.first_name} ${foundUser.last_name}`, 'Inició sesión en modo demostración con Microsoft.');
+        setIsLoggingIn(false);
+        setMsOperationNotAllowed(false);
+      }
+    }, 800);
+  };
+
+  const handleCompleteSocialRegistration = () => {
+    if (!pendingNewUser) return;
+    setRegistrationError('');
+    setRegistrationSuccessMessage('');
+
+    if (joinOrBrandOption === 'join') {
+      const selectedTenantId = selectedAssociationTenantId;
+      if (!selectedTenantId) {
+        setRegistrationError('Debe seleccionar un Tenant válido al que unirse.');
+        return;
+      }
+
+      // Check if user already exists again just to be absolutely safe
+      const emailToFind = pendingNewUser.email.toLowerCase();
+      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+
+      if (!foundUser) {
+        foundUser = {
+          id: pendingNewUser.id,
+          first_name: pendingNewUser.first_name,
+          last_name: pendingNewUser.last_name,
+          email: emailToFind,
+          avatar_url: pendingNewUser.avatar_url,
+          role: 'Pendiente de Asignación',
+          status: 'PENDING',
+          tenant_id: selectedTenantId
+        };
+
+        setUsers(prev => {
+          const updated = [...prev, foundUser!];
+          localStorage.setItem('gcp_users', JSON.stringify(updated));
+          return updated;
+        });
+
+        addLog('Sistema Autenticación', `Se envió una solicitud de ingreso de ${pendingNewUser.first_name} ${pendingNewUser.last_name} (${emailToFind}) para unirse al Tenant ${selectedTenantId}.`);
+      }
+
+      const tenantObj = tenants.find(t => t.id === selectedTenantId);
+      const tenantName = tenantObj ? tenantObj.name : selectedTenantId;
+
+      setRegistrationSuccessMessage(`¡Solicitud de ingreso registrada con éxito! Su cuenta ha sido enviada para su aprobación en el Tenant "${tenantName}". El administrador de este Tenant debe revisar su solicitud, activarlo y asignarle un determinado perfil corporativo para que pueda iniciar sesión.`);
+      setPendingNewUser(null);
+    } else {
+      // Create new tenant
+      const tid = newTenantId.trim().toLowerCase();
+      const tname = newTenantName.trim();
+      if (!tname) {
+        setRegistrationError('El nombre de la suscripción (Tenant) es requerido.');
+        return;
+      }
+      if (!tid) {
+        setRegistrationError('El ID Identificador de la suscripción es requerido.');
+        return;
+      }
+      if (tid.length < 3) {
+        setRegistrationError('El ID Identificador debe tener al menos 3 caracteres.');
+        return;
+      }
+
+      // Check if this tenant ID already exists
+      const exists = tenants.some(t => t.id === tid);
+      if (exists) {
+        setRegistrationError(`La suscripción única con ID "${tid}" ya existe en el sistema. Por favor elija otro ID Identificador.`);
+        return;
+      }
+
+      // Create Tenant
+      const nextTenantObj: Tenant = {
+        id: tid,
+        name: tname,
+        description: newTenantDescription.trim() || `Suscripción autónoma de ${tname}`,
+        domain: newTenantDomain.trim() || pendingNewUser.email.split('@')[1] || 'domain.com',
+        plan: 'Premium',
+        status: 'Active'
+      };
+
+      // Create Admin User
+      const emailToFind = pendingNewUser.email.toLowerCase();
+      const rootAdminUser: User = {
+        id: pendingNewUser.id,
+        first_name: pendingNewUser.first_name,
+        last_name: pendingNewUser.last_name,
+        email: emailToFind,
+        avatar_url: pendingNewUser.avatar_url,
+        role: 'Administrador', // User is the absolute Administrator of this tenant
+        status: 'ACTIVE',
+        tenant_id: tid
+      };
+
+      // Atomic Update Tenants
+      setTenants(prev => {
+        const updated = [...prev, nextTenantObj];
+        localStorage.setItem('gcp_tenants', JSON.stringify(updated));
+        return updated;
+      });
+
+      // Atomic Update Users
+      setUsers(prev => {
+        const updated = [...prev, rootAdminUser];
+        localStorage.setItem('gcp_users', JSON.stringify(updated));
+        return updated;
+      });
+
+      // Login
+      setLoggedInUser(rootAdminUser);
+      localStorage.setItem('gcp_logged_in_user', JSON.stringify(rootAdminUser));
+      setPendingNewUser(null);
+
+      // Trigger automatic project or setup logs to populate their private space
+      addLog('Sistema Autenticación', `Se aprovisionó exitosamente un nuevo Tenant corporativo [${tid}] para la empresa "${tname}".`);
+      addLog(`${rootAdminUser.first_name} ${rootAdminUser.last_name}`, `Se registró y asumió rol de Administrador Principal para el Tenant [${tid}].`);
+    }
+  };
+
+  const handleApproveUser = (user: User, selectedRole: string) => {
+    setUsers(prev => {
+      const updated = prev.map(u => {
+        if (u.id === user.id) {
+          return {
+            ...u,
+            status: 'ACTIVE' as const,
+            role: selectedRole
+          };
+        }
+        return u;
+      });
+      localStorage.setItem('gcp_users', JSON.stringify(updated));
+      return updated;
+    });
+    addLog(
+      `${loggedInUser?.first_name} ${loggedInUser?.last_name} (${loggedInUser?.role || 'Admin'})`,
+      `Aprobó el ingreso de ${user.first_name} ${user.last_name} (${user.email}) asignándole el perfil corporativo: "${selectedRole}".`
+    );
+  };
+
+  const handleRejectUser = (user: User) => {
+    setUsers(prev => {
+      const updated = prev.filter(u => u.id !== user.id);
+      localStorage.setItem('gcp_users', JSON.stringify(updated));
+      return updated;
+    });
+    addLog(
+      `${loggedInUser?.first_name} ${loggedInUser?.last_name} (${loggedInUser?.role || 'Admin'})`,
+      `Rechazó y descartó la solicitud de ingreso de ${user.first_name} ${user.last_name} (${user.email}).`
+    );
+  };
+
   // --- Session & Security Handlers ---
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -695,6 +1096,13 @@ export default function App() {
     const userTenant = foundUser.tenant_id || 'grupo-campestre';
     if (userTenant !== loginTenant) {
       setLoginError('Esta cuenta no está autorizada para acceder a la suscripción (Tenant) seleccionada.');
+      return;
+    }
+
+    if (foundUser.status === 'PENDING') {
+      const tenantObj = tenants.find(t => t.id === foundUser?.tenant_id);
+      const tenantName = tenantObj ? tenantObj.name : (foundUser?.tenant_id || '');
+      setLoginError(`Su solicitud para unirse al Tenant "${tenantName}" está pendiente de aprobación por el Administrador. El Administrador debe aprobar su ingreso e incluirlo con un perfil corporativo activo antes de que pueda iniciar sesión.`);
       return;
     }
 
@@ -1512,16 +1920,192 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
             <div className="text-center mb-6">
               <h2 className="text-xl font-bold text-slate-100 tracking-tight">
-                {showLoginForgotPassword ? 'Recuperar Contraseña' : 'Iniciar Sesión'}
+                {pendingNewUser 
+                  ? `Completar Registro (${pendingNewUser.source})`
+                  : showLoginForgotPassword 
+                    ? 'Recuperar Contraseña' 
+                    : 'Iniciar Sesión'}
               </h2>
               <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                {showLoginForgotPassword 
-                  ? 'Obtenga una clave temporal de recuperación gestionada y enviada a través de SMTP.' 
-                  : 'Ingrese sus credenciales de Lifecycle PM para acceder al entorno de gestión del ciclo de vida de proyectos corporativo.'}
+                {pendingNewUser
+                  ? 'Personalice y prepare su espacio de trabajo segregado seleccionando o creando la suscripción única (CIA) correspondiente.'
+                  : showLoginForgotPassword 
+                    ? 'Obtenga una clave temporal de recuperación gestionada y enviada a través de SMTP.' 
+                    : 'Ingrese sus credenciales de Lifecycle PM para acceder al entorno de gestión del ciclo de vida de proyectos corporativo.'}
               </p>
             </div>
 
-            {showLoginForgotPassword ? (
+            {pendingNewUser ? (
+              <div className="space-y-4 text-left">
+                <div className="inline-flex items-center justify-start w-full gap-3 p-3 bg-slate-950/40 border border-slate-800/60 rounded-xl mb-1">
+                  <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 overflow-hidden shrink-0">
+                    {pendingNewUser.avatar_url ? (
+                      <img src={pendingNewUser.avatar_url} alt="Profile" className="w-10 h-10 object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <UserPlus className="w-5 h-5 text-blue-400 animate-pulse" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-200">¡Hola, {pendingNewUser.first_name} {pendingNewUser.last_name}!</h4>
+                    <p className="text-[10px] text-slate-400 font-mono leading-none mt-1">{pendingNewUser.email}</p>
+                  </div>
+                </div>
+
+                {/* Switcher Option tabs */}
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJoinOrBrandOption('join');
+                      setRegistrationError('');
+                    }}
+                    className={`py-3 px-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-1.5 cursor-pointer text-center ${
+                      joinOrBrandOption === 'join'
+                        ? 'bg-blue-600/10 border-blue-500 text-blue-400 shadow-lg shadow-blue-500/5'
+                        : 'bg-slate-950/60 border-slate-800/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <Users2 className="w-4 h-4 shrink-0" />
+                    <span>Unirme a CIA</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJoinOrBrandOption('create');
+                      setRegistrationError('');
+                      if (!newTenantName) {
+                        setNewTenantName('Empresa ' + pendingNewUser.last_name);
+                        const slug = (pendingNewUser.last_name).toLowerCase().replace(/[^a-z0-9]/g, '-') + '-corp';
+                        setNewTenantId(slug);
+                        setNewTenantDomain(pendingNewUser.email.split('@')[1] || 'domain.com');
+                      }
+                    }}
+                    className={`py-3 px-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-1.5 cursor-pointer text-center ${
+                      joinOrBrandOption === 'create'
+                        ? 'bg-blue-600/10 border-blue-500 text-blue-400 shadow-lg shadow-blue-500/5'
+                        : 'bg-slate-950/60 border-slate-800/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span>Crear Nueva CIA</span>
+                  </button>
+                </div>
+
+                {joinOrBrandOption === 'join' ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Suscripción Existente (CIA)</label>
+                      <select
+                        value={selectedAssociationTenantId}
+                        onChange={(e) => setSelectedAssociationTenantId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all cursor-pointer [&>option]:bg-slate-950"
+                      >
+                        {tenants.map(t => (
+                          <option key={t.id} value={t.id}>
+                            🏢 {t.name} ({t.id})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Entrará como integrante independiente en esta CIA con el rol corporativo por defecto de <strong className="text-slate-300">Líder Técnico</strong>.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Tenant Name */}
+                    <div className="space-y-1.5 align-left text-left">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Nombre de la Suscripción / Compañía</label>
+                      <input
+                        type="text"
+                        value={newTenantName}
+                        onChange={(e) => {
+                          setNewTenantName(e.target.value);
+                          const slug = e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9\s-]/g, '')
+                            .replace(/\s+/g, '-')
+                            .replace(/-+/g, '-');
+                          setNewTenantId(slug);
+                        }}
+                        placeholder="Ej: Mi Empresa Consultores"
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
+                      />
+                    </div>
+
+                    {/* Tenant ID Slug */}
+                    <div className="space-y-1.5 align-left text-left">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">ID Identificador Único (CIA ID)</label>
+                      <input
+                        type="text"
+                        value={newTenantId}
+                        onChange={(e) => setNewTenantId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                        placeholder="Ej: mi-empresa-consultores"
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 text-xs font-mono tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all"
+                      />
+                      <p className="text-[9px] text-slate-500 font-mono leading-tight">
+                        Este identificador se utilizará internamente para segregar lógicamente sus proyectos y planes presupuestarios.
+                      </p>
+                    </div>
+
+                    {/* Domain */}
+                    <div className="space-y-1.5 align-left text-left">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Dominio Corporativo Principal</label>
+                      <input
+                        type="text"
+                        value={newTenantDomain}
+                        onChange={(e) => setNewTenantDomain(e.target.value.toLowerCase().trim())}
+                        placeholder="Ej: miempresa.com"
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-mono"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div className="space-y-1.5 align-left text-left">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Descripción del Workspace</label>
+                      <textarea
+                        value={newTenantDescription}
+                        onChange={(e) => setNewTenantDescription(e.target.value)}
+                        placeholder="Breve descripción del entorno de desarrollo privado corporativo."
+                        rows={2}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans resize-none"
+                      />
+                    </div>
+
+                    <div className="bg-blue-600/10 border border-blue-500/20 rounded-xl p-3 text-[10px] text-blue-300 leading-normal">
+                      🛡️ Al crear una CIA corporativa, usted se registrará como el <strong className="text-white font-semibold">Administrador Principal</strong>.
+                    </div>
+                  </div>
+                )}
+
+                {registrationError && (
+                  <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
+                    <AlertTriangle className="w-4.5 h-4.5 mt-0.5 shrink-0" />
+                    <p className="leading-relaxed text-left">{registrationError}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 text-xs font-sans pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingNewUser(null);
+                      setRegistrationError('');
+                    }}
+                    className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 cursor-pointer text-center"
+                  >
+                    Regresar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCompleteSocialRegistration}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>{joinOrBrandOption === 'join' ? 'Unirse y Entrar' : 'Aprovisionar y Entrar'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : showLoginForgotPassword ? (
               <div className="space-y-4">
                 {forgotPasswordStep === 'request' ? (
                   <>
@@ -1849,7 +2433,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
               <form onSubmit={handleLogin} className="space-y-4">
                 {/* Tenant Selector */}
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">ID de Suscripción (Tenant)</label>
+                  <label id="login-cia-label" className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">CIA</label>
                   <select
                     value={loginTenant}
                     onChange={(e) => setLoginTenant(e.target.value)}
@@ -1865,7 +2449,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
                 {/* Email Input */}
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Correo Corporativo</label>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Correo</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
                       <Mail className="w-4 h-4" />
@@ -1883,7 +2467,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 {/* Password Input */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Contraseña de Acceso</label>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Clave</label>
                     <button
                       type="button"
                       onClick={() => setShowLoginForgotPassword(true)}
@@ -1913,6 +2497,14 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                   </div>
                 </div>
 
+                 {/* Success Alert panel */}
+                {registrationSuccessMessage && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-emerald-400">
+                    <CheckSquare className="w-5 h-5 shrink-0 text-emerald-450" />
+                    <p className="leading-relaxed text-left">{registrationSuccessMessage}</p>
+                  </div>
+                )}
+
                 {/* Error Alert panel */}
                 {loginError && (
                   <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
@@ -1936,6 +2528,79 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                     <span>Iniciar Sesión Segura</span>
                   )}
                 </button>
+
+                {/* Divider */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-900"></div>
+                  <span className="flex-shrink mx-3 text-slate-500 text-[10px] uppercase font-bold tracking-wider font-mono">O</span>
+                  <div className="flex-grow border-t border-slate-900"></div>
+                </div>
+
+                {/* Google & Microsoft Social Logins */}
+                <div className="space-y-2">
+                  {/* Google Sign-In button */}
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={isLoggingIn}
+                    className="w-full bg-slate-950 hover:bg-slate-900 text-slate-100 border border-slate-800 py-2.5 px-4 rounded-xl text-xs font-semibold transition duration-200 flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4 shrink-0 font-sans">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                      <path fill="none" d="M0 0h48v48H0z"></path>
+                    </svg>
+                    <span>Continuar con Google</span>
+                  </button>
+
+                  {/* Microsoft Sign-In button */}
+                  <button
+                    type="button"
+                    onClick={handleMicrosoftLogin}
+                    disabled={isLoggingIn}
+                    className="w-full bg-slate-950 hover:bg-slate-900 text-slate-100 border border-slate-800 py-2.5 px-4 rounded-xl text-xs font-semibold transition duration-200 flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 23 23" className="w-4 h-4 shrink-0 font-sans">
+                      <path fill="#F25022" d="M0 0h11v11H0z"/>
+                      <path fill="#7FBA00" d="M12 0h11v11H12z"/>
+                      <path fill="#00A4EF" d="M0 12h11v11H0z"/>
+                      <path fill="#FFB900" d="M12 12h11v11H12z"/>
+                    </svg>
+                    <span>Continuar con Microsoft</span>
+                  </button>
+
+                  {/* Microsoft Activation Guide and Demo Mode Option */}
+                  {msOperationNotAllowed && (
+                    <div className="mt-3 bg-amber-500/10 border border-amber-500/25 text-amber-300 rounded-xl p-3 text-xs space-y-2.5 animate-fadeIn text-left">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="font-bold text-amber-200">¿Cómo activar Microsoft en Firebase?</span>
+                      </div>
+                      <p className="leading-relaxed text-slate-300 text-[11px]">
+                        El código <code>auth/operation-not-allowed</code> indica que Microsoft está desactivado en la consola Firebase de su proyecto.
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px] font-sans">
+                        <li>Abra la <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">consola de Firebase</a>.</li>
+                        <li>Vaya a <strong className="text-slate-300">Authentication</strong> &gt; <strong className="text-slate-300">Sign-in method</strong>.</li>
+                        <li>Pulse <strong className="text-slate-300">Agregar proveedor</strong> e active <strong className="text-slate-300">Microsoft</strong>.</li>
+                        <li>Introduzca sus credenciales (Application ID e Client Secret) de Azure/Entra Portal.</li>
+                      </ul>
+                      
+                      <div className="pt-2 border-t border-slate-900">
+                        <p className="text-slate-300 font-medium text-[11px] mb-1.5">⚡ ¿Desea evaluar el Dashboard de inmediato?</p>
+                        <button
+                          type="button"
+                          onClick={handleDemoMicrosoftLogin}
+                          className="w-full bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold py-1.5 px-3 rounded-lg text-[11px] transition-all cursor-pointer text-center"
+                        >
+                          Usar Cuenta Simulada Microsoft (Dashboard Demo)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </form>
             )}
 
@@ -2137,7 +2802,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
             <div className="hidden lg:flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-full px-3 py-1">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
               <span className="text-[10px] text-slate-500 font-mono tracking-tight">
-                Tenant: <strong className="text-slate-700 uppercase">{(tenants.find(t => t.id === (loggedInUser?.tenant_id || loginTenant))?.name) || (loggedInUser?.tenant_id || loginTenant)}</strong>
+                CIA: <strong className="text-slate-700 uppercase">{(tenants.find(t => t.id === (loggedInUser?.tenant_id || loginTenant))?.name) || (loggedInUser?.tenant_id || loginTenant)}</strong>
               </span>
             </div>
 
@@ -2169,7 +2834,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
         </header>
 
         {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
 
               {/* 1. TAB: DASHBOARD */}
               {activeTab === 'dashboard' && (
@@ -3080,8 +3745,9 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             </div>
 
                             {/* Table of categories: Planificado vs Ejecutado */}
-                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
-                              <table className="w-full text-left border-collapse text-xs">
+                            <div className="border border-slate-200 rounded-xl bg-white shadow-xs overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse text-xs min-w-[750px]">
                                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                                   <tr>
                                     <th className="p-3 pl-4">Rubro / Categoría de Gasto</th>
@@ -3205,6 +3871,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                                   })}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
 
                             {/* Cost management ledger taking full width */}
@@ -3637,6 +4304,99 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                   </button>
                 </div>
 
+                {/* Seccion de solicitudes de aprobacion pendientes de incorporacion */}
+                {(() => {
+                  const pendingApprovalUsers = users.filter(u => u.tenant_id === loggedInUser?.tenant_id && u.status === 'PENDING');
+                  if (pendingApprovalUsers.length === 0) return null;
+                  return (
+                    <div className="mt-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-sm">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-amber-500/10 pb-3 gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="p-2 bg-amber-500/10 rounded-xl text-amber-600 shrink-0">
+                            <UserPlus className="w-5 h-5 text-amber-600" />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-slate-800 tracking-tight leading-snug">Solicitudes de Ingreso Pendientes de Aprobación</h4>
+                            <p className="text-[10px] text-slate-500 leading-normal truncate sm:whitespace-normal">Nuevos usuarios corporativos solicitando unirse a esta suscripción (CIA). Un administrador debe aprobarlos y asignarles su perfil.</p>
+                          </div>
+                        </div>
+                        <span className="bg-amber-100/80 border border-amber-200 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase col-span-1 tracking-wider shrink-0 self-start sm:self-center">
+                          {pendingApprovalUsers.length} Solicitud{pendingApprovalUsers.length > 1 ? 'es' : ''}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {pendingApprovalUsers.map(user => {
+                          const initials = `${user.first_name?.[0] || 'U'}${user.last_name?.[0] || ''}`.toUpperCase();
+                          return (
+                            <div key={user.id} className="bg-white border border-amber-200/70 rounded-xl p-4 flex flex-col justify-between shadow-xs hover:shadow-sm transition-all duration-200">
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center font-bold text-amber-800 text-xs shrink-0 select-none">
+                                    {initials}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h5 className="font-bold text-slate-850 text-xs truncate">{user.first_name} {user.last_name}</h5>
+                                    <p className="text-[9px] text-slate-500 font-mono mt-0.5 truncate select-all">{user.email}</p>
+                                  </div>
+                                </div>
+                                <span className="text-[8px] font-bold bg-amber-50/75 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0 leading-none">
+                                  SOLICITUD
+                                </span>
+                              </div>
+
+                              {/* Selector de perfil y acciones */}
+                              <div className="pt-3 border-t border-slate-100">
+                                {loggedInUser?.role === 'Administrador' ? (
+                                  <div className="space-y-3">
+                                    <div className="space-y-1 align-left text-left">
+                                      <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider font-mono">Asignar Perfil Corporativo</label>
+                                      <select
+                                        value={approvalRoles[user.id] || 'Líder Técnico'}
+                                        onChange={(e) => setApprovalRoles(prev => ({ ...prev, [user.id]: e.target.value }))}
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg py-1.5 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer font-medium"
+                                      >
+                                        <option value="Líder Técnico">Líder Técnico</option>
+                                        <option value="Ingeniero de Software">Ingeniero de Software</option>
+                                        <option value="Planificador">Planificador</option>
+                                        <option value="Consultor">Consultor</option>
+                                        <option value="Director">Director</option>
+                                        <option value="Administrador">Administrador (Acceso Completo)</option>
+                                      </select>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRejectUser(user)}
+                                        className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 hover:border-rose-200 text-[10px] font-bold py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1"
+                                      >
+                                        <X className="w-3 h-3" />
+                                        Rechazar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveUser(user, approvalRoles[user.id] || 'Líder Técnico')}
+                                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-sm hover:shadow transition text-center cursor-pointer flex items-center justify-center gap-1"
+                                      >
+                                        <UserCheck className="w-3 h-3 text-white" />
+                                        Aprobar e Incorporar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-[9px] text-slate-500 leading-relaxed text-left">
+                                    🔒 El acceso debe ser aprobado por el <strong className="text-slate-700">Administrador</strong> de esta suscripción para la visualización y la asignación del perfil corporativo de esta persona.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Search & Filter controls */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5 mt-5 p-3.5 bg-slate-50 rounded-xl border border-slate-150">
                   {/* Search bar */}
@@ -3675,6 +4435,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       <option value="ALL">Cualquier Estado</option>
                       <option value="ACTIVE">Activos</option>
                       <option value="INACTIVE">Inactivos</option>
+                      <option value="PENDING">Pendientes</option>
                     </select>
                   </div>
                 </div>
@@ -3701,7 +4462,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                     <p className="text-xs text-slate-400 mt-1">Prueba cambiando los términos de búsqueda o filtros.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
                     {segmentedUsers.filter(u => {
                       const fullName = `${u.first_name} ${u.last_name}`.toLowerCase();
                       const email = u.email.toLowerCase();
@@ -3724,10 +4485,14 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       return (
                         <div key={u.id} className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50/20 hover:bg-white hover:shadow-md transition duration-200 flex flex-col justify-between">
                           <div className="space-y-3">
-                            <div className="flex justify-between items-start">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs tracking-wider ${
-                                  isBgActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'
+                            <div className="flex justify-between items-start min-w-0 w-full gap-2">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs tracking-wider shrink-0 ${
+                                  u.status === 'ACTIVE'
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : u.status === 'PENDING'
+                                    ? 'bg-amber-100 text-amber-700 animate-pulse'
+                                    : 'bg-slate-200 text-slate-600'
                                 }`}>
                                   {initials}
                                 </div>
@@ -3738,20 +4503,30 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                                   </span>
                                 </div>
                               </div>
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isBgActive ? 'bg-emerald-500' : 'bg-slate-400'}`} title={isBgActive ? 'Acceso Activo' : 'Acceso Restringido'} />
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${
+                                u.status === 'ACTIVE'
+                                  ? 'bg-emerald-500'
+                                  : u.status === 'PENDING'
+                                  ? 'bg-amber-500'
+                                  : 'bg-slate-400'
+                              }`} title={u.status === 'ACTIVE' ? 'Acceso Activo' : u.status === 'PENDING' ? 'Pendiente de Aprobación' : 'Acceso Restringido'} />
                             </div>
 
-                            <div className="text-[11.5px] text-slate-600 space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100 font-sans">
-                              <div className="flex justify-between items-center gap-1">
-                                <span className="text-slate-400 font-medium">Email:</span>
+                            <div className="text-[11.5px] text-slate-600 space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100 font-sans min-w-0">
+                              <div className="flex justify-between items-center gap-1.5 min-w-0">
+                                <span className="text-slate-400 font-medium shrink-0">Email:</span>
                                 <strong className="text-slate-800 truncate" title={u.email}>{u.email}</strong>
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-slate-400 font-medium">Estado:</span>
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                  isBgActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                                  u.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                    : u.status === 'PENDING'
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-100'
                                 }`}>
-                                  {isBgActive ? 'CONECTADO' : 'INACTIVO'}
+                                  {u.status === 'ACTIVE' ? 'ACTIVO' : u.status === 'PENDING' ? 'PENDIENTE' : 'INACTIVO'}
                                 </span>
                               </div>
                               <div className="flex justify-between items-center">
@@ -3801,8 +4576,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
               {/* A. EDIT USER DETAIL MODAL */}
               {showEditUserModal && editingUser && (
-                <div className="fixed inset-0 z-55 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                  <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-slideUp">
+                <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                  <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col animate-slideUp">
                     <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                       <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
                         <Edit2 className="w-4 h-4 text-indigo-500" />
@@ -3917,8 +4692,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
               {/* B. ADD USER MODAL */}
               {isAddUserModalOpen && (
-                <div className="fixed inset-0 z-55 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                  <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-slideUp">
+                <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                  <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col animate-slideUp">
                     <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                       <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
                         <UserPlus className="w-4 h-4 text-indigo-500" />
@@ -4026,8 +4801,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
               {/* C. INTERACTIVE EMAIL RESET PASSWORD SIMULATOR */}
               {showResetEmailModal && passwordResetUser && (
-                <div className="fixed inset-0 z-55 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-slideUp">
+                <div className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col animate-slideUp">
                     {/* Header */}
                     <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center text-white">
                       <div className="flex items-center gap-2.5">
@@ -4190,8 +4965,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 </div>
               </div>
 
-              {/* CI/CD Dynamic Simulator Actions */}
-              <DevOpsPipeline />
+               {/* CI/CD Dynamic Simulator Actions */}
+              <DevOpsPipeline selectedProjectId={selectedProjectId} projects={segmentedProjects} />
             </div>
           )}
 
@@ -4258,7 +5033,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       }`}
                     >
                       <Database className="w-3.5 h-3.5 text-teal-500" />
-                      <span>Suscripciones (Tenants)</span>
+                      <span>Suscripciones (CIAs)</span>
                     </button>
                   </div>
                 </div>
@@ -4716,7 +5491,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           const flowchartSteps = [
                             { id: 'no_iniciados', label: 'No Iniciado', icon: 'Layers', color: 'slate', col: 'NO_INICIADO', ruleIds: ['no_iniciados_prioridad', 'no_iniciados_responsable'] },
                             { id: 'en_analisis', label: 'En Análisis', icon: 'BookOpen', color: 'blue', col: 'EN_ANALISIS', ruleIds: ['en_analisis_descripcion', 'en_analisis_responsable'] },
-                            { id: 'en_desarrollo', label: 'En Desarrollo', icon: 'Cpu', color: 'amber', col: 'EN_DESARROLLO', ruleIds: ['en_desarrollo_criteria', 'en_desarrollo_sp', 'en_desarrollo_unblocked'] },
+                            { id: 'en_desarrollo', label: 'En Desarrollo', icon: 'Cpu', color: 'amber', col: 'EN_DESARROLLO', ruleIds: ['en_desarrollo_sp', 'en_desarrollo_unblocked'] },
                             { id: 'code_review', label: 'Code Review', icon: 'Eye', color: 'teal', col: 'CODE_REVIEW', ruleIds: ['code_review_criteria'] },
                             { id: 'listo_para_qa', label: 'Listo para QA', icon: 'CheckSquare', color: 'indigo', col: 'LISTO_PARA_QA', ruleIds: ['listo_qa_no_crit_bugs'] },
                             { id: 'en_qa', label: 'En QA', icon: 'Server', color: 'violet', col: 'EN_QA', ruleIds: ['en_qa_sprint_active'] },
@@ -5046,10 +5821,10 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           </span>
                         </div>
                         <h4 className="text-slate-800 font-extrabold text-sm mb-1">
-                          Registrar Tenant / Cliente SaaS
+                          Registrar CIA / Cliente SaaS
                         </h4>
                         <p className="text-[11px] text-slate-500 mb-4 leading-normal">
-                          Agregue un nuevo espacio de trabajo aislado (tenant) con su propio dominio, usuarios, proyectos e integraciones.
+                          Agregue un nuevo espacio de trabajo aislado (CIA) con su propio dominio, usuarios, proyectos e integraciones.
                         </p>
 
                         <form onSubmit={(e) => {
@@ -5067,7 +5842,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           }
 
                           if (tenants.some(t => t.id === tId)) {
-                            alert('El Identificador (ID) de Tenant ya se encuentra registrado.');
+                            alert('El Identificador (ID) de CIA ya se encuentra registrado.');
                             return;
                           }
 
@@ -5081,7 +5856,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           };
 
                           setTenants(prev => [...prev, newTenant]);
-                          addLog('Configuración', `Registró un nuevo Tenant SaaS: "${tName}" [ID: ${tId}] [Plan: ${tPlan}]`);
+                          addLog('Configuración', `Registró una nueva CIA SaaS: "${tName}" [ID: ${tId}] [Plan: ${tPlan}]`);
                           form.reset();
                         }} className="space-y-4">
                           <div>
@@ -5169,7 +5944,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                             className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-xl py-2.5 text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <Plus className="w-4 h-4" />
-                            <span>Crear Suscripción Tenant</span>
+                            <span>Crear Suscripción CIA</span>
                           </button>
                         </form>
                       </div>
@@ -5181,10 +5956,10 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           <div>
                             <h4 className="text-teal-900 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 leading-none">
                               <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-                              Aislamiento de Cuentas SaaS (Multi-tenant)
+                              Aislamiento de Cuentas SaaS (Multi-CIA)
                             </h4>
                             <p className="text-[11.5px] text-slate-600 mt-1 max-w-xl">
-                              El sistema segrega de forma lógica todos los proyectos, miembros, sprint backlog, presupuesto técnico y suites de testing usando el <strong className="text-teal-700">Tenant ID</strong> asignado en el proceso de Login.
+                              El sistema segrega de forma lógica todos los proyectos, miembros, sprint backlog, presupuesto técnico y suites de testing usando el <strong className="text-teal-700">CIA ID</strong> asignado en el proceso de Login.
                             </p>
                           </div>
                           <span className="text-[10px] uppercase font-black text-emerald-700 bg-emerald-100 border border-emerald-250 px-2.5 py-1 rounded-full shrink-0 flex items-center gap-1">
@@ -5193,11 +5968,12 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         </div>
 
                         {/* Tenants Table */}
-                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs min-w-[650px]">
                             <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-250">
                               <tr>
-                                <th className="p-3">Suscripción (ID)</th>
+                                <th className="p-3">Suscripción (ID CIA)</th>
                                 <th className="p-3">Razón Social</th>
                                 <th className="p-3">Dominio</th>
                                 <th className="p-3">Tipo Plan</th>
@@ -5241,9 +6017,9 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          if (confirm(`¿Está seguro de que desea rescindir la suscripción de "${t.name}"? Se eliminará el acceso para este Tenant.`)) {
+                                          if (confirm(`¿Está seguro de que desea rescindir la suscripción de "${t.name}"? Se eliminará el acceso para esta CIA.`)) {
                                             setTenants(prev => prev.filter(x => x.id !== t.id));
-                                            addLog('Configuración', `Rescindió suscripción de Tenant: "${t.name}" (${t.id})`);
+                                            addLog('Configuración', `Rescindió suscripción de CIA: "${t.name}" (${t.id})`);
                                           }
                                         }}
                                         className="text-red-500 hover:text-red-700 font-bold transition-all px-2 py-1 hover:bg-red-50 rounded-lg cursor-pointer"
@@ -5256,6 +6032,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                               ))}
                             </tbody>
                           </table>
+                          </div>
                         </div>
 
                       </div>
@@ -5287,7 +6064,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
         {/* CLOUD STORAGE OBJECT DETAIL MODAL / INSIGHT PANEL */}
         {activeCloudObjectDetail && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-700 text-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden animate-fadeIn">
+            <div className="bg-slate-900 border border-slate-700 text-white w-full max-w-lg rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col animate-fadeIn">
               <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Server className="w-4 h-4 text-indigo-400" />
@@ -5380,7 +6157,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
             onClick={() => setProjectConfigModalTarget(null)}
           >
             <div 
-              className="bg-white border border-slate-200 text-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden animate-fadeIn" 
+              className="bg-white border border-slate-200 text-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col pt-1" 
               onClick={e => e.stopPropagation()}
             >
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center font-sans">
@@ -5566,7 +6343,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
             onClick={() => setProjectStatusModalTarget(null)}
           >
             <div 
-              className="bg-white border border-slate-200 text-slate-800 w-full max-w-md rounded-xl shadow-2xl overflow-hidden" 
+              className="bg-white border border-slate-200 text-slate-800 w-full max-w-md rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col" 
               onClick={e => e.stopPropagation()}
             >
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -5642,7 +6419,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
         {/* CREATE PROJECT MODAL */}
         {isCreateProjectModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4" onClick={() => setIsCreateProjectModalOpen(false)}>
-            <div className="bg-white border border-slate-200 text-slate-800 w-full max-w-md rounded-xl shadow-2xl overflow-hidden animate-fadeIn" onClick={e => e.stopPropagation()}>
+            <div className="bg-white border border-slate-200 text-slate-800 w-full max-w-md rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col animate-fadeIn" onClick={e => e.stopPropagation()}>
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <FolderKanban className="w-4 h-4 text-blue-600" />

@@ -461,6 +461,26 @@ export default function QaSuiteWorkspace({
         </button>
       </div>
 
+      {/* Project Selector Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-indigo-50/50 border border-indigo-150 rounded-xl p-4 text-xs text-indigo-900 shadow-3xs">
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+          <span className="font-bold text-indigo-950 font-sans text-[12px]">Proyecto de Trabajo para QA:</span>
+        </div>
+        <select
+          value={selectedProjectId}
+          onChange={(e) => setSelectedProjectId(e.target.value)}
+          className="bg-white border border-indigo-200 text-indigo-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold cursor-pointer max-w-sm"
+        >
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+          ))}
+        </select>
+        <p className="sm:ml-auto text-[11px] text-indigo-600 font-medium">
+          Mostrando suites de pruebas, casos, ejecuciones y defectos para: <strong className="text-indigo-950 underline">{activeProject?.name}</strong>
+        </p>
+      </div>
+
       {/* METRICS VIEW */}
       {activeWorkspaceTab === 'metrics' && (
         <div className="space-y-6">
@@ -637,7 +657,8 @@ export default function QaSuiteWorkspace({
               </p>
 
               <div className="border border-slate-150 rounded-xl overflow-hidden text-xs max-h-[300px] overflow-y-auto">
-                <table className="w-full text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left min-w-[500px]">
                   <thead className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-500 uppercase">
                     <tr>
                       <th className="p-2">Req/HU</th>
@@ -671,6 +692,7 @@ export default function QaSuiteWorkspace({
                   </tbody>
                 </table>
               </div>
+            </div>
             </div>
 
           </div>
@@ -1148,7 +1170,7 @@ export default function QaSuiteWorkspace({
 
             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
               {testRuns.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-4">No se han registrado ejecuciones de pruebas históricas en este tenant.</p>
+                <p className="text-xs text-slate-500 text-center py-4">No se han registrado ejecuciones de pruebas históricas en esta CIA.</p>
               ) : (
                 testRuns.map(run => {
                   const correlatedCase = testCases.find(c => c.id === run.test_case_id);
@@ -1264,7 +1286,8 @@ export default function QaSuiteWorkspace({
             </div>
 
             <div className="border border-slate-150 rounded-xl overflow-hidden text-xs">
-              <table className="w-full text-left">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[850px]">
                 <thead className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                   <tr>
                     <th className="p-3">Categoría de Evaluación</th>
@@ -1343,6 +1366,7 @@ export default function QaSuiteWorkspace({
                 </tbody>
               </table>
             </div>
+          </div>
           </div>
 
           {/* Diagnostic Final Summary Report (Expert Audit Output Form) */}

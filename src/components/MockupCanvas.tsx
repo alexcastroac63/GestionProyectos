@@ -252,6 +252,11 @@ export default function MockupCanvas({
 
   // Drag & Canvas zoom states
   const [scale, setScale] = useState<number>(1);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      setScale(0.6);
+    }
+  }, []);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -1491,7 +1496,7 @@ export default function MockupCanvas({
             </div>
 
             {/* FLOATING ZOOM & PAN OVERLAYS */}
-            <div className="absolute bottom-6 right-6 z-25 flex flex-col gap-2.5 bg-slate-900/95 border border-slate-800 p-3.5 rounded-2xl shadow-2xl backdrop-blur-md">
+            <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-25 flex flex-col gap-2 bg-slate-900/95 border border-slate-800 p-2.5 sm:p-3.5 rounded-2xl shadow-2xl backdrop-blur-md scale-95 sm:scale-100 origin-bottom-right">
               <div className="border-b border-slate-800 pb-2 text-center">
                 <span className="text-[9px] text-slate-400 block font-mono font-bold tracking-wider uppercase mb-1">
                   Escala Fullscreen:
@@ -1593,7 +1598,7 @@ export default function MockupCanvas({
             </div>
 
             {/* Interactive instructions Note */}
-            <div className="absolute top-6 left-6 z-25 bg-slate-950/80 p-3 rounded-2xl border border-slate-800/80 backdrop-blur-md max-w-xs shadow-2xl pointer-events-none">
+            <div className="absolute top-4 left-4 sm:top-6 sm:left-6 z-25 bg-slate-950/80 p-3 rounded-2xl border border-slate-800/80 backdrop-blur-md max-w-[180px] sm:max-w-xs shadow-2xl pointer-events-none hidden sm:block">
               <div className="flex items-center gap-1.5 text-slate-300 mb-1">
                 <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                 <span className="text-[9.5px] font-bold text-slate-200 uppercase tracking-wider">Control Interactivo FS</span>

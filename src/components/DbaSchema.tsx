@@ -226,26 +226,28 @@ CREATE INDEX idx_work_item_project_sprint_status ON work_items(project_id, sprin
           </div>
 
           <div className="border border-slate-150 rounded-xl overflow-hidden">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-3.5">Dominio / Área</th>
-                  <th className="p-3.5">Estructura Inicial Flexible</th>
-                  <th className="p-3.5 text-indigo-600">Esquema Normalizado Recomendado</th>
-                  <th className="p-3.5 max-w-sm">Impacto / Beneficio</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recommendations.map((rec, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50">
-                    <td className="p-3.5 font-bold text-slate-900">{rec.area}</td>
-                    <td className="p-3.5 font-mono text-slate-500">{rec.actual}</td>
-                    <td className="p-3.5 font-mono text-indigo-600 font-medium bg-indigo-50/20">{rec.recomendado}</td>
-                    <td className="p-3.5 text-slate-600 leading-relaxed">{rec.beneficio}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs min-w-[750px]">
+                <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3.5">Dominio / Área</th>
+                    <th className="p-3.5">Estructura Inicial Flexible</th>
+                    <th className="p-3.5 text-indigo-600">Esquema Normalizado Recomendado</th>
+                    <th className="p-3.5 max-w-sm">Impacto / Beneficio</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recommendations.map((rec, i) => (
+                    <tr key={i} className="hover:bg-slate-50/50">
+                      <td className="p-3.5 font-bold text-slate-900">{rec.area}</td>
+                      <td className="p-3.5 font-mono text-slate-500">{rec.actual}</td>
+                      <td className="p-3.5 font-mono text-indigo-600 font-medium bg-indigo-50/20">{rec.recomendado}</td>
+                      <td className="p-3.5 text-slate-600 leading-relaxed">{rec.beneficio}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

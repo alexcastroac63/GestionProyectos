@@ -536,11 +536,6 @@ export default function ScrumBoardAndQaManager({
 
     // EN_ANALISIS -> EN_DESARROLLO (Definition of Ready)
     if (targetCol === 'EN_DESARROLLO') {
-      const hasCriteria = criteria.some(cr => cr.user_story_id === story.id);
-      
-      if (isRuleEnabled('en_desarrollo_criteria') && !hasCriteria) {
-        errors.push(getRuleDesc('en_desarrollo_criteria', 'DOR: Debe registrarse por lo menos 1 Criterio de Aceptación.'));
-      }
       if (isRuleEnabled('en_desarrollo_sp') && !story.story_points) {
         errors.push(getRuleDesc('en_desarrollo_sp', 'DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.'));
       }
@@ -1797,6 +1792,21 @@ export default function ScrumBoardAndQaManager({
                           <p className="text-[10px] text-slate-500 leading-relaxed italic">
                             💻 <strong>Resultado Esperado:</strong> {crit.expected_result}
                           </p>
+
+                          {/* Editable comment field for acceptance criterion validation */}
+                          <div className="pt-2 border-t border-dashed border-slate-200 mt-1 flex flex-col sm:flex-row sm:items-center gap-2">
+                            <span className="text-[9.5px] uppercase font-bold text-slate-400 shrink-0">💬 Observaciones / Comentario:</span>
+                            <input
+                              type="text"
+                              value={crit.comment || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCriteria(prev => prev.map(c => c.id === crit.id ? { ...c, comment: val } : c));
+                              }}
+                              placeholder="Escriba un comentario o nota de validación sobre este criterio..."
+                              className="flex-1 text-[11px] bg-white border border-slate-200 focus:border-slate-300 rounded px-2.5 py-1 outline-none text-slate-700 font-semibold"
+                            />
+                          </div>
                         </div>
                       ))}
 

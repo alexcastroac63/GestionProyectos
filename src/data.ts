@@ -156,7 +156,6 @@ export const DEFAULT_TRANSITION_RULES: TransitionRule[] = [
   { id: 'en_analisis_descripcion', name: 'Descripción clara', desc: 'Debe registrarse una descripción clara o analítica del requerimiento (>10 carac.).', category: 'En Análisis', targetCol: 'EN_ANALISIS', enabled: true },
   { id: 'en_analisis_responsable', name: 'Responsable técnico asignado', desc: 'Responsable técnico/funcional no asignado.', category: 'En Análisis', targetCol: 'EN_ANALISIS', enabled: true },
   
-  { id: 'en_desarrollo_criteria', name: 'Criterios de Aceptación (DOR)', desc: 'DOR: Debe registrarse por lo menos 1 Criterio de Aceptación.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
   { id: 'en_desarrollo_sp', name: 'Story Points estimulados (DOR)', desc: 'DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
   { id: 'en_desarrollo_unblocked', name: 'No Bloqueada (DOR)', desc: 'DOR BLOQUEADA: Desbloquee el requerimiento ingresando el motivo.', category: 'En Desarrollo', targetCol: 'EN_DESARROLLO', enabled: true },
   

@@ -337,6 +337,18 @@ export default function ProductBacklogManager({
   const [isStoryFormOpen, setIsStoryFormOpen] = useState(false);
   const [isEpicFormOpen, setIsEpicFormOpen] = useState(false);
 
+  // --- Sprint Edit Dialog States ---
+  const [isEditSprintModalOpen, setIsEditSprintModalOpen] = useState(false);
+  const [isCreateSprintModalOpen, setIsCreateSprintModalOpen] = useState(false);
+  const [editSprintId, setEditSprintId] = useState('');
+  const [editSprintName, setEditSprintName] = useState('');
+  const [editSprintGoal, setEditSprintGoal] = useState('');
+  const [editSprintStartDate, setEditSprintStartDate] = useState('');
+  const [editSprintEndDate, setEditSprintEndDate] = useState('');
+  const [editSprintCapacity, setEditSprintCapacity] = useState<number>(35);
+  const [editSprintVelocity, setEditSprintVelocity] = useState<number>(30);
+  const [editSprintStatus, setEditSprintStatus] = useState<string>('NO_INICIADO');
+
   // --- Edit Form State for creation and updates ---
   const [storyForm, setStoryForm] = useState<Partial<UserStory>>({});
   const [epicForm, setEpicForm] = useState<Partial<Epic>>({});
@@ -763,8 +775,56 @@ export default function ProductBacklogManager({
     setNewSprintCapacity(35);
     setNewSprintVelocity(30);
     setNewSprintStatus('NO_INICIADO');
+    setIsCreateSprintModalOpen(false);
 
     addLog('Sofía Ramírez (Scrum Master)', `Creó el Sprint: "${newSp.name}" en el Planificador de Backlog.`);
+  };
+
+  const handleOpenEditSprint = () => {
+    const sprintToEdit = sprints.find(s => s.id === backlogSelectedSprintId);
+    if (!sprintToEdit) return;
+    setEditSprintId(sprintToEdit.id);
+    setEditSprintName(sprintToEdit.name || '');
+    setEditSprintGoal(sprintToEdit.goal || '');
+    setEditSprintStartDate(sprintToEdit.start_date || '2026-06-12');
+    setEditSprintEndDate(sprintToEdit.end_date || '2026-06-25');
+    setEditSprintCapacity(sprintToEdit.capacity || 35);
+    setEditSprintVelocity(sprintToEdit.velocity || 30);
+    setEditSprintStatus(sprintToEdit.status || 'NO_INICIADO');
+    setIsEditSprintModalOpen(true);
+  };
+
+  const handleUpdateSprint = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentRole === 'CONSULTA') {
+      alert('⚠️ No cuenta con privilegios para modificar sprints.');
+      return;
+    }
+    if (!editSprintName.trim()) {
+      alert('❌ Validación: El nombre del sprint es obligatorio.');
+      return;
+    }
+
+    if (setSprints) {
+      setSprints(prev => prev.map(s => {
+        if (s.id === editSprintId) {
+          return {
+            ...s,
+            name: editSprintName,
+            goal: editSprintGoal,
+            start_date: editSprintStartDate,
+            end_date: editSprintEndDate,
+            capacity: editSprintCapacity,
+            velocity: editSprintVelocity,
+            status: editSprintStatus as any
+          };
+        }
+        return s;
+      }));
+    }
+
+    setIsEditSprintModalOpen(false);
+    addLog('Sofía Ramírez (Scrum Master)', `Modificó información y metas del Sprint: "${editSprintName}".`);
   };
 
   const handleAssignStoryToSprint = (storyId: string, sprintId: string) => {
@@ -776,7 +836,8 @@ export default function ProductBacklogManager({
     const targetSprint = sprints.find(s => s.id === sprintId);
     if (!targetStory || !targetSprint) return;
 
-    if (targetStory.sprint_id && targetStory.sprint_id !== sprintId) {
+    const hasRealSprint = targetStory.sprint_id && sprints.some(sp => sp.id === targetStory.sprint_id);
+    if (hasRealSprint && targetStory.sprint_id !== sprintId) {
       const currentSprintName = sprints.find(s => s.id === targetStory.sprint_id)?.name || 'otro Sprint';
       alert(`⚠️ Esta Historia de Usuario (${targetStory.code}) ya está asignada al "${currentSprintName}". Primero debes quitarla de ese Sprint para poder reasignarla.`);
       return;
@@ -852,6 +913,16 @@ export default function ProductBacklogManager({
       want: parsedWant,
       benefit: parsedBenefit
     };
+
+    if (finalStoryFormObj.id) {
+      const originalStory = stories.find(s => s.id === finalStoryFormObj.id);
+      const hasRealSprint = originalStory && originalStory.sprint_id && sprints.some(sp => sp.id === originalStory.sprint_id);
+      if (originalStory && hasRealSprint && finalStoryFormObj.sprint_id && finalStoryFormObj.sprint_id !== originalStory.sprint_id) {
+        const currentSprintName = sprints.find(s => s.id === originalStory.sprint_id)?.name || 'otro Sprint';
+        alert(`⚠️ Esta Historia de Usuario (${originalStory.code}) ya está asignada al "${currentSprintName}". Primero debes quitarla de ese Sprint para poder reasignarla.`);
+        return;
+      }
+    }
 
     if (finalStoryFormObj.id) {
       // Edit mode
@@ -2143,128 +2214,46 @@ export default function ProductBacklogManager({
             </div>
           </div>
 
-          {/* Dual form layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Association Workspace container (Full width) */}
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs space-y-5">
             
-            {/* 1. SPRINT CREATION FORM (Left side) */}
-            <div className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs space-y-4">
-              <h5 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-teal-600" />
-                Crear Nuevo Sprint
-              </h5>
-
-              <form onSubmit={handleCreateSprintInBacklog} className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Nombre del Sprint *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newSprintName}
-                    onChange={e => setNewSprintName(e.target.value)}
-                    placeholder="Ej. Sprint 5 - API de Envío"
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-teal-500 rounded-lg px-3 py-2 transition outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Objetivo / Meta del Sprint</label>
-                  <textarea
-                    rows={2}
-                    value={newSprintGoal}
-                    onChange={e => setNewSprintGoal(e.target.value)}
-                    placeholder="Ej. Integrar servicios de tracking y notificaciones push."
-                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-teal-500 rounded-lg px-3 py-2 transition outline-none resize-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Fecha de Inicio</label>
-                    <input
-                      type="date"
-                      value={newSprintStartDate}
-                      onChange={e => setNewSprintStartDate(e.target.value)}
-                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none text-[11px]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Fecha de Fin</label>
-                    <input
-                      type="date"
-                      value={newSprintEndDate}
-                      onChange={e => setNewSprintEndDate(e.target.value)}
-                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none text-[11px]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Capacidad (SP) *</label>
-                    <input
-                      type="number"
-                      required
-                      min={1}
-                      value={newSprintCapacity}
-                      onChange={e => setNewSprintCapacity(Number(e.target.value))}
-                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Velocidad Requerida</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={newSprintVelocity}
-                      onChange={e => setNewSprintVelocity(Number(e.target.value))}
-                      className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 transition outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Estado Inicial</label>
-                  <select
-                    value={newSprintStatus}
-                    onChange={e => setNewSprintStatus(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 transition outline-none cursor-pointer"
-                  >
-                    <option value="NO_INICIADO">Planificado (No iniciado)</option>
-                    <option value="EN_CURSO">En Curso (Ejecución)</option>
-                    <option value="EN_QA">En Pruebas (En QA)</option>
-                    <option value="FINALIZADO">Finalizado</option>
-                  </select>
-                </div>
+            {/* Selector of sprint */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-slate-100 gap-3">
+              <div className="flex items-center flex-wrap gap-2.5">
+                <span className="text-xs font-bold text-slate-650 uppercase tracking-widest font-mono">Sprint destino:</span>
+                <select
+                  value={backlogSelectedSprintId}
+                  onChange={e => setBacklogSelectedSprintId(e.target.value)}
+                  className="bg-slate-900 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-800 cursor-pointer outline-none"
+                >
+                  <option value="">-- Elige un Sprint --</option>
+                  {projectSprints.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.status})
+                    </option>
+                  ))}
+                </select>
 
                 <button
-                  type="submit"
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl transition shadow-3xs cursor-pointer flex items-center justify-center gap-1.5 duration-150"
+                  type="button"
+                  onClick={() => setIsCreateSprintModalOpen(true)}
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] px-3.5 py-1.5 rounded-lg transition duration-150 shrink-0 cursor-pointer flex items-center gap-1.5 shadow-3xs"
                 >
-                  <Plus className="w-4 h-4" />
-                  Crear y Seleccionar Sprint
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Crear Sprint</span>
                 </button>
-              </form>
-            </div>
 
-            {/* 2. HU ASSOCIATION WORKSPACE */}
-            <div className="lg:col-span-8 bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs space-y-5">
-              
-              {/* Selector of sprint */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-slate-100 gap-3">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs font-bold text-slate-650 uppercase tracking-widest font-mono">Sprint destino:</span>
-                  <select
-                    value={backlogSelectedSprintId}
-                    onChange={e => setBacklogSelectedSprintId(e.target.value)}
-                    className="bg-slate-900 text-white font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-800 cursor-pointer outline-none"
+                {backlogSelectedSprintId && (
+                  <button
+                    type="button"
+                    onClick={handleOpenEditSprint}
+                    title="Editar metadatos, objetivos y capacidad del Sprint seleccionado"
+                    className="bg-amber-50 hover:bg-amber-200 text-amber-800 border border-amber-200 font-bold text-[11px] px-3.5 py-1.5 rounded-lg transition duration-150 shrink-0 cursor-pointer flex items-center gap-1.5"
                   >
-                    <option value="">-- Elige un Sprint --</option>
-                    {projectSprints.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.status})
-                      </option>
-                    ))}
-                  </select>
+                    <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Modificar Sprint</span>
+                  </button>
+                )}
                 </div>
 
                 {backlogSelectedSprintId && (() => {
@@ -2305,10 +2294,10 @@ export default function ProductBacklogManager({
                 const currentSprintNode = projectSprints.find(s => s.id === backlogSelectedSprintId);
                 if (!currentSprintNode) return null;
 
-                // Backlog Stories of THIS project that are NOT in ANY sprint (strictly in the product backlog)
+                // Backlog Stories of THIS project that are NOT in ANY active sprint (strictly in the product backlog)
                 const availableBacklog = stories.filter(st => 
                   st.project_id === selectedProjectId && 
-                  !st.sprint_id
+                  (!st.sprint_id || !projectSprints.some(sp => sp.id === st.sprint_id))
                 );
 
                 // Stories that ARE in this sprint
@@ -2445,14 +2434,258 @@ export default function ProductBacklogManager({
                   </div>
                 );
               })()}
-            </div>
-
           </div>
         </div>
       )}
 
       {/* 4. MODALS AND FORMS */}
-      
+
+      {/* 4E: CREATE SPRINT MODAL */}
+      {isCreateSprintModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-fadeIn flex flex-col">
+            <div className="bg-slate-900 text-white p-5 flex justify-between items-center bg-gradient-to-r from-teal-600 to-teal-700">
+              <div>
+                <h3 className="font-bold text-sm tracking-wide flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Crear Nuevo Sprint
+                </h3>
+                <p className="text-[11px] text-teal-100 mt-0.5">Registre metas, fechas, capacidad y estado operacional inicial.</p>
+              </div>
+              <button 
+                onClick={() => setIsCreateSprintModalOpen(false)} 
+                className="text-teal-100 hover:text-white transition cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSprintInBacklog} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Nombre del Sprint *</label>
+                <input
+                  type="text"
+                  required
+                  value={newSprintName}
+                  onChange={e => setNewSprintName(e.target.value)}
+                  placeholder="Ej. Sprint 5 - API de Envío"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Objetivo / Meta del Sprint</label>
+                <textarea
+                  rows={2}
+                  value={newSprintGoal}
+                  onChange={e => setNewSprintGoal(e.target.value)}
+                  placeholder="Ej. Integrar servicios de tracking y notificaciones push."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none resize-none focus:bg-white focus:border-teal-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Fecha de Inicio</label>
+                  <input
+                    type="date"
+                    value={newSprintStartDate}
+                    onChange={e => setNewSprintStartDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Fecha de Fin</label>
+                  <input
+                    type="date"
+                    value={newSprintEndDate}
+                    onChange={e => setNewSprintEndDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Capacidad (SP) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={newSprintCapacity}
+                    onChange={e => setNewSprintCapacity(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Velocidad Requerida</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newSprintVelocity}
+                    onChange={e => setNewSprintVelocity(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Estado Inicial</label>
+                <select
+                  value={newSprintStatus}
+                  onChange={e => setNewSprintStatus(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-800 outline-none focus:bg-white cursor-pointer"
+                >
+                  <option value="NO_INICIADO">Planificado (No iniciado)</option>
+                  <option value="EN_CURSO">En Curso (Ejecución)</option>
+                  <option value="EN_QA">En Pruebas (En QA)</option>
+                  <option value="FINALIZADO">Finalizado</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateSprintModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl transition cursor-pointer"
+                >
+                  Confirmar Registro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4D: EDIT SPRINT MODAL */}
+      {isEditSprintModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-fadeIn flex flex-col">
+            <div className="bg-slate-900 text-white p-5 flex justify-between items-center bg-gradient-to-r from-amber-600 to-amber-700">
+              <div>
+                <h3 className="font-bold text-sm tracking-wide flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Modificar Configuración del Sprint
+                </h3>
+                <p className="text-[11px] text-amber-100 mt-0.5">Modifique metas, fechas, capacidad y estado operacional.</p>
+              </div>
+              <button 
+                onClick={() => setIsEditSprintModalOpen(false)} 
+                className="text-amber-100 hover:text-white transition cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateSprint} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Nombre del Sprint *</label>
+                <input
+                  type="text"
+                  required
+                  value={editSprintName}
+                  onChange={e => setEditSprintName(e.target.value)}
+                  placeholder="Ej. Sprint 5 - API de Envío"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Objetivo / Meta del Sprint</label>
+                <textarea
+                  rows={2}
+                  value={editSprintGoal}
+                  onChange={e => setEditSprintGoal(e.target.value)}
+                  placeholder="Ej. Integrar servicios de tracking y notificaciones push."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none resize-none focus:bg-white focus:border-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Fecha de Inicio</label>
+                  <input
+                    type="date"
+                    value={editSprintStartDate}
+                    onChange={e => setEditSprintStartDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Fecha de Fin</label>
+                  <input
+                    type="date"
+                    value={editSprintEndDate}
+                    onChange={e => setEditSprintEndDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Capacidad (SP) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editSprintCapacity}
+                    onChange={e => setEditSprintCapacity(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Velocidad Requerida</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editSprintVelocity}
+                    onChange={e => setEditSprintVelocity(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Estado del Sprint</label>
+                <select
+                  value={editSprintStatus}
+                  onChange={e => setEditSprintStatus(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-800 outline-none focus:bg-white cursor-pointer"
+                >
+                  <option value="NO_INICIADO">Planificado (No iniciado)</option>
+                  <option value="EN_CURSO">En Curso (Ejecución)</option>
+                  <option value="EN_QA">En Pruebas (En QA)</option>
+                  <option value="FINALIZADO">Finalizado</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditSprintModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition cursor-pointer"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 4A: NEW STORY MODAL */}
       {isStoryFormOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3102,31 +3335,179 @@ export default function ProductBacklogManager({
               {/* TABS: GENERAL */}
               {detailTab === 'general' && (
                 <div className="space-y-6 animate-fadeIn">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-slate-50 p-3 rounded-lg border">
-                      <span className="block text-[8.5px] uppercase font-bold text-slate-400">Tipo</span>
-                      <span className="font-extrabold text-slate-800 text-xs">{selectedStory.type}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-slate-50 p-3 rounded-lg border flex flex-col justify-between">
+                      <span className="block text-[8.5px] uppercase font-bold text-slate-400 mb-1">Tipo</span>
+                      {currentRole === 'CONSULTA' ? (
+                        <span className="font-extrabold text-slate-800 text-xs">{selectedStory.type}</span>
+                      ) : (
+                        <select
+                          value={selectedStory.type}
+                          onChange={(e) => {
+                            const val = e.target.value as StoryType;
+                            setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, type: val } : s));
+                            addLog('Carlos Pérez', `Cambió Tipo de ${selectedStory.code} a ${val}`);
+                          }}
+                          className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none"
+                        >
+                          {storyTypesEnum.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      )}
                     </div>
-                    <div className="bg-slate-50 p-3 rounded-lg border">
-                      <span className="block text-[8.5px] uppercase font-bold text-slate-400">Prioridad</span>
-                      <span className="font-extrabold text-slate-800 text-xs text-red-700">{selectedStory.priority}</span>
+                    <div className="bg-slate-50 p-3 rounded-lg border flex flex-col justify-between">
+                      <span className="block text-[8.5px] uppercase font-bold text-slate-400 mb-1">Prioridad</span>
+                      {currentRole === 'CONSULTA' ? (
+                        <span className="font-extrabold text-slate-800 text-xs text-red-700">{selectedStory.priority}</span>
+                      ) : (
+                        <select
+                          value={selectedStory.priority}
+                          onChange={(e) => {
+                            const val = e.target.value as StoryPriority;
+                            setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, priority: val } : s));
+                            addLog('Carlos Pérez', `Cambió Prioridad de ${selectedStory.code} a ${val}`);
+                          }}
+                          className="bg-transparent border-none text-xs font-extrabold text-red-700 focus:outline-none cursor-pointer p-0 select-none outline-none"
+                        >
+                          {storyPrioritiesEnum.map(pr => <option key={pr} value={pr}>{pr}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border flex flex-col justify-between">
+                      <span className="block text-[8.5px] uppercase font-bold text-slate-400 mb-1">Story Points</span>
+                      {currentRole === 'CONSULTA' ? (
+                        <span className="font-extrabold text-slate-800 text-xs font-mono">{selectedStory.storyPoints} pts</span>
+                      ) : (
+                        <select
+                          value={selectedStory.storyPoints}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, storyPoints: val } : s));
+                            addLog('Carlos Pérez', `Cambió Story Points de ${selectedStory.code} a ${val} pts`);
+                          }}
+                          className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none font-mono"
+                        >
+                          <option value="1">1 pt - Simple</option>
+                          <option value="2">2 pts - Intermedio</option>
+                          <option value="3">3 pts - Normal</option>
+                          <option value="5">5 pts - Complejo</option>
+                          <option value="8">8 pts - Grande</option>
+                          <option value="13">13 pts - Épica</option>
+                          <option value="21">21 pts - Descomunal</option>
+                        </select>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border flex flex-col justify-between">
+                      <span className="block text-[8.5px] uppercase font-bold text-slate-400 mb-1">Métrica MoSCoW</span>
+                      {currentRole === 'CONSULTA' ? (
+                        <span className="font-extrabold text-slate-800 text-xs">{selectedStory.moscow || 'Should'}</span>
+                      ) : (
+                        <select
+                          value={selectedStory.moscow || 'Should'}
+                          onChange={(e) => {
+                            const val = e.target.value as any;
+                            setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, moscow: val } : s));
+                            addLog('Carlos Pérez', `Cambió MoSCoW de ${selectedStory.code} a ${val}`);
+                          }}
+                          className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none"
+                        >
+                          <option value="Must">MUST</option>
+                          <option value="Should">SHOULD</option>
+                          <option value="Could">COULD</option>
+                          <option value="Won’t">WON’T</option>
+                        </select>
+                      )}
                     </div>
                   </div>
 
                   {/* Formato structured list */}
-                  <div className="bg-teal-50/20 border border-teal-200/50 p-5 rounded-2xl space-y-3.5">
-                    <h4 className="font-bold text-teal-950 text-xs uppercase tracking-wider">Estructura Narrativa del Requerimiento:</h4>
-                    <div className="text-sm font-medium space-y-2">
-                      <p className="text-slate-800"><span className="font-black text-teal-800">COMO:</span> {selectedStory.role || 'Planificador logístico'}</p>
-                      <p className="text-slate-800"><span className="font-black text-teal-800">QUIERO:</span> {selectedStory.want || 'verificar tránsitos síncronos'}</p>
-                      <p className="text-slate-800"><span className="font-black text-teal-800">PARA:</span> {selectedStory.benefit || 'calcular existencias semanales sin demoras'}</p>
+                  {currentRole === 'CONSULTA' ? (
+                    <div className="bg-teal-50/20 border border-teal-200/50 p-5 rounded-2xl space-y-3.5">
+                      <h4 className="font-bold text-teal-950 text-xs uppercase tracking-wider">Estructura Narrativa del Requerimiento (Solo Consulta):</h4>
+                      <div className="text-sm font-medium space-y-2">
+                        <p className="text-slate-800"><span className="font-black text-teal-800">COMO:</span> {selectedStory.role || 'Planificador logístico'}</p>
+                        <p className="text-slate-800"><span className="font-black text-teal-800">QUIERO:</span> {selectedStory.want || 'verificar tránsitos síncronos'}</p>
+                        <p className="text-slate-800"><span className="font-black text-teal-800">PARA:</span> {selectedStory.benefit || 'calcular existencias semanales sin demoras'}</p>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-teal-50 border border-teal-200 p-5 rounded-2xl space-y-3">
+                      <div className="flex justify-between items-center">
+                        <label htmlFor="detail-hu-textarea" className="font-extrabold text-[10.5px] uppercase tracking-wider text-teal-950">
+                          Descripción del Requerimiento en Formato Estándar Ágil
+                        </label>
+                        <span className="text-[9px] font-mono bg-teal-100 text-teal-800 px-2 py-0.5 rounded border border-teal-300 font-bold">Modificación Rápida</span>
+                      </div>
+                      <textarea
+                        id="detail-hu-textarea"
+                        rows={4}
+                        placeholder="Escriba la HU en formato: COMO [rol] QUIERO [funcionalidad] PARA [beneficio]"
+                        value={selectedStory.huUnified !== undefined ? selectedStory.huUnified : (selectedStory.role ? `COMO ${selectedStory.role}\nQUIERO ${selectedStory.want}\nPARA ${selectedStory.benefit}` : '')}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          let parsedRole = '';
+                          let parsedWant = val.trim();
+                          let parsedBenefit = '';
 
-                  <div className="bg-white border rounded-xl p-4 shadow-3xs">
-                    <span className="block text-[9.5px] font-bold text-slate-400 uppercase mb-1">Descripción contextualizada</span>
-                    <p className="text-xs text-slate-700 leading-relaxed font-medium">{selectedStory.description || 'No hay notas técnicas documentadas.'}</p>
-                  </div>
+                          if (val.trim()) {
+                            const matchFull = val.match(/como\s+([\s\S]*?)\s+quiero\s+([\s\S]*?)\s+para\s+([\s\S]*)/i);
+                            if (matchFull) {
+                              parsedRole = matchFull[1].trim();
+                              parsedWant = matchFull[2].trim();
+                              parsedBenefit = matchFull[3].trim();
+                            } else {
+                              const matchSimple = val.match(/como\s+([\s\S]*?)\s+quiero\s+([\s\S]*)/i);
+                              if (matchSimple) {
+                                parsedRole = matchSimple[1].trim();
+                                parsedWant = matchSimple[2].trim();
+                              }
+                            }
+                          }
+
+                          setStories(prev => prev.map(s => s.id === selectedStory.id ? {
+                            ...s,
+                            huUnified: val,
+                            role: parsedRole,
+                            want: parsedWant,
+                            benefit: parsedBenefit
+                          } : s));
+                        }}
+                        className="w-full bg-white border border-teal-200 rounded-lg px-3.5 py-3 text-xs text-slate-800 focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none leading-relaxed resize-y font-medium min-h-[100px]"
+                      />
+                      <p className="text-[9.5px] text-teal-750 font-medium">
+                        💡 Este texto se procesa en tiempo real para extraer estructuradamente: <strong>Como</strong>, <strong>Quiero</strong> y <strong>Para</strong>.
+                      </p>
+                    </div>
+                  )}
+
+                  {currentRole === 'CONSULTA' ? (
+                    <div className="bg-white border rounded-xl p-4 shadow-3xs">
+                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase mb-1">Descripción contextualizada (Solo Consulta)</span>
+                      <p className="text-xs text-slate-700 leading-relaxed font-medium">{selectedStory.description || 'No hay notas técnicas documentadas.'}</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white border rounded-xl p-4 shadow-3xs space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label htmlFor="detail-desc-textarea" className="block text-[9.5px] font-bold text-slate-400 uppercase">
+                          Análisis Detallado / Descripción funcional
+                        </label>
+                        <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-300 font-bold">Modificación Rápida</span>
+                      </div>
+                      <textarea
+                        id="detail-desc-textarea"
+                        rows={4}
+                        placeholder="Escriba aquí el análisis detallado técnico o descripción funcional adicional..."
+                        value={selectedStory.description || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setStories(prev => prev.map(s => s.id === selectedStory.id ? {
+                            ...s,
+                            description: val
+                          } : s));
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-teal-500 rounded-lg p-3 text-xs text-slate-800 outline-none leading-relaxed resize-y min-h-[100px]"
+                      />
+                    </div>
+                  )}
 
                   {/* Basic meta information */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t text-xs font-medium">
@@ -3463,6 +3844,39 @@ export default function ProductBacklogManager({
                                 <span className="block text-[10px] text-slate-400 font-mono font-medium">
                                   ✔️ Aprobado de conformidad por {crit.validatedBy} el {crit.validatedAt}
                                 </span>
+                              )}
+
+                              {currentRole !== 'CONSULTA' ? (
+                                <div className="pt-2 border-t border-dashed border-slate-200 flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
+                                  <span className="text-[9.5px] uppercase font-bold text-slate-400 shrink-0">💬 Observaciones / Comentario:</span>
+                                  <input
+                                    type="text"
+                                    value={crit.comment || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setStories(prev => prev.map(s => {
+                                        if (s.id === selectedStory.id) {
+                                          return {
+                                            ...s,
+                                            acceptanceCriteria: s.acceptanceCriteria.map(c => 
+                                              (c.id === crit.id || (!c.id && c.number === crit.number)) ? { ...c, comment: val } : c
+                                            )
+                                          };
+                                        }
+                                        return s;
+                                      }));
+                                    }}
+                                    placeholder="Escriba un comentario o nota de validación sobre esta actividad..."
+                                    className="flex-1 text-[11px] bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-350 rounded px-2.5 py-1 outline-none text-slate-700 font-semibold"
+                                  />
+                                </div>
+                              ) : (
+                                crit.comment && (
+                                  <div className="pt-2 border-t border-dashed border-slate-200 text-[11px] text-slate-600 leading-normal mt-1 flex gap-1.5 items-center">
+                                    <span className="font-extrabold uppercase text-slate-400 text-[9.5px]">💬 Comentario:</span>
+                                    <span className="italic">{crit.comment}</span>
+                                  </div>
+                                )
                               )}
                             </div>
                           )}
