@@ -8,7 +8,7 @@ Este documento técnico de arquitectura expone detalladamente la estructura del 
 
 ## 1. Patrón Arquitectónico del Frontend y Modelo de Flujo de Datos
 
-La aplicación está diseñada bajo el patrón de **Single Page Application (SPA)** implementada en **React (v18+)** con **TypeScript** y empaquetada mediante **Vite**. 
+La aplicación está diseñada bajo el patrón de **Single Page Application (SPA)** implementada en **React (v19+)** con **TypeScript** y empaquetada mediante **Vite**. 
 
 ```
                                ┌────────────────────────────────┐
@@ -152,8 +152,59 @@ A continuación, se tabula detalladamente cómo impacta una acción en un módul
 
 ## 4. Estilos de Programación y Estándares Aplicados
 
-* **Clean Architecture en React:** Separación de componentes visuales de presentación (`src/components/*`) de la lógica del contenedor raíz (`App.tsx`), facilitando la realización de auditorías de código.
+* **Clean Architecture en React:** Separación de componentes visuales de presentación organizados en subcarpetas modulares (`src/features/*`) de la lógica del contenedor raíz (`App.tsx`), facilitando la realización de auditorías de código.
 * **Sistema de Iconos Centralizado:** Uso exclusivo de bibliotecas tipadas nativas (`lucide-react`) para evitar inconsistencias en el diseño.
 * **Diseño Responsivo Intencional:** Interfaces basadas en clases de utilidad de **Tailwind CSS**, permitiendo una legibilidad perfecta en monitores widescreen o pantallas medianas/móviles gracias a los prefijos adaptativos (`lg:`, `md:`, `sm:`).
 * **Ausencia de Dependencias Externas Complejas:** Reducción de fugas de memoria o problemas de compilación mediante el uso óptimo de hooks React integrados (`useEffect`, `useState`, `useMemo`).
 * **Seguridad Sólida:** Ninguna credencial ni clave expuesta en el frontend. Lógicas simplificadas de inicio de sesión con simulaciones robustas que preservan el enfoque del usuario final.
+
+---
+
+## 5. Capa de Persistencia y Patrón Repository (Clean Architecture)
+
+Para desacoplar por completo la interfaz de usuario (UI) y las lógicas de negocio de los detalles técnicos de almacenamiento (localStorage, bases de datos remotas u APIs REST), se ha estructurado una capa de persistencia formal siguiendo los principios de **Clean Architecture**.
+
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │                        CAPA DE DOMINIO                      │
+  │  Define los contratos e interfaces puras de persistencia    │
+  │  (e.g., IProjectRepository, IUserRepository)                │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │                    CAPA DE INFRAESTRUCTURA                  │
+  │  Implementa los adaptadores concretos para almacenamiento   │
+  │                                                             │
+  │      ┌─────────────────────────┐   ┌───────────────────┐    │
+  │      │ LocalStorage Repository  │   │ Real API Adapter  │    │
+  │      │   (Fase 3 - Activo)     │   │   (Preparado)     │    │
+  │      └─────────────────────────┘   └───────────────────┘    │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │                        REGISTRY / INDEX                     │
+  │  Exporta el Unit of Work o Singleton de acceso a datos      │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │                 CAPA DE PRESENTACIÓN (UI)                   │
+  │  Sino se entera de cómo se guardan los datos (Local / API)   │
+  └─────────────────────────────────────────────────────────────┘
+```
+
+### Contratos e Interfaces de Dominio (`src/domain/repositories/`)
+* **`IRepository<T>`**: Contrato genérico con métodos fuertemente tipados para CRUD (`getAll`, `getById`, `create`, `update`, `delete`, `saveAll`).
+* **`IProjectRepository`**: Métodos específicos para consultar portfolios, proyectos, actividades cronograma, presupuestos e hitos.
+* **`IWorkItemRepository`**: Consultas relacionales para historias de usuario, tareas, incidentes y asociaciones por Sprints.
+* **`IUserRepository`**: Verificación de identidades multi-inquilino y asignaciones de roles.
+* **`ITestRepository`**: Consultas de suites de pruebas, casos evaluatorios e historial de QA.
+
+### Adaptadores de Infraestructura (`src/infrastructure/repositories/`)
+* **`LocalRepository<T>`**: Clase base que encapsula la serialización y deserialización a JSON, resolución automática de cuotas de almacenamiento y mitigación de bloqueos de I/O en `localStorage`.
+* **Clases Especializadas (`ProjectLocalRepository`, `WorkItemLocalRepository`, etc.)**: Heredan el comportamiento base CRUD y resuelven consultas relacionales y filtros de dominio de manera local y ultra-ágil.
+
+Esta separación estratégica permite implementar cambios de almacenamiento en caliente (como conectarse a un backend NestJS, Go o Firebase) reemplazando exclusivamente los adaptadores en el archivo central index sin modificar una sola línea de código en los hook states ni componentes visuales.
+

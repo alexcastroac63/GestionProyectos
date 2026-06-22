@@ -47,17 +47,17 @@ import {
 
 // Component Imports
 import { googleSignIn, microsoftSignIn } from './firebase';
-import GanttChart from './components/GanttChart';
-import MockupCanvas from './components/MockupCanvas';
-import DbaSchema from './components/DbaSchema';
-import DevOpsPipeline from './components/DevOpsPipeline';
-import ProjectWBSManager from './components/ProjectWBSManager';
-import ProductBacklogManager from './components/ProductBacklogManager';
-import ScrumBoardAndQaManager from './components/ScrumBoardAndQaManager';
-import KPIDashboard from './components/KPIDashboard';
-import QaSuiteWorkspace from './components/QaSuiteWorkspace';
-import ProjectActivitiesSubTab from './components/ProjectActivitiesSubTab';
-import ProjectNotesSubTab from './components/ProjectNotesSubTab';
+import GanttChart from './features/projects/GanttChart';
+import MockupCanvas from './features/mockups/MockupCanvas';
+import DbaSchema from './features/dba/DbaSchema';
+import DevOpsPipeline from './features/devops/DevOpsPipeline';
+import ProjectWBSManager from './features/projects/ProjectWBSManager';
+import ProductBacklogManager from './features/backlog/ProductBacklogManager';
+import ScrumBoardAndQaManager from './features/scrum/ScrumBoardAndQaManager';
+import KPIDashboard from './features/dashboard/KPIDashboard';
+import QaSuiteWorkspace from './features/qa/QaSuiteWorkspace';
+import ProjectActivitiesSubTab from './features/projects/ProjectActivitiesSubTab';
+import ProjectNotesSubTab from './features/projects/ProjectNotesSubTab';
 
 // Icons Import
 import {
@@ -2979,6 +2979,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                     workItems={workItems}
                     activities={activities}
                     costs={costs}
+                    testRuns={testRuns}
+                    testCases={testCases}
                   />
                 </div>
               )}

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { ProjectActivity, User } from '../types';
+import { ProjectActivity, User } from '../../types';
 import { Plus, Trash2, Calendar, Link, CheckCircle2, Play, Circle, Download, Printer, FileSpreadsheet } from 'lucide-react';
 
 interface GanttChartProps {

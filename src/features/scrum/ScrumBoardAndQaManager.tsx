@@ -9,8 +9,9 @@ import {
   TestCase,
   TestRun,
   TransitionRule
-} from '../types';
-import { DEFAULT_TRANSITION_RULES } from '../data';
+} from '../../types';
+import { DEFAULT_TRANSITION_RULES } from '../../data';
+import { validateStateTransition } from '../../domain/sprintTransition.service';
 
 const formatSprintName = (name: string): string => {
   const match = name.match(/\d+/);
@@ -491,8 +492,6 @@ export default function ScrumBoardAndQaManager({
 
   // Rule Checklist Validations for Transitions
   const validateTransition = (story: WorkItem, targetCol: MainColumnStatus): { success: boolean; errors: string[] } => {
-    const errors: string[] = [];
-    
     // Load rules from localStorage with fallback to defaults
     const savedRulesStr = localStorage.getItem('scrum_transition_rules');
     let activeRules = DEFAULT_TRANSITION_RULES;
@@ -507,132 +506,38 @@ export default function ScrumBoardAndQaManager({
       }
     }
 
-    const isRuleEnabled = (id: string) => {
-      const r = activeRules.find(x => x.id === id);
-      return r ? r.enabled : true;
-    };
+    const techCritCount = techCriteria.filter(tc => tc.user_story_id === story.id).length;
+    const unresolvedCritBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Crítica' || b.severity === 'Bloqueante')).length;
+    const activeBugsCount = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado').length;
+    
+    const storyTests = testCases.filter(tc => tc.work_item_id === story.id);
+    const totalTestCasesCount = storyTests.length;
+    const passedTestCasesCount = storyTests.filter(t => t.status === 'PASSED').length;
+    const failedTestCasesCount = storyTests.filter(t => t.status === 'FAILED').length;
+    
+    const openCriticalBugsForAprobado = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica' || b.severity === 'Alta')).length;
 
-    const getRuleDesc = (id: string, defaultDesc: string) => {
-      const r = activeRules.find(x => x.id === id);
-      return r ? r.desc : defaultDesc;
-    };
+    const storyCriteria = criteria.filter(c => c.user_story_id === story.id);
+    const notPassedCriteriaCount = storyCriteria.filter(c => c.status !== 'No aplica' && c.status !== 'Cumple').length;
 
-    // BACKLOG_SPRINT -> NO_INICIADO
-    if (targetCol === 'NO_INICIADO') {
-      if (isRuleEnabled('no_iniciados_prioridad') && !story.priority) {
-        errors.push(getRuleDesc('no_iniciados_prioridad', 'La historia debe tener prioridad estipulada.'));
-      }
-      if (isRuleEnabled('no_iniciados_responsable') && !story.assignee_id) {
-        errors.push(getRuleDesc('no_iniciados_responsable', 'Debe asignarse un responsable técnico/funcional.'));
-      }
-    }
+    const hasEv = evidences.some(ev => ev.entity_id === story.id && ev.entity_type === 'story');
+    const openBugsForFinalizadoCount = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica')).length;
 
-    // NO_INICIADO -> EN_ANALISIS
-    if (targetCol === 'EN_ANALISIS') {
-      if (isRuleEnabled('en_analisis_descripcion') && (!story.description || story.description.length < 10)) {
-        errors.push(getRuleDesc('en_analisis_descripcion', 'Debe registrarse una descripción clara o analítica del requerimiento.'));
-      }
-      if (isRuleEnabled('en_analisis_responsable') && !story.assignee_id) {
-        errors.push(getRuleDesc('en_analisis_responsable', 'Responsable técnico/funcional no asignado.'));
-      }
-    }
-
-    // EN_ANALISIS -> EN_DESARROLLO (Definition of Ready)
-    if (targetCol === 'EN_DESARROLLO') {
-      if (isRuleEnabled('en_desarrollo_sp') && !story.story_points) {
-        errors.push(getRuleDesc('en_desarrollo_sp', 'DOR: No estimulado. Ingrese Story Points (SP) antes de desarrollar.'));
-      }
-      if (isRuleEnabled('en_desarrollo_unblocked') && (story as any).blocked) {
-        errors.push(getRuleDesc('en_desarrollo_unblocked', 'DOR BLOQUEADA: Desbloquee el requerimiento ingresando el motivo.'));
-      }
-    }
-
-    // EN_DESARROLLO -> CODE_REVIEW
-    if (targetCol === 'CODE_REVIEW') {
-      const techCritCount = techCriteria.filter(tc => tc.user_story_id === story.id).length;
-      if (isRuleEnabled('code_review_criteria') && techCritCount === 0) {
-        errors.push(getRuleDesc('code_review_criteria', 'Debe documentar o seleccionar al menos un componente o Criterio Técnico.'));
-      }
-    }
-
-    // CODE_REVIEW -> LISTO_PARA_QA
-    if (targetCol === 'LISTO_PARA_QA') {
-      const bgs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Crítica' || b.severity === 'Bloqueante'));
-      if (isRuleEnabled('listo_qa_no_crit_bugs') && bgs.length > 0) {
-        errors.push(getRuleDesc('listo_qa_no_crit_bugs', 'Existen bugs críticos o bloqueantes sin resolver en este ítem.'));
-      }
-    }
-
-    // LISTO_PARA_QA -> EN_QA
-    if (targetCol === 'EN_QA') {
-      if (isRuleEnabled('en_qa_sprint_active') && (!currentSprint || ((currentSprint.status as any) !== 'EN_QA' && currentSprint.status !== 'EN_CURSO'))) {
-        errors.push(getRuleDesc('en_qa_sprint_active', 'El Sprint debe estar activo ("En Ejecución" o "En QA") para auditar pruebas.'));
-      }
-    }
-
-    // EN_QA -> DEVUELTO_QA / DEVUELTO CON ERRORES
-    if (targetCol === 'DEVUELTO_QA') {
-      const activeBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado');
-      const testCasesForStory = testCases.filter(tc => tc.work_item_id === story.id);
-      const hasFailed = testCasesForStory.some(tc => tc.status === 'FAILED');
-      
-      if (isRuleEnabled('devuelto_qa_require_bug') && activeBugs.length === 0 && !hasFailed) {
-        errors.push(getRuleDesc('devuelto_qa_require_bug', 'Para devolver la historia debe reportarse al menos un Bug abierto o Caso fallido.'));
-      }
-    }
-
-    // EN_QA -> APROBADO_QA
-    if (targetCol === 'APROBADO_QA') {
-      const storyTests = testCases.filter(tc => tc.work_item_id === story.id);
-      const openCriticalBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica' || b.severity === 'Alta'));
-      
-      if (isRuleEnabled('aprobado_qa_has_cases') && storyTests.length === 0) {
-        errors.push(getRuleDesc('aprobado_qa_has_cases', 'Falta Casos: No se han configurado pruebas para este requerimiento.'));
-      } else {
-        const allCompleted = storyTests.every(t => t.status === 'PASSED');
-        if (isRuleEnabled('aprobado_qa_cases_passed') && !allCompleted) {
-          errors.push(getRuleDesc('aprobado_qa_cases_passed', 'Falta Ejecución: Todos los casos de prueba cargados deben marcarse APROBADO (PASSED).'));
-        }
-      }
-
-      if (isRuleEnabled('aprobado_qa_no_bugs') && openCriticalBugs.length > 0) {
-        errors.push(getRuleDesc('aprobado_qa_no_bugs', 'Defectos Abiertos: No se puede aprobar si cuenta con bugs Críticos/Altos activos.'));
-      }
-
-      // Check criteria validate
-      const storyCriteria = criteria.filter(c => c.user_story_id === story.id);
-      const allPassedCriteria = storyCriteria.every(c => c.status === 'No aplica' || c.status === 'Cumple');
-      if (isRuleEnabled('aprobado_qa_criteria_ok') && storyCriteria.length > 0 && !allPassedCriteria) {
-        errors.push(getRuleDesc('aprobado_qa_criteria_ok', 'Criterios Pendientes: Valide que todos los Criterios de Aceptación obligatorios marquen "Cumple" o "No Aplica".'));
-      }
-    }
-
-    // APROBADO_QA -> APROBADO_FUNCIONAL
-    if (targetCol === 'APROBADO_FUNCIONAL') {
-      const storyTests = testCases.filter(tc => tc.work_item_id === story.id);
-      const allPassed = storyTests.every(t => t.status === 'PASSED');
-      if (isRuleEnabled('aprobado_po_all_passed') && !allPassed) {
-        errors.push(getRuleDesc('aprobado_po_all_passed', 'No autorizado por PO: Es imperativo pasar al 100% las pruebas QA antes.'));
-      }
-    }
-
-    // APROBADO_FUNCIONAL -> FINALIZADO (Definition of Done Compliancy)
-    if (targetCol === 'FINALIZADO') {
-      const hasEv = evidences.some(ev => ev.entity_id === story.id && ev.entity_type === 'story');
-      if (isRuleEnabled('finalizado_evidence') && !hasEv) {
-        errors.push(getRuleDesc('finalizado_evidence', 'DOD INCUMPIDLO: Adjunte por lo menos una Captura/PDF de evidencia funcional antes de Cerrar.'));
-      }
-      
-      const openBugs = bugs.filter(b => b.user_story_id === story.id && b.status !== 'Cerrado' && (b.severity === 'Bloqueante' || b.severity === 'Crítica'));
-      if (isRuleEnabled('finalizado_no_crit_bugs') && openBugs.length > 0) {
-        errors.push(getRuleDesc('finalizado_no_crit_bugs', 'DOD INCUMPLIDO: Sigue existiendo defectos críticos no solventados.'));
-      }
-    }
-
-    return {
-      success: errors.length === 0,
-      errors
-    };
+    return validateStateTransition({
+      story,
+      targetCol,
+      activeRules,
+      techCriteriaCount: techCritCount,
+      unresolvedCriticalBugsCount: targetCol === 'APROBADO_QA' ? openCriticalBugsForAprobado : unresolvedCritBugs,
+      currentSprintStatus: currentSprint?.status as any,
+      activeBugsCount,
+      failedTestCasesCount,
+      totalTestCasesCount,
+      passedTestCasesCount,
+      notPassedCriteriaCount,
+      hasEvidence: hasEv,
+      openBugsCount: openBugsForFinalizadoCount,
+    });
   };
 
   // Drag and drop mechanics

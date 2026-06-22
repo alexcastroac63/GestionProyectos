@@ -27,7 +27,10 @@ import {
   Search,
   X
 } from 'lucide-react';
-import { Project, User, Sprint, WorkItem, ProjectActivity, ProjectCost, Team } from '../types';
+import { Project, User, Sprint, WorkItem, ProjectActivity, ProjectCost, Team, TestRun, TestCase } from '../../types';
+import { calculateBudgetVariation } from '../../domain/budgetDeviation.service';
+import { calculateWeightedPhysicalProgress, calculateScheduleCompliance, evaluateProjectRiskStatus } from '../../domain/projectProgress.service';
+import { calculateQualityFromTestRuns } from '../../domain/qaQuality.service';
 
 interface KPIDashboardProps {
   projects: Project[];
@@ -37,6 +40,8 @@ interface KPIDashboardProps {
   activities: ProjectActivity[];
   costs: ProjectCost[];
   teams?: Team[];
+  testRuns?: TestRun[];
+  testCases?: TestCase[];
 }
 
 export default function KPIDashboard({
@@ -46,7 +51,9 @@ export default function KPIDashboard({
   workItems,
   activities,
   costs,
-  teams = []
+  teams = [],
+  testRuns = [],
+  testCases = []
 }: KPIDashboardProps) {
   // --- Dashboard Navigation & UI State ---
   const [viewMode, setViewMode] = useState<'ejecutiva' | 'operativa'>('ejecutiva');
@@ -110,12 +117,12 @@ export default function KPIDashboard({
       const projActivities = activities.filter(a => a.project_id === proj.id);
       const completedActivitiesValue = projActivities.filter(a => a.status === 'COMPLETADA').length;
       
-      let cronogramaCumplimiento = 100;
-      if (projActivities.length > 0) {
-        cronogramaCumplimiento = Math.round((completedActivitiesValue / projActivities.length) * 100);
-      } else {
-        cronogramaCumplimiento = idx === 0 ? 92 : idx === 1 ? 84 : 68;
-      }
+      const fallbackCronograma = idx === 0 ? 92 : idx === 1 ? 84 : 68;
+      const cronogramaCumplimiento = calculateScheduleCompliance(
+        completedActivitiesValue,
+        projActivities.length,
+        fallbackCronograma
+      );
 
       // 4. Budget Calculations
       const projCosts = costs.filter(c => c.project_id === proj.id);
@@ -124,16 +131,10 @@ export default function KPIDashboard({
       // Presupuesto planificado acumulado (supongamos que es el 80% o 75% del presupuesto total para proyectos activos)
       const presupuestoPlanificadoAcumulado = Math.round(proj.budget_total * 0.75);
       
-      // % VariacionPresupuesto = ((Costo real acumulado - Presupuesto planificado acumulado) / Presupuesto planificado acumulado) × 100
-      let variacionPresupuesto = 0;
-      if (presupuestoPlanificadoAcumulado > 0) {
-        variacionPresupuesto = Math.round(((costRealAcumulado - presupuestoPlanificadoAcumulado) / presupuestoPlanificadoAcumulado) * 100);
-      } else {
-        variacionPresupuesto = idx === 0 ? -4 : idx === 1 ? 6 : 14;
-      }
-      if (variacionPresupuesto < 0) {
-        variacionPresupuesto = 0;
-      }
+      const fallbackVariacion = idx === 0 ? 0 : idx === 1 ? 6 : 14; 
+      const variacionPresupuesto = presupuestoPlanificadoAcumulado > 0
+        ? calculateBudgetVariation(costRealAcumulado, presupuestoPlanificadoAcumulado)
+        : fallbackVariacion;
 
       // 5. Avance Físico % (Fases ponderadas o total de entregables)
       let avanceLevantamiento = idx === 0 ? 100 : idx === 1 ? 100 : 100;
@@ -142,12 +143,12 @@ export default function KPIDashboard({
       let avancePruebas = idx === 0 ? 30 : idx === 1 ? 10 : 0;
       let avanceProduccion = idx === 0 ? 0 : idx === 1 ? 0 : 0;
 
-      const calcAvanceFisico = Math.round(
-        (avanceLevantamiento * 0.15) +
-        (avanceDiseno * 0.20) +
-        (avanceDesarrollo * 0.35) +
-        (avancePruebas * 0.20) +
-        (avanceProduccion * 0.10)
+      const calcAvanceFisico = calculateWeightedPhysicalProgress(
+        avanceLevantamiento,
+        avanceDiseno,
+        avanceDesarrollo,
+        avancePruebas,
+        avanceProduccion
       );
 
       // 6. Velocidad del equipo ágil & Historias
@@ -170,22 +171,15 @@ export default function KPIDashboard({
       }
 
       // 7. Calidad de entregables
-      let calidadPercent = idx === 0 ? 94 : idx === 1 ? 86 : 72;
+      const projWorkItemIds = workItems.filter(w => w.project_id === proj.id).map(w => w.id);
+      const projTestCaseIds = testCases ? testCases.filter(tc => tc.work_item_id && projWorkItemIds.includes(tc.work_item_id)).map(tc => tc.id) : [];
+      const projTestRuns = testRuns ? testRuns.filter(tr => projTestCaseIds.includes(tr.test_case_id)) : [];
+      
+      const fallbackCalidad = idx === 0 ? 94 : idx === 1 ? 86 : 72;
+      const calidadPercent = calculateQualityFromTestRuns(projTestRuns, fallbackCalidad);
 
       // 8. RIESGO GENERAL (Cálculo según reglas exactas del usuario)
-      // Si %CumplimientoCronograma < 75% o %VariacionPresupuesto > 10% o %Calidad < 75%, entonces "Rojo".
-      // Si %CumplimientoCronograma entre 75% y 89% o %VariacionPresupuesto entre 5% y 10% o %Calidad entre 75% y 89%, entonces "Amarillo".
-      // Si %CumplimientoCronograma >= 90% y %VariacionPresupuesto <= 5% y %Calidad >= 90%, entonces "Verde".
-      let riesgo = 'Verde';
-      if (cronogramaCumplimiento < 75 || variacionPresupuesto > 10 || calidadPercent < 75) {
-        riesgo = 'Rojo';
-      } else if (
-        (cronogramaCumplimiento >= 75 && cronogramaCumplimiento < 90) ||
-        (variacionPresupuesto > 5 && variacionPresupuesto <= 10) ||
-        (calidadPercent >= 75 && calidadPercent < 90)
-      ) {
-        riesgo = 'Amarillo';
-      }
+      const riesgo = evaluateProjectRiskStatus(cronogramaCumplimiento, variacionPresupuesto, calidadPercent);
 
       return {
         ...proj,

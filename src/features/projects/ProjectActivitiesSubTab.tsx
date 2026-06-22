@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ProjectActivity, WorkItem, User, Sprint } from '../types';
+import { ProjectActivity, WorkItem, User, Sprint } from '../../types';
 import { 
   Plus, 
   Trash2, 

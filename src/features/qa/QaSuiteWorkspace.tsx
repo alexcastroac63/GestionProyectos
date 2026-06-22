@@ -8,7 +8,7 @@ import {
   TestCase, 
   TestRun,
   ProjectActivity
-} from '../types';
+} from '../../types';
 import { 
   ShieldCheck, 
   Activity, 
@@ -39,6 +39,17 @@ import {
   Paperclip,
   Image
 } from 'lucide-react';
+import {
+  calculateCoverageRate,
+  calculateProgressRate,
+  calculateApprovalRate,
+  calculateFailRate,
+  calculateBugsPerRequirement,
+  calculateOpenBugsRate,
+  calculateBlockedRate,
+  calculateReadinessRate
+} from '../../domain/qaQuality.service';
+
 
 interface QaSuiteWorkspaceProps {
   selectedProjectId: string;
@@ -194,40 +205,41 @@ export default function QaSuiteWorkspace({
     projectCases.some(c => c.work_item_id === wi.id)
   ).length;
   const totalHUs = projectWorkItems.length;
-  const coverageRate = totalHUs > 0 ? Math.round((husWithTests / totalHUs) * 100) : 100;
+  const coverageRate = calculateCoverageRate(husWithTests, totalHUs);
 
   // 2. Avance de ejecución: (Executed tests / Total tests) * 100
   // An executed test is anything not pending (i.e., PASSED or FAILED)
   const executedCases = projectCases.filter(c => c.status !== 'PENDING');
-  const progressRate = projectCases.length > 0 ? Math.round((executedCases.length / projectCases.length) * 100) : 100;
+  const progressRate = calculateProgressRate(executedCases.length, projectCases.length);
 
   // 3. Tasa de aprobación: (Passed tests / Executed tests) * 100
   const passedCases = projectCases.filter(c => c.status === 'PASSED');
-  const approvalRate = executedCases.length > 0 ? Math.round((passedCases.length / executedCases.length) * 100) : 100;
+  const approvalRate = calculateApprovalRate(passedCases.length, executedCases.length);
 
   // 4. Tasa de fallos: (Failed tests / Executed tests) * 100
   const failedCases = projectCases.filter(c => c.status === 'FAILED');
-  const failRate = executedCases.length > 0 ? Math.round((failedCases.length / executedCases.length) * 100) : 0;
+  const failRate = calculateFailRate(failedCases.length, executedCases.length);
 
   // 5. Defectos por requerimiento: (Total bugs for project / Total tested requirements)
   const projectBugs = bugs.filter(b => b.sprint_id === activeSprint?.id || activeSprints.map(s => s.id).includes(b.sprint_id));
   const testedHUs = husWithTests;
-  const bugsPerRequirement = testedHUs > 0 ? (projectBugs.length / testedHUs).toFixed(1) : '0.0';
+  const bugsPerRequirement = calculateBugsPerRequirement(projectBugs.length, testedHUs);
 
   // 6. Defectos abiertos: (Open bugs / Total bugs) * 100
   const openBugsCount = projectBugs.filter(b => b.status === 'Abierto' || b.status === 'Asignado' || b.status === 'En corrección').length;
-  const openBugsRate = projectBugs.length > 0 ? Math.round((openBugsCount / projectBugs.length) * 100) : 0;
+  const openBugsRate = calculateOpenBugsRate(openBugsCount, projectBugs.length);
 
   // 7. Pruebas bloqueadas: (Blocked tests / Total planned tests) * 100
   // Let's count tests that are explicitly marked blocked or whose execution failed/blocked
   // We can treat cases with some blocked metadata as blocked, or we can check the stepStatuses. Let's look at blocked state in cases, we can simulate 1 or 2 as blocked if list is empty or track dynamically.
   const blockedCasesCount = projectCases.filter(c => (c as any).isBlocked || c.status === 'PENDING' && (c as any).priority === 'Alta' && projectBugs.some(b => b.user_story_id === c.work_item_id)).length;
-  const blockedRate = projectCases.length > 0 ? Math.round((blockedCasesCount / projectCases.length) * 100) : 0;
+  const blockedRate = calculateBlockedRate(blockedCasesCount, projectCases.length);
 
   // 8. Readiness de liberación (Ready to Release): (Passed tests without critical defects / Total critical tests) * 100
   const criticalCases = projectCases.filter(c => (c as any).priority === 'Alta' || c.status === 'PASSED');
   const criticalCrashed = projectBugs.some(b => b.severity === 'Bloqueante' || b.severity === 'Crítica');
-  const readinessRate = criticalCrashed ? Math.max(20, Math.round(approvalRate * 0.75)) : approvalRate;
+  const readinessRate = calculateReadinessRate(approvalRate, criticalCrashed);
+
 
   // Handlers for suites and cases creation
   const handleCreateSuite = (e: React.FormEvent) => {

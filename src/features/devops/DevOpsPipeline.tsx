@@ -10,7 +10,14 @@ import {
   ExternalLink, Info, Code, Eye, HelpCircle, HardDrive, Lock,
   Activity, Search, Plus, X, Users, Settings, StopCircle
 } from 'lucide-react';
-import { Project } from '../types';
+import { Project } from '../../types';
+import {
+  calculateDevOpsProgress,
+  getSimulatedETag as domainGetSimulatedETag,
+  getNextCpuUsage,
+  getNextMemoryUsage,
+  calculateTotalContainersMetrics
+} from '../../domain/devopsPipeline.service';
 
 export interface DevRepository {
   id: string;
@@ -400,6 +407,8 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
     }
   ]);
 
+  const containerMetrics = calculateTotalContainersMetrics(portainerContainers);
+
   const dockerServices = [
     { name: 'postgres', port: 5432, role: 'PostgreSQL 16 Database host', status: 'ACTIVE' },
     { name: 'api-gateway', port: 4000, role: 'Nginx gateway router /api/*', status: 'ACTIVE' },
@@ -654,20 +663,11 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
     const telemetryInterval = setInterval(() => {
       setPortainerContainers(prev => prev.map(c => {
         if (c.status !== 'running') return c;
-        // Minor dynamic variation in CPU Usage (+ or - 0.2)
-        const diff = (Math.random() - 0.5) * 0.4;
-        const nextCpu = Math.max(0.1, Number((c.cpu + diff).toFixed(1)));
-        
-        // Minor dynamic memory simulation (e.g. modify MB value by +/- 0.5 MB)
-        const memParts = c.memory.split(' ');
-        if (memParts.length > 0) {
-          const numericMem = parseFloat(memParts[0]);
-          const nextNumericMem = Math.max(5, Number((numericMem + (Math.random() - 0.5) * 0.8).toFixed(1)));
-          const nextMemory = `${nextNumericMem} MB / 8.0 GB`;
-          return { ...c, cpu: nextCpu, memory: nextMemory };
-        }
-        
-        return { ...c, cpu: nextCpu };
+        return {
+          ...c,
+          cpu: getNextCpuUsage(c.cpu),
+          memory: getNextMemoryUsage(c.memory)
+        };
       }));
     }, 3000);
 
@@ -1032,12 +1032,7 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
 
   // Safe ETag calculator
   const getSimulatedETag = (name: string) => {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = (hash << 5) - hash + name.charCodeAt(i);
-      hash |= 0;
-    }
-    return `"${Math.abs(hash).toString(16)}09825b4bc7038e1e"` ;
+    return domainGetSimulatedETag(name);
   };
 
   return (
@@ -1437,13 +1432,13 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
               <div className="flex justify-between items-center text-xs">
                 <span className="font-semibold text-slate-500">Progreso del setup:</span>
                 <span className="font-black text-indigo-600">
-                  {installSteps.filter(s => s.isCompleted).length} de {installSteps.length} Pasos ({Math.round((installSteps.filter(s => s.isCompleted).length / (installSteps.length || 1)) * 100)}%)
+                  {installSteps.filter(s => s.isCompleted).length} de {installSteps.length} Pasos ({calculateDevOpsProgress(installSteps.filter(s => s.isCompleted).length, installSteps.length)}%)
                 </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
                 <div 
                   className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.round((installSteps.filter(s => s.isCompleted).length / (installSteps.length || 1)) * 100)}%` }}
+                  style={{ width: `${calculateDevOpsProgress(installSteps.filter(s => s.isCompleted).length, installSteps.length)}%` }}
                 />
               </div>
             </div>
@@ -1746,7 +1741,7 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
                     }`}
                   >
                     <Terminal className="w-3.5 h-3.5 text-teal-400" />
-                    Contenedores ({portainerContainers.length})
+                    Contenedores ({containerMetrics.total})
                   </button>
                   <button
                     onClick={() => setPortainerNavTab('images')}
@@ -1835,9 +1830,9 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
                       <div className="space-y-1.5">
                         <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">CONTENEDORES</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-black text-slate-100">{portainerContainers.length}</span>
+                          <span className="text-2xl font-black text-slate-100">{containerMetrics.total}</span>
                           <span className="text-[10px] text-emerald-400 font-bold">
-                            ({portainerContainers.filter(c => c.status === 'running').length} en línea)
+                            ({containerMetrics.running} en línea)
                           </span>
                         </div>
                       </div>

@@ -28,7 +28,7 @@ import {
   UploadCloud,
   File
 } from 'lucide-react';
-import { NoteType, ProjectNote, NoteAttachment } from '../types';
+import { NoteType, ProjectNote, NoteAttachment } from '../../types';
 
 interface ProjectNotesSubTabProps {
   projectId: string;

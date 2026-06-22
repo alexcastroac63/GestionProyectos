@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User } from '../types';
+import { User } from '../../types';
 import {
   ChevronRight,
   ChevronDown,
@@ -424,6 +424,110 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       durationDays: 7,
       progress: 0,
       priority: 'MEDIA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+
+    // FASE 5
+    {
+      id: 'item-f5',
+      projectId,
+      level: 'FASE',
+      name: 'Fase V: DevOps, Telemetría y Despliegue en Producción',
+      startDate: '2026-06-26',
+      endDate: '2026-07-05',
+      durationDays: 10,
+      progress: 0,
+      priority: 'MEDIA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m1',
+      projectId, parentId: 'item-f5',
+      level: 'MODULO',
+      name: 'Módulo: Canalización Automatizada de Despliegue',
+      startDate: '2026-06-26',
+      endDate: '2026-06-30',
+      durationDays: 5,
+      progress: 0,
+      priority: 'MEDIA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m1-t1',
+      projectId, parentId: 'item-f5-m1',
+      level: 'TAREA',
+      name: 'Simulador intermitente de ejecución de pipeline (Build, Unit Testing, Docker)',
+      assignedToId: 'u-1', // Carlos Pérez
+      startDate: '2026-06-26',
+      endDate: '2026-06-28',
+      durationDays: 3,
+      progress: 0,
+      priority: 'ALTA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m1-t2',
+      projectId, parentId: 'item-f5-m1',
+      level: 'TAREA',
+      name: 'Alineación de puerto único y orquestador local en docker-compose',
+      assignedToId: 'u-4', // Alex Castro (DevOps)
+      startDate: '2026-06-29',
+      endDate: '2026-06-30',
+      durationDays: 2,
+      progress: 0,
+      priority: 'MEDIA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m2',
+      projectId, parentId: 'item-f5',
+      level: 'MODULO',
+      name: 'Módulo: Telemetría y Almacenamiento Seguro Cloud',
+      startDate: '2026-07-01',
+      endDate: '2026-07-05',
+      durationDays: 5,
+      progress: 0,
+      priority: 'MEDIA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m2-t1',
+      projectId, parentId: 'item-f5-m2',
+      level: 'TAREA',
+      name: 'Consolidación de métricas deterministas de contenedores',
+      assignedToId: 'u-4', // Alex Castro
+      startDate: '2026-07-01',
+      endDate: '2026-07-03',
+      durationDays: 3,
+      progress: 0,
+      priority: 'ALTA',
+      status: 'PENDIENTE',
+      comments: [],
+      evidenceFiles: []
+    },
+    {
+      id: 'item-f5-m2-t2',
+      projectId, parentId: 'item-f5-m2',
+      level: 'TAREA',
+      name: 'Simulación del Bucket local utilizando ETag criptográfico',
+      assignedToId: 'u-4', // Alex Castro
+      startDate: '2026-07-04',
+      endDate: '2026-07-05',
+      durationDays: 2,
+      progress: 0,
+      priority: 'BAJA',
       status: 'PENDIENTE',
       comments: [],
       evidenceFiles: []
