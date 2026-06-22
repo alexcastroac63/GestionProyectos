@@ -131,6 +131,7 @@ export interface ProjectActivity {
   id: string;
   project_id: string;
   sprint_id?: string;
+  work_item_id?: string; // links activity to a User Story (HU)
   name: string;
   description: string;
   assigned_to_id?: string;
@@ -166,6 +167,13 @@ export interface TestRun {
   evidence: string;
   notes: string;
   executed_at: string;
+  attachments?: {
+    id: string;
+    name: string;
+    url?: string;
+    type: 'image' | 'url';
+    data?: string;
+  }[];
 }
 
 export interface Mockup {
@@ -252,5 +260,34 @@ export interface TransitionRule {
   category: string;
   targetCol: string;
   enabled: boolean;
+}
+
+export interface NoteType {
+  id: string;
+  name: string;
+  description: string;
+  color: string; // Color identifier: 'blue', 'amber', 'rose', 'emerald', 'indigo', 'purple', 'slate'
+  active: boolean; // For deactivating types
+}
+
+export interface NoteAttachment {
+  id: string;
+  name: string;
+  type: 'file' | 'link';
+  url: string; // URL link or simulated uploaded blob/filename
+  uploaded_at: string;
+}
+
+export interface ProjectNote {
+  id: string;
+  project_id: string;
+  type_id: string; // NoteType association
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  created_by_id?: string; // Optional user reference
+  active: boolean; // For deactivating notes (archiving/hiding)
+  attachments?: NoteAttachment[];
 }
 

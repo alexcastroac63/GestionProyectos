@@ -1184,27 +1184,27 @@ export default function ScrumBoardAndQaManager({
 
         {/* CONTENIDO DESPLEGABLE */}
         {isTopControlsExpanded && (
-          <div className="p-6 space-y-6 relative z-10 animate-fadeIn">
-            <div className="flex flex-col xl:flex-row justify-between gap-6 relative z-10">
-              <div>
-                <p className="text-xs text-slate-400 mt-2 max-w-2xl italic">
+          <div className="p-4 sm:p-6 space-y-6 relative z-10 animate-fadeIn" id="scrum-top-panel-expanded">
+            <div className="flex flex-col xl:flex-row justify-between gap-4 sm:gap-6 relative z-10">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1 max-w-2xl italic leading-relaxed">
                   <strong>Objetivo:</strong> {currentSprint?.goal || 'No se tiene un objetivo explícito parametrizado para este sprint de desarrollo.'}
                 </p>
 
-                <div className="flex flex-wrap gap-4 mt-4 text-[11px] text-slate-350">
-                  <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60">📅 <strong>Fechas:</strong> {currentSprint?.start_date || 'N/A'} al {currentSprint?.end_date || 'N/A'}</span>
+                <div className="flex flex-wrap gap-2.5 mt-3 text-[10px] sm:text-[11px] text-slate-350">
+                  <span className="bg-slate-800 py-1 px-2.5 rounded-lg border border-slate-700/60 break-all select-all">📅 <strong>Fechas:</strong> {currentSprint?.start_date || 'N/A'} al {currentSprint?.end_date || 'N/A'}</span>
                 </div>
               </div>
 
               {/* Action controller for Sprint Status (Specification 2, 18) */}
-              <div className="flex flex-col justify-center sm:items-end gap-3 shrink-0">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Controles de Transición del Sprint</span>
+              <div className="flex flex-col justify-center sm:items-end gap-2.5 shrink-0 w-full xl:w-auto">
+                <span className="text-[9px] sm:text-[10px] font-extrabold text-slate-450 uppercase tracking-wider block">Controles de Transición del Sprint</span>
                 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                   {currentSprint?.status === 'NO_INICIADO' && (
                     <button
                       onClick={() => handleSprintStatusToggle('EN_CURSO')}
-                      className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                      className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-[11px] sm:text-xs px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto"
                     >
                       🚀 Iniciar Sprint a "En Ejecución"
                     </button>
@@ -1213,7 +1213,7 @@ export default function ScrumBoardAndQaManager({
                   {currentSprint?.status === 'EN_CURSO' && (
                     <button
                       onClick={() => handleSprintStatusToggle('EN_QA')}
-                      className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-950/40"
+                      className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] sm:text-xs px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/40 w-full sm:w-auto"
                     >
                       🧪 Activar Fase "En QA" (Configuración QA)
                     </button>
@@ -1222,14 +1222,14 @@ export default function ScrumBoardAndQaManager({
                   {(currentSprint?.status as any) === 'EN_QA' && (
                     <button
                       onClick={() => handleSprintStatusToggle('FINALIZADO')}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/40 w-full sm:w-auto"
                     >
                       🏁 Finalizar &amp; Cerrar Sprint (Check DoD)
                     </button>
                   )}
 
                   {currentSprint?.status === 'FINALIZADO' && (
-                    <span className="bg-slate-800 text-slate-400 font-mono text-xs font-bold py-2 px-4 rounded-xl border border-slate-700/60 block text-center">
+                    <span className="bg-slate-800 text-slate-400 font-mono text-[11px] sm:text-xs font-bold py-2 px-4 rounded-xl border border-slate-700/60 block text-center w-full sm:w-auto select-none">
                       🔒 SPRINT COMPLETADO &amp; CERRADO
                     </span>
                   )}
@@ -1237,7 +1237,7 @@ export default function ScrumBoardAndQaManager({
 
                 {/* Error logs banner if DoD fails */}
                 {sprintCloseErrors.length > 0 && (
-                  <div className="bg-red-500/15 border border-red-500/45 rounded-xl p-3 max-w-md text-[11px] text-red-200">
+                  <div className="bg-red-500/15 border border-red-500/45 rounded-xl p-3 max-w-full sm:max-w-md text-[11px] text-red-200">
                     <span className="font-bold block text-red-400 mb-1">⚠️ Error al finalizar (Falta DoD):</span>
                     <ul className="list-disc pl-4 space-y-0.5">
                       {sprintCloseErrors.map((err, i) => <li key={i}>{err}</li>)}
@@ -1247,8 +1247,8 @@ export default function ScrumBoardAndQaManager({
               </div>
             </div>
 
-            {/* Dashboard KPIs strip (Specification 19) */}
-            <div className="mt-6 pt-6 border-t border-slate-850/60 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            {/* Dashboard KPIs grid strip (Specification 19) */}
+            <div className="mt-6 pt-6 border-t border-slate-850/60 grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
               <div className="bg-slate-850 p-3 rounded-xl border border-slate-800/50">
                 <span className="text-[10px] text-slate-400 font-bold block">AVANCE SCRUM</span>
                 <span className="text-xl font-extrabold text-teal-400 font-mono">{sprintProgressPercent}%</span>

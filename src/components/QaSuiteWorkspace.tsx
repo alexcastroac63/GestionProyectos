@@ -6,7 +6,8 @@ import {
   Project, 
   TestSuite, 
   TestCase, 
-  TestRun 
+  TestRun,
+  ProjectActivity
 } from '../types';
 import { 
   ShieldCheck, 
@@ -31,7 +32,12 @@ import {
   ChevronDown, 
   TrendingUp, 
   HelpCircle,
-  FileText
+  FileText,
+  Upload,
+  Link,
+  FileImage,
+  Paperclip,
+  Image
 } from 'lucide-react';
 
 interface QaSuiteWorkspaceProps {
@@ -51,6 +57,8 @@ interface QaSuiteWorkspaceProps {
   setTestRuns: React.Dispatch<React.SetStateAction<TestRun[]>>;
   addLog: (user: string, text: string) => void;
   loggedInUser?: User;
+  activities?: ProjectActivity[];
+  setActivities?: React.Dispatch<React.SetStateAction<ProjectActivity[]>>;
 }
 
 // Interactive auditing criteria interface
@@ -80,7 +88,9 @@ export default function QaSuiteWorkspace({
   testRuns,
   setTestRuns,
   addLog,
-  loggedInUser
+  loggedInUser,
+  activities = [],
+  setActivities
 }: QaSuiteWorkspaceProps) {
   
   // Tabs: metrics, test_cases, executions, bugs, audit_matrix
@@ -121,11 +131,15 @@ export default function QaSuiteWorkspace({
   const [overallNotes, setOverallNotes] = useState('');
   const [overallEnvironment, setOverallEnvironment] = useState<'Dev' | 'QA' | 'Staging' | 'UAT' | 'Prod'>('QA');
   const [attachingBugAuto, setAttachingBugAuto] = useState(false);
+  const [tempAttachments, setTempAttachments] = useState<{ id: string; name: string; url?: string; type: 'image' | 'url'; data?: string }[]>([]);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlNameInput, setUrlNameInput] = useState('');
 
   // States for custom test runner bugs
   const [defectTitle, setDefectTitle] = useState('');
   const [defectDesc, setDefectDesc] = useState('');
   const [defectSeverity, setDefectSeverity] = useState<'Bloqueante' | 'Crítica' | 'Alta' | 'Media' | 'Baja'>('Media');
+  const [defectAssigneeId, setDefectAssigneeId] = useState('');
 
   // Load compliance matrix state or load defaults
   const [auditRows, setAuditRows] = useState<AuditCriterionRow[]>(() => {
@@ -278,6 +292,9 @@ export default function QaSuiteWorkspace({
     setDefectTitle('');
     setDefectDesc('');
     setAttachingBugAuto(false);
+    setTempAttachments([]);
+    setUrlInput('');
+    setUrlNameInput('');
   };
 
   // Run tester step transition
@@ -296,6 +313,63 @@ export default function QaSuiteWorkspace({
     });
   };
 
+  const handleFileDropOrSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const isImage = file.type.startsWith('image/');
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result as string;
+      setTempAttachments(prev => [
+        ...prev,
+        {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          name: file.name,
+          type: isImage ? 'image' : 'url',
+          data: base64Data
+        }
+      ]);
+      addLog('Valentina Rojas (QA)', `Adjuntó archivo de evidencia de calidad: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUrlAttach = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!urlInput.trim()) return;
+    let url = urlInput.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+    
+    let displayDomain = 'Web';
+    try {
+      displayDomain = new URL(url).hostname;
+    } catch (_) {
+      // ignores invalid url constructs
+    }
+    
+    const cleanName = urlNameInput.trim() || `Enlace de Soporte (${displayDomain})`;
+    
+    setTempAttachments(prev => [
+      ...prev,
+      {
+        id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: cleanName,
+        url: url,
+        type: 'url'
+      }
+    ]);
+    setUrlInput('');
+    setUrlNameInput('');
+    addLog('Valentina Rojas (QA)', `Adjuntó hipervínculo de soporte técnico: ${url}`);
+  };
+
+  const handleRemoveTempAttachment = (id: string) => {
+    setTempAttachments(prev => prev.filter(att => att.id !== id));
+  };
+
   const handleFinishExecution = (status: 'PASSED' | 'FAILED') => {
     if (!executingCaseId) return;
     const tCase = projectCases.find(c => c.id === executingCaseId);
@@ -312,7 +386,8 @@ export default function QaSuiteWorkspace({
       status,
       evidence: `Entorno: ${overallEnvironment} | Trama temporal validada localmente. Evidencias grabadas de manera íntegra.`,
       notes: overallNotes || 'Caso de prueba certificado exitosamente de manera manual.',
-      executed_at: new Date().toISOString()
+      executed_at: new Date().toISOString(),
+      attachments: tempAttachments
     };
     setTestRuns(prev => [newRun, ...prev]);
 
@@ -343,7 +418,51 @@ export default function QaSuiteWorkspace({
         reported_at: new Date().toLocaleDateString()
       };
       syncBugs([newBug, ...bugs]);
-      addLog('Valentina Rojas (QA)', `Falla detectada en "${tCase.title}". Se reportó de forma automática el bug ${bugCode}.`);
+
+      // Create a global Backlog WordItem BUG synced back
+      const newWIKey = `BUG-${100 + workItems.length + 1}`;
+      const newBacklogBug: WorkItem = {
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        project_id: selectedProjectId,
+        sprint_id: activeSprint?.id || undefined,
+        key: newWIKey,
+        title: `🐞 [QA BUG] - ${defectTitle || `Falló Caso: ${tCase.title}`}`,
+        description: defectDesc || `Reportado por fallo en el caso "${tCase.title}".`,
+        type: 'BUG',
+        status: activeSprint?.id ? 'POR_HACER' : 'BACKLOG',
+        priority: defectSeverity === 'Bloqueante' || defectSeverity === 'Crítica' ? 'HIGH' : 'MEDIUM',
+        assignee_id: defectAssigneeId || undefined,
+        created_at: new Date().toISOString()
+      };
+      setWorkItems(prev => [...prev, newBacklogBug]);
+
+      // Create standard ProjectActivity bug if setActivities is provided
+      if (setActivities) {
+        const newAct: ProjectActivity = {
+          id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          project_id: selectedProjectId,
+          sprint_id: activeSprint?.id || undefined,
+          name: `🚧 BUG QA: ${defectTitle || `Falla en: ${tCase.title}`}`,
+          description: `Severidad: ${defectSeverity}. Pasos: ${tCase.steps.join(' -> ')}`,
+          assigned_to_id: defectAssigneeId || undefined,
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date(Date.now() + 3*24*60*60*1000).toISOString().split('T')[0],
+          duration_days: 3,
+          progress: 0,
+          status: 'PENDIENTE'
+        };
+        setActivities(prev => [...prev, newAct]);
+      }
+
+      const assignedUser = users.find(u => u.id === defectAssigneeId);
+      const assignedName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}` : 'Sin asignar';
+
+      addLog('Valentina Rojas (QA)', `Falla detectada en "${tCase.title}". Se reportó de forma automática el bug ${bugCode} y se creó actividad en Sprint, asignado a: ${assignedName}.`);
+
+      // Reset defect form states
+      setDefectTitle('');
+      setDefectDesc('');
+      setDefectAssigneeId('');
     } else {
       addLog('Valentina Rojas (QA)', `Aprobó adecuadamente el caso de prueba: "${tCase.title}"`);
     }
@@ -1069,20 +1188,125 @@ export default function QaSuiteWorkspace({
                   {/* Right side: Defect report simulation and attachments */}
                   <div className="space-y-4">
                     
-                    <div className="bg-slate-850 border border-slate-800 p-4 rounded-xl space-y-3">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-widest">
-                        Evidencias Soportadas
+                    <div className="bg-slate-850 border border-slate-800 p-4 rounded-xl space-y-3" id="qas-execution-evidence-panel">
+                      <span className="text-[10px] font-bold text-teal-400 uppercase block tracking-widest flex items-center gap-1">
+                        <Paperclip className="w-3 h-3" /> Evidencias Y Adjuntos de Calidad
                       </span>
-                      <p className="text-[10px] text-slate-400 font-medium">Archivos y respaldos adjuntos al caso para resguardos de auditoría de calidad:</p>
-                      
-                      <div className="p-2.5 bg-slate-900 rounded border border-slate-800 text-[11px] font-semibold text-teal-400 flex items-center justify-between">
-                        <span>📸 Captura_Sandbox_Ref.png</span>
-                        <Check className="w-3.5 h-3.5 font-bold" />
+                      <p className="text-[10px] text-slate-300">
+                        Cargue capturas o direcciones URL para garantizar la veracidad de la certificación:
+                      </p>
+
+                      {/* CONTENEDOR DRAG AND DROP */}
+                      <div 
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.add('border-teal-500', 'bg-teal-950/10');
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove('border-teal-500', 'bg-teal-950/10');
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove('border-teal-500', 'bg-teal-950/10');
+                          handleFileDropOrSelect(e.dataTransfer.files);
+                        }}
+                        className="border-2 border-dashed border-slate-700 hover:border-teal-500/80 rounded-xl p-4 text-center cursor-pointer transition bg-slate-900/40 relative group"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const fileInput = document.getElementById('evidence-file-input');
+                          if (fileInput) fileInput.click();
+                        }}
+                        id="qas-drag-drop"
+                      >
+                        <input
+                          type="file"
+                          id="evidence-file-input"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleFileDropOrSelect(e.target.files)}
+                        />
+                        <Upload className="w-6 h-6 text-slate-405 group-hover:text-teal-400 mx-auto mb-1 transition-colors" />
+                        <span className="text-[10px] text-slate-200 font-bold block">
+                          Arrastra y suelta tu captura aquí
+                        </span>
+                        <span className="text-[9px] text-slate-500 block mt-0.5">
+                          O haz clic para examinar (Imagen de evidencia)
+                        </span>
                       </div>
-                      <div className="p-2.5 bg-slate-900 rounded border border-slate-800 text-[11px] font-semibold text-indigo-400 flex items-center justify-between">
-                        <span>📝 Console_Logs_PostgreSQL.txt</span>
-                        <Check className="w-3.5 h-3.5 font-bold" />
+
+                      {/* FORMULARIO DE ENLACES URL */}
+                      <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 space-y-2" onClick={e => e.stopPropagation()}>
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                          ⚡ Vincular Dirección URL / Mockup / Logs
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Nombre explicativo (ej. Logs Servidor)"
+                            value={urlNameInput}
+                            onChange={e => setUrlNameInput(e.target.value)}
+                            className="bg-slate-950 border border-slate-850 rounded px-2 py-1 text-[11px] text-white focus:outline-none placeholder-slate-600 focus:border-indigo-500/50"
+                          />
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="https://example.com/evidencia"
+                              value={urlInput}
+                              onChange={e => setUrlInput(e.target.value)}
+                              className="flex-1 bg-slate-950 border border-slate-850 rounded px-2 py-1 text-[11px] text-white focus:outline-none placeholder-slate-600 focus:border-indigo-500/50"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleUrlAttach}
+                              className="bg-indigo-650 hover:bg-indigo-600 text-white px-2.5 rounded text-[10px] font-bold cursor-pointer transition shrink-0"
+                            >
+                              Adjuntar
+                            </button>
+                          </div>
+                        </div>
                       </div>
+
+                      {/* LISTADO DE ADJUNTOS ACTIVOS */}
+                      {tempAttachments.length > 0 && (
+                        <div className="space-y-1.5 pt-1.5">
+                          <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                            Documentación y Archivos Preparados ({tempAttachments.length})
+                          </span>
+                          <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1">
+                            {tempAttachments.map(att => (
+                              <div 
+                                key={att.id} 
+                                className="bg-slate-900 border border-slate-800 p-2 rounded flex items-center justify-between gap-2"
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {att.type === 'image' ? (
+                                    <FileImage className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                                  ) : (
+                                    <Link className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                  )}
+                                  <span className="text-[10px] font-mono text-slate-200 truncate" title={att.name}>
+                                    {att.name}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveTempAttachment(att.id);
+                                  }}
+                                  className="text-slate-500 hover:text-red-400 p-0.5 rounded transition cursor-pointer shrink-0"
+                                  title="Eliminar adjunto"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* No simulated backups - only uploaded ones are shown */}
                     </div>
 
                     {attachingBugAuto && (
@@ -1113,6 +1337,22 @@ export default function QaSuiteWorkspace({
                             <option value="Alta">Alta</option>
                             <option value="Media">Media</option>
                             <option value="Baja">Baja</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[9px] font-bold text-red-300 uppercase mb-0.5">Asignar Responsable de Corrección* (Cada actividad puede asignarse)</label>
+                          <select
+                            value={defectAssigneeId}
+                            onChange={e => setDefectAssigneeId(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-white font-bold"
+                          >
+                            <option value="">👤 Sin Asignar</option>
+                            {users.map(u => (
+                              <option key={u.id} value={u.id}>
+                                {u.first_name} {u.last_name} ({u.role})
+                              </option>
+                            ))}
                           </select>
                         </div>
 
@@ -1192,6 +1432,61 @@ export default function QaSuiteWorkspace({
                       <p className="text-[11px] text-slate-650 italic bg-white p-1.5 rounded border border-slate-100">
                         {run.notes}
                       </p>
+
+                      {run.attachments && run.attachments.length > 0 && (
+                        <div className="mt-2 space-y-1.5 pt-1.5 border-t border-slate-200/50">
+                          <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                            Documentación y Evidencias Adjuntas:
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {run.attachments.map(att => {
+                              if (att.type === 'image') {
+                                return (
+                                  <div key={att.id} className="relative group overflow-hidden rounded-lg border border-slate-200 max-w-[150px] bg-white shadow-3xs hover:border-teal-500/50 transition">
+                                    <img 
+                                      src={att.data} 
+                                      alt={att.name} 
+                                      className="h-16 w-full object-cover select-none"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-1">
+                                      <a 
+                                        href={att.data} 
+                                        download={att.name}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[9px] bg-white text-slate-900 font-bold px-1.5 py-0.5 rounded shadow hover:bg-slate-50 truncate max-w-full"
+                                        title={`Ver ${att.name}`}
+                                        onClick={e => e.stopPropagation()}
+                                      >
+                                        Ver Imagen
+                                      </a>
+                                    </div>
+                                    <div className="p-1 bg-white border-t border-slate-100 text-[9px] truncate text-slate-650 font-mono" title={att.name}>
+                                      {att.name}
+                                    </div>
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <a
+                                    key={att.id}
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-750 font-semibold px-2 py-1 rounded text-[10px] border border-indigo-150 transition truncate max-w-xs"
+                                    title={att.url}
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    <Link className="w-3 h-3 text-indigo-500 shrink-0" />
+                                    <span>{att.name}</span>
+                                  </a>
+                                );
+                              }
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })

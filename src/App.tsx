@@ -21,7 +21,8 @@ import {
   WorkItemStatus,
   WorkItemType,
   TransitionRule,
-  Tenant
+  Tenant,
+  NoteType
 } from './types';
 import {
   INITIAL_USERS,
@@ -55,6 +56,8 @@ import ProductBacklogManager from './components/ProductBacklogManager';
 import ScrumBoardAndQaManager from './components/ScrumBoardAndQaManager';
 import KPIDashboard from './components/KPIDashboard';
 import QaSuiteWorkspace from './components/QaSuiteWorkspace';
+import ProjectActivitiesSubTab from './components/ProjectActivitiesSubTab';
+import ProjectNotesSubTab from './components/ProjectNotesSubTab';
 
 // Icons Import
 import {
@@ -106,7 +109,9 @@ import {
   EyeOff,
   Settings,
   Tag,
-  ShieldCheck
+  ShieldCheck,
+  ClipboardList,
+  FileText
 } from 'lucide-react';
 
 function safeLoad<T>(key: string, defaultValue: T): T {
@@ -164,6 +169,30 @@ function safeSave(key: string, value: any): void {
     }
   }
 }
+
+const INITIAL_NOTE_TYPES: NoteType[] = [
+  {
+    id: 'type-general',
+    name: 'Generales',
+    description: 'Notas e información general de alcance, minutas de reuniones y requerimientos generales.',
+    color: 'indigo',
+    active: true
+  },
+  {
+    id: 'type-atraso',
+    name: 'Atrasos',
+    description: 'Alertas críticas sobre desviaciones, cuellos de botella y atrasos en el cronograma programado.',
+    color: 'amber',
+    active: true
+  },
+  {
+    id: 'type-tecnica',
+    name: 'Especificaciones Técnicas',
+    description: 'Definiciones de arquitectura de software, bases de datos o detalles técnicos del equipo.',
+    color: 'emerald',
+    active: true
+  }
+];
 
 export default function App() {
   // --- Synchronous Outdated Cache Purge Block ---
@@ -274,6 +303,10 @@ export default function App() {
     return safeLoad<MockupConnection[]>('gcp_mock_connections', INITIAL_MOCKUP_CONNECTIONS);
   });
 
+  const [noteTypes, setNoteTypes] = useState<NoteType[]>(() => {
+    return safeLoad<NoteType[]>('gcp_project_note_types', INITIAL_NOTE_TYPES);
+  });
+
   // Helper for category budgets default allocations
   const getInitialCategoryBudgets = (loadedProjects: Project[]) => {
     const initial: { [key: string]: { [cat: string]: number } } = {};
@@ -369,7 +402,8 @@ export default function App() {
     safeSave('gcp_mock_connections', mockConnections);
     safeSave('gcp_category_budgets', categoryBudgets);
     safeSave('gcp_budget_baselines_multi', budgetBaselines);
-  }, [tenants, users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets, budgetBaselines]);
+    safeSave('gcp_project_note_types', noteTypes);
+  }, [tenants, users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets, budgetBaselines, noteTypes]);
 
   // Navigation / Filter States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -381,11 +415,18 @@ export default function App() {
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
   // Sub-tabs state inside detailed Project View
-  const [projectSubTab, setProjectSubTab] = useState<'wbs' | 'costs'>('wbs');
+  const [projectSubTab, setProjectSubTab] = useState<'wbs' | 'costs' | 'activities' | 'notes'>('wbs');
   // Sub-tabs state inside central configuration view
-  const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules' | 'tenants'>('smtp');
+  const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules' | 'tenants' | 'note_types'>('smtp');
   // Floating Modal for Registering a Cost Support Document
   const [isRegisterCostModalOpen, setIsRegisterCostModalOpen] = useState(false);
+
+  // Note Type State for creation/editing inside Settings Panel
+  const [editingNoteType, setEditingNoteType] = useState<NoteType | null>(null);
+  const [noteTypeName, setNoteTypeName] = useState('');
+  const [noteTypeDescription, setNoteTypeDescription] = useState('');
+  const [noteTypeColor, setNoteTypeColor] = useState('blue');
+  const [noteTypeActive, setNoteTypeActive] = useState(true);
 
   // Custom confirmation modal state to bypass iframe window.confirm blocks
   const [deleteConfirmState, setDeleteConfirmState] = useState<{
@@ -1932,6 +1973,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
         { id: 'projects', label: 'Proyectos', icon: Briefcase },
         { id: 'backlog', label: 'Backlog del Producto', icon: Layers },
         { id: 'kanban', label: 'Tablero Scrum Board', icon: CheckSquare },
+        { id: 'activities', label: 'Actividades', icon: ClipboardList },
         { id: 'qa', label: 'Gestión Calidad QA (QAS)', icon: ShieldCheck },
         { id: 'mockup', label: 'Lienzo Mockups Visuales', icon: Monitor },
       ]
@@ -3519,10 +3561,32 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       <Coins className="w-4 h-4 text-indigo-500" />
                       <span>Presupuesto</span>
                     </button>
+                    <button
+                      onClick={() => setProjectSubTab('activities')}
+                      className={`px-5 py-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        projectSubTab === 'activities'
+                          ? 'border-emerald-600 text-emerald-600 font-extrabold bg-emerald-50/40 rounded-t-lg'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <ClipboardList className="w-4 h-4 text-emerald-555 text-emerald-500" />
+                      <span>Actividades</span>
+                    </button>
+                    <button
+                      onClick={() => setProjectSubTab('notes')}
+                      className={`px-5 py-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        projectSubTab === 'notes'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold bg-indigo-50/40 rounded-t-lg'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4 text-indigo-500" />
+                      <span>Notas de Proyecto</span>
+                    </button>
                   </div>
 
                   {/* 2. SUB-TAB VIEW CONTENT */}
-                  {projectSubTab === 'wbs' ? (
+                  {projectSubTab === 'wbs' && (
                     <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl p-4 shadow-sm animate-fadeIn">
                       <ProjectWBSManager
                         projectId={selectedProjectId}
@@ -3532,7 +3596,9 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                         sprints={sprints}
                       />
                     </div>
-                  ) : (
+                  )}
+
+                  {projectSubTab === 'costs' && (
                     <>
                       {/* Costs management and breakdown */}
                       {(() => {
@@ -4286,8 +4352,93 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       })()}
                     </>
                   )}
+
+                  {projectSubTab === 'activities' && (
+                    <ProjectActivitiesSubTab
+                      projectId={selectedProjectId}
+                      users={segmentedUsers}
+                      sprints={sprints}
+                      workItems={workItems}
+                      setWorkItems={setWorkItems}
+                      activities={activities}
+                      setActivities={setActivities}
+                      addLog={addLog}
+                    />
+                  )}
+
+                  {projectSubTab === 'notes' && (
+                    <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl p-6 shadow-sm animate-fadeIn">
+                      <ProjectNotesSubTab
+                        projectId={selectedProjectId}
+                        users={segmentedUsers}
+                        addLog={addLog}
+                        noteTypes={noteTypes}
+                      />
+                    </div>
+                  )}
                 </>
               )}
+            </div>
+          )}
+
+          {/* TAB: ACTIVITIES */}
+          {activeTab === 'activities' && (
+            <div className="space-y-6 animate-fadeIn" id="tab-activities">
+              {/* Header card for Project Selection & Scope Context */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h3 className="text-slate-900 font-extrabold text-base flex items-center gap-2">
+                      <ClipboardList className="w-5 h-5 text-indigo-600" />
+                      Actividades del Plan de Trabajo
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Gestione, asigne e interconecte las actividades técnicas y de asegurabilidad asociadas a las Historias de Usuario (HU).
+                    </p>
+                  </div>
+                  
+                  {/* Selector de Proyecto Contextual */}
+                  <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                    <span className="text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Proyecto Objetivo:</span>
+                    <select
+                      value={selectedProjectId}
+                      onChange={(e) => setSelectedProjectId(e.target.value)}
+                      className="bg-slate-50 hover:bg-slate-100 border border-slate-250 rounded-lg px-3 py-2 text-xs text-slate-800 font-extrabold cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    >
+                      {segmentedProjects.map(p => (
+                        <option key={p.id} value={p.id}>💼 {p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Renders the Activities View configured with the selected context */}
+              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                <div className="mb-4 bg-indigo-50/45 border border-indigo-100/50 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-indigo-850">
+                    <span className="flex h-2 w-2 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                    </span>
+                    <span>Vista enfocada en el Sprint activo: <strong className="font-bold underline">{activeSprint ? activeSprint.name : 'Backlog General'}</strong></span>
+                  </div>
+                  <div className="text-[10px] bg-indigo-100/65 text-indigo-800 font-mono font-bold px-2 py-0.5 rounded uppercase">
+                    Estado: {activeSprint ? activeSprint.status : 'N/A'}
+                  </div>
+                </div>
+
+                <ProjectActivitiesSubTab
+                  projectId={selectedProjectId}
+                  users={segmentedUsers}
+                  sprints={sprints}
+                  workItems={workItems}
+                  setWorkItems={setWorkItems}
+                  activities={activities}
+                  setActivities={setActivities}
+                  addLog={addLog}
+                />
+              </div>
             </div>
           )}
 
@@ -4349,6 +4500,8 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
               setTestRuns={setTestRuns}
               addLog={addLog}
               loggedInUser={loggedInUser || undefined}
+              activities={activities}
+              setActivities={setActivities}
             />
           )}
 
@@ -5119,12 +5272,24 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                       onClick={() => setSettingsSubTab('tenants')}
                       className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         settingsSubTab === 'tenants'
-                          ? 'bg-white text-teal-605 text-teal-600 shadow-xs font-extrabold'
+                          ? 'bg-white text-teal-655 text-teal-600 shadow-xs font-extrabold'
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
                       <Database className="w-3.5 h-3.5 text-teal-500" />
                       <span>Suscripciones (CIAs)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSubTab('note_types')}
+                      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        settingsSubTab === 'note_types'
+                          ? 'bg-white text-indigo-600 shadow-xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Tipos de Notas</span>
                     </button>
                   </div>
                 </div>
@@ -6123,6 +6288,291 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                               ))}
                             </tbody>
                           </table>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {settingsSubTab === 'note_types' && (
+                  <div className="space-y-6 animate-fadeIn" id="settings-note-types">
+                    <div className="flex flex-col lg:flex-row gap-6 text-slate-800">
+                      
+                      {/* Form: Add/Edit Note Type */}
+                      <div className="w-full lg:w-1/3 bg-slate-50 rounded-2xl p-5 border border-slate-205">
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className="p-1 px-2.5 rounded-lg bg-indigo-100 text-indigo-700 font-extrabold text-[10px] uppercase">
+                            {editingNoteType ? 'Modificar Tipo' : 'Nuevo Tipo de Nota'}
+                          </span>
+                        </div>
+                        <h4 className="text-slate-800 font-extrabold text-sm mb-1">
+                          {editingNoteType ? 'Editar Clasificación' : 'Registrar Clasificación de Notas'}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mb-4 leading-normal">
+                          Defina las categorías de notas disponibles para todos los proyectos activos de la plataforma, como alertas críticas, actas o especificaciones técnicas.
+                        </p>
+
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!noteTypeName.trim()) {
+                              alert('Por favor ingrese un nombre para el tipo de nota.');
+                              return;
+                            }
+
+                            if (editingNoteType) {
+                              const updated = noteTypes.map(t => {
+                                if (t.id === editingNoteType.id) {
+                                  return {
+                                    ...t,
+                                    name: noteTypeName.trim(),
+                                    description: noteTypeDescription.trim(),
+                                    color: noteTypeColor,
+                                    active: noteTypeActive
+                                  };
+                                }
+                                return t;
+                              });
+                              setNoteTypes(updated);
+                              addLog('Configuración Notas', `Tipo de Nota modificado: "${noteTypeName.trim()}"`);
+                            } else {
+                              const newType: NoteType = {
+                                id: `type-${Date.now()}`,
+                                name: noteTypeName.trim(),
+                                description: noteTypeDescription.trim(),
+                                color: noteTypeColor,
+                                active: true
+                              };
+                              setNoteTypes([...noteTypes, newType]);
+                              addLog('Configuración Notas', `Nuevo Tipo de Nota creado: "${noteTypeName.trim()}"`);
+                            }
+
+                            // Reset form
+                            setEditingNoteType(null);
+                            setNoteTypeName('');
+                            setNoteTypeDescription('');
+                            setNoteTypeColor('blue');
+                            setNoteTypeActive(true);
+                          }}
+                          className="space-y-4"
+                        >
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1">
+                              Nombre de la Categoría
+                            </label>
+                            <input
+                              type="text"
+                              value={noteTypeName}
+                              onChange={(e) => setNoteTypeName(e.target.value)}
+                              placeholder="Ej: Compromisos de Cliente"
+                              required
+                              className="w-full bg-white border border-slate-205 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold outline-none focus:ring-1 focus:ring-indigo-500 shadow-3xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1">
+                              Descripción de Uso
+                            </label>
+                            <textarea
+                              value={noteTypeDescription}
+                              onChange={(e) => setNoteTypeDescription(e.target.value)}
+                              placeholder="Indique brevemente qué tipo de acuerdos o incidencias deben registrarse bajo este tipo..."
+                              rows={3}
+                              className="w-full bg-white border border-slate-205 rounded-xl px-3 py-2 text-xs text-slate-850 outline-none focus:ring-1 focus:ring-indigo-500 shadow-3xs resize-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1">
+                              Color Distintivo (Visual Tag)
+                            </label>
+                            <div className="grid grid-cols-4 gap-1.5 pt-1">
+                              {['blue', 'indigo', 'emerald', 'amber', 'rose', 'purple', 'slate'].map(colorOpt => {
+                                const isSelected = noteTypeColor === colorOpt;
+                                let dotColor = 'bg-blue-500';
+                                if (colorOpt === 'indigo') dotColor = 'bg-indigo-500';
+                                if (colorOpt === 'rose') dotColor = 'bg-rose-500';
+                                if (colorOpt === 'amber') dotColor = 'bg-amber-500';
+                                if (colorOpt === 'emerald') dotColor = 'bg-emerald-500';
+                                if (colorOpt === 'purple') dotColor = 'bg-purple-500';
+                                if (colorOpt === 'slate') dotColor = 'bg-slate-500';
+
+                                return (
+                                  <button
+                                    key={colorOpt}
+                                    type="button"
+                                    onClick={() => setNoteTypeColor(colorOpt)}
+                                    className={`p-1.5 border hover:bg-slate-50 rounded-lg transition text-center flex flex-col items-center justify-center gap-1 ${
+                                      isSelected 
+                                        ? 'border-indigo-600 bg-indigo-50/20 shadow-2xs' 
+                                        : 'border-slate-200'
+                                    }`}
+                                  >
+                                    <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+                                    <span className="text-[7.5px] uppercase text-slate-500 font-black tracking-wider">{colorOpt}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {editingNoteType && (
+                            <div className="flex items-center gap-2 select-none">
+                              <input
+                                type="checkbox"
+                                id="note-type-active-toggle"
+                                checked={noteTypeActive}
+                                onChange={(e) => setNoteTypeActive(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <label htmlFor="note-type-active-toggle" className="text-xs font-bold text-slate-700 cursor-pointer">
+                                Habilitada para nuevas notas
+                              </label>
+                            </div>
+                          )}
+
+                          <div className="flex gap-2 justify-end pt-2">
+                            {editingNoteType && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNoteType(null);
+                                  setNoteTypeName('');
+                                  setNoteTypeDescription('');
+                                  setNoteTypeColor('blue');
+                                  setNoteTypeActive(true);
+                                }}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                            <button
+                              type="submit"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl px-4 py-2 text-xs flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                            >
+                              {editingNoteType ? 'Guardar Cambios' : 'Registrar Categoría'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+
+                      {/* List: Manage Note Types */}
+                      <div className="flex-1 bg-white rounded-2xl border border-slate-150 p-6 space-y-6">
+                        
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-indigo-50/40 p-4 rounded-xl border border-indigo-100/50">
+                          <div>
+                            <h4 className="text-indigo-900 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 leading-none">
+                              🔒 Gestión Centralizada de Catálogos
+                            </h4>
+                            <p className="text-[11.5px] text-slate-600 mt-1 max-w-xl">
+                              Los cambios realizados en las clasificaciones se reflejarán instantáneamente en la bitácora de seguimiento de todos los proyectos de la plataforma.
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-3 py-1 rounded border border-indigo-200 uppercase font-mono tracking-wider">
+                            {noteTypes.length} catalogados
+                          </span>
+                        </div>
+
+                        {/* Note Types Table */}
+                        <div className="border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs min-w-[650px]">
+                              <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-250">
+                                <tr>
+                                  <th className="p-3.5">Nombre de Clasificación</th>
+                                  <th className="p-3.5">Previsualización (Badge)</th>
+                                  <th className="p-3.5">Descripción de Uso</th>
+                                  <th className="p-3.5 text-center">Estado</th>
+                                  <th className="p-3.5 text-right">Acción</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150 font-medium">
+                                {noteTypes.map(type => {
+                                  // Badge Color Loader
+                                  let bgClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                                  let dotClass = 'bg-indigo-500';
+                                  
+                                  if (type.color === 'blue') { bgClass = 'bg-blue-50 text-blue-700 border-blue-200'; dotClass = 'bg-blue-500'; }
+                                  else if (type.color === 'indigo') { bgClass = 'bg-indigo-50 text-indigo-700 border-indigo-200'; dotClass = 'bg-indigo-500'; }
+                                  else if (type.color === 'rose') { bgClass = 'bg-rose-50 text-rose-700 border-rose-200'; dotClass = 'bg-rose-500'; }
+                                  else if (type.color === 'amber') { bgClass = 'bg-amber-50 text-amber-700 border-amber-200'; dotClass = 'bg-amber-500'; }
+                                  else if (type.color === 'emerald') { bgClass = 'bg-emerald-50 text-emerald-700 border-emerald-250'; dotClass = 'bg-emerald-500'; }
+                                  else if (type.color === 'purple') { bgClass = 'bg-purple-50 text-purple-700 border-purple-200'; dotClass = 'bg-purple-500'; }
+                                  else if (type.color === 'slate') { bgClass = 'bg-slate-50 text-slate-700 border-slate-200'; dotClass = 'bg-slate-500'; }
+
+                                  return (
+                                    <tr key={type.id} className={`hover:bg-slate-50/50 transition duration-100 ${!type.active ? 'opacity-75 bg-slate-50/30' : ''}`}>
+                                      <td className="p-3.5 font-bold text-slate-800">
+                                        {type.name}
+                                      </td>
+                                      <td className="p-3.5">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-black border uppercase tracking-wider inline-flex items-center gap-1.5 ${bgClass}`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                                          {type.name}
+                                        </span>
+                                      </td>
+                                      <td className="p-3.5 text-slate-500 leading-relaxed text-[11px] max-w-sm">
+                                        {type.description || <span className="italic text-slate-400">Sin descripción</span>}
+                                      </td>
+                                      <td className="p-3.5 text-center">
+                                        {type.active ? (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1 uppercase">
+                                            ✔ Activo
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-slate-100 text-slate-500 border border-slate-200 inline-flex items-center gap-1 uppercase font-mono">
+                                            ✘ Inactivo
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="p-3.5 text-right">
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingNoteType(type);
+                                              setNoteTypeName(type.name);
+                                              setNoteTypeDescription(type.description);
+                                              setNoteTypeColor(type.color);
+                                              setNoteTypeActive(type.active);
+                                            }}
+                                            className="bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 px-3 py-1.5 rounded border border-slate-200 transition-all font-bold cursor-pointer text-xs"
+                                          >
+                                            Editar
+                                          </button>
+                                          
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = noteTypes.map(t => {
+                                                if (t.id === type.id) {
+                                                  return { ...t, active: !type.active };
+                                                }
+                                                return t;
+                                              });
+                                              setNoteTypes(updated);
+                                              const actionWord = type.active ? 'desactivó' : 'habilitó';
+                                              addLog('Configuración Notas', `${type.active ? 'Desactivó' : 'Habilitó'} tipo de nota: "${type.name}"`);
+                                            }}
+                                            className={`px-3 py-1.5 rounded transition-all text-xs font-bold border cursor-pointer ${
+                                              type.active 
+                                                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' 
+                                                : 'bg-emerald-50 text-emerald-705 text-emerald-700 border-emerald-205 hover:bg-emerald-100'
+                                            }`}
+                                          >
+                                            {type.active ? 'Desactivar' : 'Habilitar'}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
 

@@ -17,6 +17,8 @@ import {
   FileText,
   Bug,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Info,
   Clock,
   Briefcase,
@@ -49,6 +51,7 @@ export default function KPIDashboard({
   // --- Dashboard Navigation & UI State ---
   const [viewMode, setViewMode] = useState<'ejecutiva' | 'operativa'>('ejecutiva');
   const [activeIndicatorInfo, setActiveIndicatorInfo] = useState<number | null>(null);
+  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
 
   // --- Filtering States ---
   const [selectedProjFilter, setSelectedProjFilter] = useState<string>('ALL');
@@ -127,6 +130,9 @@ export default function KPIDashboard({
         variacionPresupuesto = Math.round(((costRealAcumulado - presupuestoPlanificadoAcumulado) / presupuestoPlanificadoAcumulado) * 100);
       } else {
         variacionPresupuesto = idx === 0 ? -4 : idx === 1 ? 6 : 14;
+      }
+      if (variacionPresupuesto < 0) {
+        variacionPresupuesto = 0;
       }
 
       // 5. Avance Físico % (Fases ponderadas o total de entregables)
@@ -373,28 +379,38 @@ export default function KPIDashboard({
   return (
     <div className="space-y-6" id="dashboard-system-master">
       {/* 1. ARCHITECTURAL HEADER & DESCRIPTION */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 rounded-2xl p-6 text-white relative overflow-hidden shadow-lg">
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 rounded-2xl text-white relative overflow-hidden shadow-lg transition-all duration-300">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-20 pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-3 py-1 rounded-full border border-indigo-500/30 font-mono tracking-widest flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-indigo-400" /> PMO EXPERT CONTROL
+        
+        {/* Siempre visible: Título, insignias y toggles */}
+        <div className="relative z-10 p-5 md:p-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-2.5 py-0.5 rounded-full border border-indigo-500/30 font-mono tracking-widest flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5 text-indigo-400" /> PMO EXPERT CONTROL
               </span>
+              
+              {/* Botón de expansión para Alternar Detalles */}
+              <button
+                onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
+                className="text-[10px] bg-slate-950/65 hover:bg-slate-950 border border-slate-800 hover:border-indigo-500/40 text-slate-350 hover:text-indigo-300 font-bold px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer flex items-center gap-1 font-mono uppercase tracking-wider"
+                title={isHeaderExpanded ? "Ocultar descripción detallada" : "Mostrar descripción detallada"}
+              >
+                {isHeaderExpanded ? "Ocon. Detalles" : "Ver Descripción"}
+                {isHeaderExpanded ? <ChevronUp className="w-3 h-3 text-indigo-400" /> : <ChevronDown className="w-3 h-3 text-indigo-400" />}
+              </button>
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-100 tracking-tight">
+            
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-100 tracking-tight leading-none">
               Tablero de Control del Portafolio Integrado
             </h2>
-            <p className="text-slate-300 text-xs mt-1 max-w-2xl leading-relaxed">
-              Consola analítica y operativa de proyectos informáticos en base al cumplimiento de hitos de cronograma, estados presupuestarios de valor ganado y balance ágil.
-            </p>
           </div>
           
-          {/* Toggles */}
-          <div className="bg-slate-950/80 p-1 rounded-xl border border-slate-800 flex items-center shadow-inner gap-1">
+          {/* Toggles de Vista Ejecutiva / Operativa */}
+          <div className="bg-slate-950/80 p-1 rounded-xl border border-slate-800 flex items-center shadow-inner gap-1 shrink-0">
             <button
               onClick={() => setViewMode('ejecutiva')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                 viewMode === 'ejecutiva'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -405,7 +421,7 @@ export default function KPIDashboard({
             </button>
             <button
               onClick={() => setViewMode('operativa')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                 viewMode === 'operativa'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -416,6 +432,38 @@ export default function KPIDashboard({
             </button>
           </div>
         </div>
+
+        {/* Bloque expandible con la descripción técnica y la guía de uso de la PMO */}
+        {isHeaderExpanded && (
+          <div className="relative z-10 px-5 md:px-6 pb-5 md:pb-6 pt-1 bg-slate-950/20 border-t border-slate-850/60 transition-all duration-300 animate-fadeIn">
+            <p className="text-slate-300 text-xs md:text-sm max-w-4xl leading-relaxed">
+              Consola analítica y operativa de proyectos informáticos en base al cumplimiento de hitos de cronograma, estados presupuestarios de valor ganado (Earned Value Management) y balance de velocidad ágil.
+            </p>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="p-3.5 bg-slate-950/50 rounded-xl border border-slate-850/50 flex items-start gap-2.5">
+                <span className="text-emerald-400 text-sm mt-0.5">📊</span>
+                <div className="space-y-0.5">
+                  <h4 className="text-[11px] font-extrabold text-slate-200 uppercase tracking-wide">Vista Ejecutiva</h4>
+                  <p className="text-[10px] leading-relaxed text-slate-450">Indicadores clave de rendimiento presupuestario (CPI, SPI), curvas acumuladas e informes del valor ganado.</p>
+                </div>
+              </div>
+              <div className="p-3.5 bg-slate-950/50 rounded-xl border border-slate-850/50 flex items-start gap-2.5">
+                <span className="text-indigo-400 text-sm mt-0.5">⚙️</span>
+                <div className="space-y-0.5">
+                  <h4 className="text-[11px] font-extrabold text-slate-200 uppercase tracking-wide">Vista Operativa</h4>
+                  <p className="text-[10px] leading-relaxed text-slate-450">Fases de desarrollo e ingeniería (diseño, QA, implantación) y avance ágil con historiales de Sprints cerrados.</p>
+                </div>
+              </div>
+              <div className="p-3.5 bg-slate-950/50 rounded-xl border border-slate-850/50 flex items-start gap-2.5">
+                <span className="text-amber-400 text-sm mt-0.5">💡</span>
+                <div className="space-y-0.5">
+                  <h4 className="text-[11px] font-extrabold text-slate-200 uppercase tracking-wide">Filtros Dinámicos</h4>
+                  <p className="text-[10px] leading-relaxed text-slate-450">Use la consola inferior para segmentar por responsables, empresas consultoras de outsourcing y líder ágil.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. FLEXIBLE FILTERS CONSOLE */}
@@ -1099,119 +1147,7 @@ export default function KPIDashboard({
             </div>
           </div>
 
-          {/* RISK MATRIX & RISK PROJECTS TO MONITOR */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Top 5 highest risk projects */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-              <h4 className="font-bold text-slate-900 text-sm mb-1 flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-rose-500" /> Proyectos con Mayor Alerta de Riesgo en el Portafolio
-              </h4>
-              <p className="text-xs text-slate-500 mb-4">
-                Listados por desviaciones de cronograma, aumento de costos acumulados y alta densidad de defectos.
-              </p>
 
-              <div className="space-y-3">
-                {enrichedProjects
-                  .sort((a, b) => {
-                    const scoreA = (100 - a.percentCumplimientoCronograma) + Math.max(0, a.percentVariacionPresupuesto) * 2 + (100 - a.percentCalidad);
-                    const scoreB = (100 - b.percentCumplimientoCronograma) + Math.max(0, b.percentVariacionPresupuesto) * 2 + (100 - b.percentCalidad);
-                    return scoreB - scoreA;
-                  })
-                  .slice(0, 3)
-                  .map((p) => {
-                    return (
-                      <div key={p.id} className="border border-slate-200 p-3.5 rounded-xl bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 hover:border-slate-350 transition-colors">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] bg-slate-200 text-slate-750 uppercase font-mono px-1.5 py-0.2 rounded font-extrabold">{p.code}</span>
-                            <h5 className="text-xs font-extrabold text-slate-900">{p.NombreProyecto}</h5>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            Responsable: <span className="font-medium text-slate-700">PM Ing. {p.LíderProyecto}</span> • Tipo: {p.TipoProyecto}
-                          </p>
-                        </div>
-                        <div className="flex gap-2 text-right">
-                          <div className="text-xs">
-                            <span className="text-slate-400 block text-[9px] font-bold uppercase">Riesgo General:</span>
-                            <span className={`font-extrabold uppercase ${
-                              p.RiesgoGeneral === 'Rojo' ? 'text-rose-600' : p.RiesgoGeneral === 'Amarillo' ? 'text-amber-600' : 'text-emerald-600'
-                            }`}>
-                              [{p.RiesgoGeneral}]
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => handleSelectOperProject(p.id)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-1.5 rounded-lg active:scale-[0.98] transition-all text-[11px] cursor-pointer"
-                          >
-                            Diagnóstico
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* Matrix risk heatmap layout */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
-              <div>
-                <h4 className="font-bold text-slate-900 text-sm mb-1">Matriz de Probabilidad e Impacto (Sponsor Dashboard)</h4>
-                <p className="text-xs text-slate-500 mb-4">
-                  Distribución visual de los riesgos identificados de acuerdo a severidad y desviaciones presupuestarias acumuladas.
-                </p>
-
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                  <div className="grid grid-cols-4 gap-1 text-center font-semibold text-[9px]">
-                    <div className="text-slate-400 flex items-center justify-center font-bold">Impacto \ Prob.</div>
-                    <div className="bg-slate-100 py-1 font-bold text-slate-600">Bajo</div>
-                    <div className="bg-slate-100 py-1 font-bold text-slate-600">Medio</div>
-                    <div className="bg-slate-100 py-1 font-bold text-slate-600">Alto</div>
-
-                    {/* Row 1 */}
-                    <div className="bg-slate-100 py-2.5 font-bold text-slate-600 flex items-center justify-center">Alto</div>
-                    <div className="bg-amber-100 text-amber-900 flex items-center justify-center relative hover:bg-amber-150 transition-colors font-mono font-bold text-xs p-1">
-                      {enrichedProjects.filter(p => p.RiesgoGeneral === 'Amarillo' && p.priority === 'HIGH').length || 1} Proj
-                    </div>
-                    <div className="bg-rose-100 text-rose-905 flex items-center justify-center relative hover:bg-rose-150 transition-colors font-mono font-bold text-xs p-1">
-                      {enrichedProjects.filter(p => p.RiesgoGeneral === 'Rojo' && p.priority === 'HIGH').length || 1} Proj
-                    </div>
-                    <div className="bg-rose-200 text-rose-950 font-black flex items-center justify-center relative hover:bg-rose-300 transition-colors font-mono text-xs p-1">
-                      1 Proj
-                    </div>
-
-                    {/* Row 2 */}
-                    <div className="bg-slate-100 py-2.5 font-bold text-slate-600 flex items-center justify-center">Medio</div>
-                    <div className="bg-emerald-100 text-emerald-900 flex items-center justify-center relative hover:bg-emerald-150 transition-colors font-mono font-bold text-xs p-1">
-                      {enrichedProjects.filter(p => p.RiesgoGeneral === 'Verde' && p.priority === 'MEDIUM').length || 2} Proj
-                    </div>
-                    <div className="bg-amber-100 text-amber-900 flex items-center justify-center relative hover:bg-amber-150 transition-colors font-mono font-bold text-xs p-1">
-                      1 Proj
-                    </div>
-                    <div className="bg-rose-100 text-rose-900 flex items-center justify-center relative hover:bg-rose-150 transition-colors font-mono font-bold text-xs p-1">
-                      0 Proj
-                    </div>
-
-                    {/* Row 3 */}
-                    <div className="bg-slate-100 py-2.5 font-bold text-slate-600 flex items-center justify-center">Bajo</div>
-                    <div className="bg-emerald-100 text-emerald-900 flex items-center justify-center relative hover:bg-emerald-150 transition-colors font-mono font-bold text-xs p-1">
-                      {enrichedProjects.filter(p => p.RiesgoGeneral === 'Verde' && p.priority === 'LOW').length || 1} Proj
-                    </div>
-                    <div className="bg-emerald-100 text-emerald-950 flex items-center justify-center relative hover:bg-emerald-200 transition-colors font-mono font-bold text-xs p-1">
-                      1 Proj
-                    </div>
-                    <div className="bg-amber-100 text-amber-950 flex items-center justify-center relative hover:bg-amber-150 transition-colors font-mono font-bold text-xs p-1">
-                      0 Proj
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-2 text-center select-none font-mono">
-                Actualizado automáticamente en base a las fluctuaciones del backlog general.
-              </p>
-            </div>
-
-          </div>
 
         </div>
       )}
