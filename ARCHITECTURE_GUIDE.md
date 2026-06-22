@@ -208,3 +208,111 @@ Para desacoplar por completo la interfaz de usuario (UI) y las lógicas de negoc
 
 Esta separación estratégica permite implementar cambios de almacenamiento en caliente (como conectarse a un backend NestJS, Go o Firebase) reemplazando exclusivamente los adaptadores en el archivo central index sin modificar una sola línea de código en los hook states ni componentes visuales.
 
+---
+
+## 6. Arquitectura de Seguridad, Criptografía y Control Anti-Tampering (Backend)
+
+La robustez de la plataforma no se limita únicamente al cliente visual; implementa un esquema de middleware y lógica de seguridad de nivel industrial en el servidor Express (`server.ts`):
+
+```
+                        SERVIDORES Y SERVICIOS EXPRESS (server.ts)
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                                                                        │
+  │     SOLICITUD DE CLIENTE ────────► [Filtro Rate Limiter] ─────────┐     │
+  │                                           │                       │     │
+  │                                   (Permitido / < 3 fallos)        │     │
+  │                                           ▼                       │     │
+  │                               [Verificación de Hash]              ▼     │
+  │                              HMAC-SHA-256 + cryptographic         [429 Bloqueado]
+  │                                       salt base                   (Tiempo de espera
+  │                                           │                        de 10 minutos)
+  │                                    (Firma Válida)                  │
+  │                                           ▼                        │
+  │                               [Generación de Token HMAC]           │
+  │                                 Payload + Exp + Signature ◄────────┘     │
+  │                                                                        │
+  └────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Criptografía de Credenciales por Salteo (Hashed Passwords con Salting):**
+   * Las claves ingresadas por los usuarios **nunca** son tratadas o almacenadas en texto plano en la memoria del servidor.
+   * Se utiliza una función criptográfica HMAC (basada en el algoritmo SHA-256) acoplada a una variable de sal de protección única (`PASSWORD_SALT`). Esto imposibilita ataques de diccionario de contraseñas habituales.
+
+2. **Fermado Criptográfico de Sesión contra Alteraciones Locales (Anti-Tampering):**
+   * Tras la autenticación exitosa, el servidor emite una firma digital tokenizada empleando un secreto seguro (`JWT_SECRET`).
+   * El payload incluye un timestamp explícito de expiración (`exp`) y el correo verificado del usuario.
+   * El cliente almacena de forma íntegra este token en local. En cada consulta crítica, la autenticidad de la sesión es contrastada; si se altera un solo bit o carácter de la firma, el servidor rechaza enérgicamente el token, impidiendo manipulaciones de identidad en la sesión del navegador.
+
+3. **Control Anti Fuerza Bruta (Rate Limiting y Bloqueo Temporal):**
+   * Implementa un sistema de control de tasa de intentos por usuario para proteger los endpoints de autenticación y de recuperación de contraseñas.
+   * Si se superan 3 intentos fallidos consecutivos, el acceso para dicho correo electrónico es bloqueado por un lapso configurable de seguridad (10 minutos), notificándole al usuario en segundos restantes el tiempo que debe aguardar antes de reintentarlo.
+   * El inicio de sesión correcto o un reinicio manual de credenciales en el servidor restablece automáticamente los contadores de bloqueo.
+
+---
+
+## 7. Mapeador de Sincronización Dominio-Tablero Scrum
+
+Para garantizar que el Backlog del Producto y el Tablero Scrum de ejecución se mantengan en sintonía perfecta sin causar corrupciones de datos ni borrar el trabajo de desarrollo concurrente, se ha diseñado un despachador síncrono mapeador modular (`src/features/backlog/domain/backlogToScrum.mapper.ts`):
+
+* **Sincronización síncrona no invasiva:** Traduce de forma transparente el backlog prioritario de requerimientos en elementos del tablero Scrum Board (`WorkItem` con propiedades mapeadas).
+* **Conservación de items del desarrollador:** Al sincronizar el Backlog con el Tablero, el motor identifica y separa todas las tarjetas creadas directamente por los equipos técnicos en el tablero Scrum (como `TAREA` de integración o `BUG` de software). Esto asegura que estas adiciones de ingeniería no se eliminen al actualizar la especificación del negocio.
+* **Mapeo Consistente de Estados y Prioridades:**
+  * `Borrador` y `En refinamiento` transicionan naturalmente en la columna de **BACKLOG**.
+  * `Ready` fluye directamente hacia la columna **POR_HACER** (activándose para el equipo).
+  * `En desarrollo` se despliega en **EN_CURSO**.
+  * `En pruebas internas` o `En validación de usuario` mapean preventivamente a la columna de **QA** para verificación formal.
+  * `Aprobada` o `Cerrada` se transfieren de inmediato al estado **FINALIZADO**.
+* **Prevalencia del Override de Scrum (Board-State Precedence):** Si el equipo ya ha modificado manualmente el carril o el asignado de una Historia de Usuario directamente en el Scrum Board, la sincronización respeta dicho "override" para no entorpecer el flujo dinámico de trabajo diario coordinado por el Scrum Master.
+
+---
+
+## 8. Registro Unificado Modular de Navegación y Menús
+
+A fin de promover un alto estándar de clean code y desacoplar la lógica de renderizado del menú visual del layout principal de `App.tsx`, se introdujo el subsistema centralizado de registro de navegación:
+
+* **Módulo:** `src/app/menuRegistry.ts`
+* **Definición modular:** centraliza los items principales, subgrupos jerárquicos (Proyecto, Presupuesto, Configuración) e íconos (`lucide-react`) en una estructura tipada estricta (`MenuItem[]`).
+* **Ventajas operacionales:** Permite desactivar, reordenar, añadir nuevos módulos o realizar migraciones de menú de forma inmediata sin intervenir en el layout central de visualización del frontend.
+
+---
+
+## 9. Suite Integrada de Pruebas Automatizadas de Arquitectura
+
+Para proteger la integridad de los contratos de software contra regresiones o cambios accidentales en futuros despliegues, se ha incorporado una suite de software de validación independiente:
+
+* **Archivo de pruebas:** `test-suite.ts`
+* **Ejecución de Comando:** `npx tsx test-suite.ts`
+* **Pruebas de Continuidad Funcional:**
+  * **Casos del Grupo 1 (Criptografía y Tokenización):** Valida la irreversibilidad del hashing de contraseñas de usuarios, la equivalencia de firmas válidas y el rechazo proactivo de tokens alterados o con expiración vencida.
+  * **Casos del Grupo 2 (Mapeos y Cohesión de Sincronización):** Certifica la exactitud del mapeador de estados (backlog a Scrum), el traspaso correcto de identificadores e hilos prioritarios, y la resiliencia del tablero Scrum Board al conservar de forma intacta las tareas de ingenierías y overrides de estado de los desarrolladores.
+  
+La integración exitosa del pipeline de compilación (`npm run build` y `npm run lint`) y las pruebas garantizan la certificación de código óptimo antes de su entrega formal a la plataforma en la nube.
+
+---
+
+## 10. Hoja de Ruta (Roadmap) para Transición a Producción y Mitigación de Deuda Técnica
+
+Para evolucionar la plataforma de una "base modular en progreso" a un entorno productivo multiusuario de nivel corporativo, se definen los siguientes vectores estratégicos a resolver en la próxima iteración:
+
+### 10.1. Desacoplamiento Completo del Estado Raíz (`App.tsx`)
+* **Reto:** El componente raíz (`App.tsx`) centraliza la sincronización de múltiples entidades (proyectos, costos, sprints, tests, mockups) hacia `localStorage`.
+* **Solución de Hoja de Ruta:** Implementar stores especializados por dominio o usar `AppProviders` de React Context dedicados:
+  * `src/features/projects/store/`
+  * `src/features/backlog/store/`
+  * `src/features/scrum/store/`
+  * `src/features/qa/store/`
+* **Beneficio:** Reducción drástica del tamaño y acoplamiento de `App.tsx`, permitiendo el desarrollo concurrente y optimizando el ciclo de re-renderizado de React.
+
+### 10.2. Persistencia y Transición de Storage (De LocalStorage a Cloud DB)
+* **Reto:** Se utiliza `localStorage` en combinación con la infraestructura de repositorios locales (`LocalRepository`).
+* **Solución de Hoja de Ruta:** Reemplazar los adaptadores locales por adaptadores de almacenamiento distribuido persistente (como Firestore en Firebase o bases de datos relacionales como PostgreSQL/Cloud SQL) a través de la misma capa de interfaces (`IRepository`), garantizando cero impacto en código visual.
+* **Beneficio:** Consistencia de datos para entornos multiusuario y persistencia persistente ante limpiezas de caché de clientes.
+
+### 10.3. Robustecimiento Crítico de Seguridad Backend
+* **Reto:** Aunque se incluyó hashing HMAC SHA-256 de contraseñas, rate limiting en login y recuperación, y expiración de tokens; aún se mantiene un almacén en memoria para credenciales rápidas y fallbacks locales.
+* **Solución de Hoja de Ruta:**
+  * Migrar el almacén de credenciales hacia una base de datos segura y persistente.
+  * Reemplazar la función de hashing actual por algoritmos especializados de derivación de claves (como `bcrypt` o `argon2`) que integren cost factor ajustable y salts aleatorios por usuario individuales.
+  * Eliminar completamente los hardcodes o fallbacks de inicialización de credenciales iniciales de prueba en texto plano.
+
+
