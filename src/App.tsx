@@ -58,6 +58,7 @@ import KPIDashboard from './features/dashboard/KPIDashboard';
 import QaSuiteWorkspace from './features/qa/QaSuiteWorkspace';
 import ProjectActivitiesSubTab from './features/projects/ProjectActivitiesSubTab';
 import ProjectNotesSubTab from './features/projects/ProjectNotesSubTab';
+import { menuRegistry } from './app/menuRegistry';
 
 // Icons Import
 import {
@@ -1962,34 +1963,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
   const passedCasesCount = suiteCases.filter(c => c.status === 'PASSED').length;
   const qaPassRate = suiteCases.length > 0 ? Math.round((passedCasesCount / suiteCases.length) * 100) : 100;
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Cuadro Integral (KPIs)', icon: LayoutDashboard },
-    {
-      id: 'projects_group',
-      label: 'Proyecto & Presupuesto',
-      icon: FolderKanban,
-      isGroup: true,
-      children: [
-        { id: 'projects', label: 'Proyectos', icon: Briefcase },
-        { id: 'backlog', label: 'Backlog del Producto', icon: Layers },
-        { id: 'kanban', label: 'Tablero Scrum Board', icon: CheckSquare },
-        { id: 'activities', label: 'Actividades', icon: ClipboardList },
-        { id: 'qa', label: 'Gestión Calidad QA (QAS)', icon: ShieldCheck },
-        { id: 'mockup', label: 'Lienzo Mockups Visuales', icon: Monitor },
-      ]
-    },
-    { id: 'devops', label: 'Repositorios', icon: Cpu },
-    {
-      id: 'settings_group',
-      label: 'Configuración Central',
-      icon: Settings,
-      isGroup: true,
-      children: [
-        { id: 'teams', label: 'Directorio de Equipos', icon: Users2 },
-        { id: 'settings', label: 'Configuración de Plataforma', icon: Settings },
-      ]
-    }
-  ];
+  const menuItems = menuRegistry;
 
   if (!loggedInUser) {
     return (

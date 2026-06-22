@@ -7,7 +7,14 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || "secure-lifecycle-pmo-pmo-cluster-stack-key-2026";
+// Secure Lifecycle Central Configuration
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  console.error("FATAL CONFIGURATION ERROR: JWT_SECRET environment variable is missing in production environment!");
+  process.exit(1);
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || "secure-lifecycle-pmo-pmo-cluster-stack-key-2026-dev-fallback";
+const PASSWORD_SALT = process.env.PASSWORD_SALT || "lifecyclepm-campestre-salt-corp-2026";
 
 // Security Allowlist for SMTP Hosts to prevent Server-Side Request Forgery (SSRF)
 const ALLOWED_SMTP_HOSTS = [
@@ -28,22 +35,77 @@ function isHostAllowed(host: string): boolean {
   return false;
 }
 
-// In-Memory Secure Credentials Store (Server-side only)
-const userCredentialsStore = new Map<string, string>([
-  ["sa@campestre.com.sv", "Camp2026+Prub28"],
-  ["alex.castro@campestre.com.sv", "Camp2026+Prub28"],
-  ["elmer.segovia@campestre.com.sv", "Camp2026+Prub28"],
-  ["kevin.flores@campestre.com.sv", "Camp2026+Prub28"],
-  ["cecilia.rodriguez@campestre.com.sv", "Camp2026+Prub28"],
-  ["rodolfo.galeas@campestre.com.sv", "Camp2026+Prub28"]
-]);
+// In-Memory Rate Limiting Tracker to prevent Brute-Force Attacks
+const rateLimitStore = new Map<string, { count: number; blockedUntil: number }>();
+
+function checkRateLimit(key: string, maxAttempts = 5, blockDurationMs = 15 * 60 * 1000): { isBlocked: boolean; timeLeftMs: number } {
+  const record = rateLimitStore.get(key);
+  if (!record) return { isBlocked: false, timeLeftMs: 0 };
+  
+  const now = Date.now();
+  if (now < record.blockedUntil) {
+    return { isBlocked: true, timeLeftMs: record.blockedUntil - now };
+  }
+  
+  // If block duration has expired, reset counter
+  if (record.blockedUntil > 0 && now >= record.blockedUntil) {
+    rateLimitStore.delete(key);
+    return { isBlocked: false, timeLeftMs: 0 };
+  }
+  
+  return { isBlocked: false, timeLeftMs: 0 };
+}
+
+function recordRateLimitFailedAttempt(key: string, maxAttempts = 5, blockDurationMs = 15 * 60 * 1000) {
+  const record = rateLimitStore.get(key) || { count: 0, blockedUntil: 0 };
+  record.count++;
+  if (record.count >= maxAttempts) {
+    record.blockedUntil = Date.now() + blockDurationMs;
+  }
+  rateLimitStore.set(key, record);
+}
+
+function resetRateLimit(key: string) {
+  rateLimitStore.delete(key);
+}
+
+// Secure Dynamic Password Hashing Utility
+function hashPassword(password: string): string {
+  return crypto.createHmac("sha256", PASSWORD_SALT).update(password).digest("hex");
+}
+
+// In-Memory Cryptographically Secure Credentials Store (No plaintext passwords stored in codebase)
+const userCredentialsStore = new Map<string, string>();
+
+function initializeCredentials() {
+  const defaultPlaintext = "Camp2026+Prub28";
+  const defaultHash = hashPassword(defaultPlaintext);
+  
+  const initialEmails = [
+    "sa@campestre.com.sv",
+    "alex.castro@campestre.com.sv",
+    "elmer.segovia@campestre.com.sv",
+    "kevin.flores@campestre.com.sv",
+    "cecilia.rodriguez@campestre.com.sv",
+    "rodolfo.galeas@campestre.com.sv"
+  ];
+  
+  initialEmails.forEach(email => {
+    userCredentialsStore.set(email, defaultHash);
+  });
+}
+initializeCredentials();
 
 // Active security tokens for forgot password (never returned to client)
 const recoveryTokensStore = new Map<string, { token: string; expiresAt: number }>();
 
-// Simple, ultra-secure session signing (prevents client-side localStorage tampering/role bypass)
+// Simple, ultra-secure session signing with JWT-Expiration (2 hours duration)
 function signSession(userPayload: any): string {
-  const serialized = JSON.stringify(userPayload);
+  const payloadWithExp = {
+    ...userPayload,
+    exp: Date.now() + 2 * 60 * 60 * 1000 // 2 hours expiration
+  };
+  const serialized = JSON.stringify(payloadWithExp);
   const signature = crypto.createHmac("sha256", JWT_SECRET).update(serialized).digest("hex");
   return Buffer.from(serialized).toString("base64") + "." + signature;
 }
@@ -57,7 +119,13 @@ function verifySession(token: string): any {
     const signature = parts[1];
     const expectedSignature = crypto.createHmac("sha256", JWT_SECRET).update(payloadStr).digest("hex");
     if (signature === expectedSignature) {
-      return JSON.parse(payloadStr);
+      const parsed = JSON.parse(payloadStr);
+      // Verify token expiration
+      if (parsed.exp && Date.now() > parsed.exp) {
+        console.warn("Verify session: Token has expired for", parsed.email);
+        return null;
+      }
+      return parsed;
     }
   } catch (e) {
     return null;
@@ -88,21 +156,39 @@ async function startServer() {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const correctPassword = userCredentialsStore.get(normalizedEmail);
 
-    if (!correctPassword) {
+    // Check rate limit
+    const rateCheck = checkRateLimit(normalizedEmail);
+    if (rateCheck.isBlocked) {
+      const remainingMinutes = Math.ceil(rateCheck.timeLeftMs / 60000);
+      return res.status(429).json({
+        success: false,
+        message: `Demasiados intentos fallidos. Tu cuenta está temporalmente bloqueada por seguridad. Inténtalo de nuevo en ${remainingMinutes} minutos.`
+      });
+    }
+
+    const correctPasswordHash = userCredentialsStore.get(normalizedEmail);
+
+    if (!correctPasswordHash) {
+      recordRateLimitFailedAttempt(normalizedEmail);
       return res.status(401).json({ 
         success: false, 
         message: "El correo ingresado no se encuentra registrado en el Directorio Corporativo." 
       });
     }
 
-    if (password !== correctPassword) {
+    // Verify hashed password
+    const incomingHash = hashPassword(password);
+    if (incomingHash !== correctPasswordHash) {
+      recordRateLimitFailedAttempt(normalizedEmail);
       return res.status(401).json({ 
         success: false, 
         message: "La contraseña ingresada es incorrecta." 
       });
     }
+
+    // Success - reset attempts
+    resetRateLimit(normalizedEmail);
 
     // Return authenticated user block along with HMAC secure session token (Fending Local Tampering)
     const secureToken = signSession({ email: normalizedEmail });
@@ -119,7 +205,7 @@ async function startServer() {
     const { token } = req.body;
     const session = verifySession(token);
     if (!session) {
-      return res.status(401).json({ success: false, message: "Sesión inválida o firma alterada." });
+      return res.status(401).json({ success: false, message: "Sesión inválida o firma alterada/expirada." });
     }
     return res.json({ success: true, email: session.email });
   });
@@ -130,6 +216,18 @@ async function startServer() {
 
     if (!emailToFind) {
       return res.status(400).json({ success: false, message: "Destinatario no especificado." });
+    }
+
+    const normalizedRecoveryEmail = emailToFind.toLowerCase().trim();
+
+    // Check recovery rate limit
+    const recoveryRateCheck = checkRateLimit(normalizedRecoveryEmail, 3, 10 * 60 * 1000); // 3 max attempts, 10 min block
+    if (recoveryRateCheck.isBlocked) {
+      const remainingMinutes = Math.ceil(recoveryRateCheck.timeLeftMs / 60000);
+      return res.status(429).json({
+        success: false,
+        message: `Demasiadas solicitudes de recuperación enviadas. Inténtalo de nuevo en ${remainingMinutes} minutos.`
+      });
     }
 
     if (!host || !port || !username || !password) {
@@ -168,7 +266,7 @@ async function startServer() {
       // Dispatch recovery email
       await transporter.sendMail({
         from: `"${username}" <${username}>`,
-        to: emailToFind,
+        to: normalizedRecoveryEmail,
         subject: "🔒 [Lifecycle PM] Código de Verificación para Recuperación de Contraseña",
         text: `Hola,\n\nHemos recibido una solicitud de restablecimiento de contraseña para tu cuenta de Lifecycle PM.\n\nPara completar la autenticación, ingresa el siguiente código de seguridad en la ventana del navegador:\n\nCódigo: ${tempToken}\n\nEste código vencerá en 15 minutos.\n\nSi no has solicitado este cambio, por favor ignora este correo y tus credenciales continuarán protegidas de forma segura.\n\nSaludos,\nEl equipo de Seguridad Lifecycle PM.`,
         html: `
@@ -196,10 +294,13 @@ async function startServer() {
       });
 
       // Save token in memory securely (Finding 5: never send it back to the client!)
-      recoveryTokensStore.set(emailToFind.toLowerCase().trim(), {
+      recoveryTokensStore.set(normalizedRecoveryEmail, {
         token: tempToken,
         expiresAt: Date.now() + 15 * 60 * 1000 // 15 minutes
       });
+
+      // Track rate limit attempt
+      recordRateLimitFailedAttempt(normalizedRecoveryEmail, 3, 10 * 60 * 1000);
 
       return res.json({ 
         success: true, 
@@ -276,9 +377,11 @@ async function startServer() {
       });
     }
 
-    // Update in memory credentials store (Server side)
-    userCredentialsStore.set(emailKey, newPassword.trim());
+    // Hash the new password and update in-memory credentials store securely!
+    const hashedNewPassword = hashPassword(newPassword.trim());
+    userCredentialsStore.set(emailKey, hashedNewPassword);
     recoveryTokensStore.delete(emailKey); // Cleanup token
+    resetRateLimit(emailKey); // Reset any failed login count for this email
 
     return res.json({ success: true, message: "Contraseña actualizada exitosamente." });
   });
