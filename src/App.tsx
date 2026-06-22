@@ -195,259 +195,69 @@ const INITIAL_NOTE_TYPES: NoteType[] = [
   }
 ];
 
+import { AppProviders, useSystemStore, useProjectsStore, useScrumStore, useQaStore, useBacklogStore } from './app/AppProviders';
+
 export default function App() {
-  // --- Synchronous Outdated Cache Purge Block ---
-  try {
-    const rawUsers = localStorage.getItem('gcp_users');
-    if (rawUsers && (rawUsers.includes('ana.gomez@empresa.com') || !rawUsers.includes('sa@campestre.com.sv'))) {
-      console.log('[Security Sync] Purging legacy local storage caches synchronously before render...');
-      const keysToPurge = [
-        'gcp_users', 'gcp_projects', 'gcp_costs', 'gcp_sprints', 'gcp_work_items',
-        'gcp_activities', 'gcp_logged_in_user', 'gcp_category_budgets',
-        'gcp_test_suites', 'gcp_test_cases', 'gcp_test_runs',
-        'gcp_mockups', 'gcp_mock_screens', 'gcp_mock_components',
-        'gcp_mock_connections', 'gcp_budget_baselines_multi',
-        'gcp_clients_list', 'gcp_sponsors_list'
-      ];
-      keysToPurge.forEach(k => localStorage.removeItem(k));
-    }
+  return (
+    <AppProviders>
+      <AppContent />
+    </AppProviders>
+  );
+}
 
-    // Force purge old client and sponsor lists in localStorage if they contain old templates
-    const rawClients = localStorage.getItem('gcp_clients_list');
-    const rawSponsors = localStorage.getItem('gcp_sponsors_list');
-    if (
-      (rawClients && (rawClients.includes('Fintech Corp') || !rawClients.includes('Grupo Campestre'))) ||
-      (rawSponsors && (rawSponsors.includes('Alejandra') || !rawSponsors.includes('Sponsor Principal')))
-    ) {
-      console.log('[Catalog Sync] Purging stale client/sponsor list caches...');
-      localStorage.removeItem('gcp_clients_list');
-      localStorage.removeItem('gcp_sponsors_list');
-    }
-  } catch (err) {
-    console.warn('Failed to parse or purge stale localStorage keys:', err);
-  }
+function AppContent() {
+  // Consume all domain specific states securely from decouple providers layer
+  const {
+    tenants, setTenants, users, setUsers, noteTypes, setNoteTypes, logs, setLogs, addLog,
+    loggedInUser, setLoggedInUser, activeTab, setActiveTab,
+    isMobileMenuOpen, setIsMobileMenuOpen, isProjectsMenuOpen, setIsProjectsMenuOpen,
+    isSettingsMenuOpen, setIsSettingsMenuOpen, settingsSubTab, setSettingsSubTab,
+    deleteConfirmState, setDeleteConfirmState
+  } = useSystemStore();
 
-  const INITIAL_TENANTS: Tenant[] = [
-    {
-      id: 'grupo-campestre',
-      name: 'Grupo Campestre',
-      description: 'Suscripción corporativa principal para la gestión de marcas de alimentación y avícolas.',
-      domain: 'campestre.com.sv',
-      plan: 'Premium',
-      status: 'Active'
-    }
-  ];
+  const {
+    projects, setProjects, costs, setCosts, selectedProjectId, setSelectedProjectId,
+    expandedProjectId, setExpandedProjectId, projectSubTab, setProjectSubTab,
+    categoryBudgets, setCategoryBudgets, budgetBaselines, setBudgetBaselines,
+    projectSearch, setProjectSearch, projectStatusFilter, setProjectStatusFilter,
+    projectPriorityFilter, setProjectPriorityFilter, projectClientFilter, setProjectClientFilter,
+    isCreateProjectModalOpen, setIsCreateProjectModalOpen,
+    projectStatusModalTarget, setProjectStatusModalTarget,
+    projectConfigModalTarget, setProjectConfigModalTarget,
+    isRegisterCostModalOpen, setIsRegisterCostModalOpen
+  } = useProjectsStore();
 
-  // --- Persistent State / Handlers ---
-  const [tenants, setTenants] = useState<Tenant[]>(() => {
-    return safeLoad<Tenant[]>('gcp_tenants', INITIAL_TENANTS);
-  });
+  const {
+    sprints, setSprints, workItems, setWorkItems, activities, setActivities,
+    selectedSprintId, setSelectedSprintId
+  } = useScrumStore();
 
-  const [users, setUsers] = useState<User[]>(() => {
-    const list = safeLoad<User[]>('gcp_users', INITIAL_USERS);
-    return list.map(u => ({
-      ...u,
-      tenant_id: u.tenant_id || 'grupo-campestre'
-    }));
-  });
+  const {
+    testSuites, setTestSuites, testCases, setTestCases, testRuns, setTestRuns
+  } = useQaStore();
 
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const list = safeLoad<Project[]>('gcp_projects', INITIAL_PROJECTS);
-    return list.map(p => ({
-      ...p,
-      tenant_id: p.tenant_id || 'grupo-campestre',
-      sprint_size_days: p.sprint_size_days !== undefined ? p.sprint_size_days : 10
-    }));
-  });
+  // Mockups and UI components states reside locally within AppContent
+  const [mockups, setMockups] = useState<Mockup[]>(() => safeLoad<Mockup[]>('gcp_mockups', INITIAL_MOCKUPS));
+  const [mockScreens, setMockScreens] = useState<MockupScreen[]>(() => safeLoad<MockupScreen[]>('gcp_mock_screens', INITIAL_MOCKUP_SCREENS));
+  const [mockComponents, setMockComponents] = useState<MockupComponent[]>(() => safeLoad<MockupComponent[]>('gcp_mock_components', INITIAL_MOCKUP_COMPONENTS));
+  const [mockConnections, setMockConnections] = useState<MockupConnection[]>(() => safeLoad<MockupConnection[]>('gcp_mock_connections', INITIAL_MOCKUP_CONNECTIONS));
 
-  const [costs, setCosts] = useState<ProjectCost[]>(() => {
-    return safeLoad<ProjectCost[]>('gcp_costs', INITIAL_PROJECT_COSTS);
-  });
-
-  const [sprints, setSprints] = useState<Sprint[]>(() => {
-    return safeLoad<Sprint[]>('gcp_sprints', INITIAL_SPRINTS);
-  });
-
-  const [workItems, setWorkItems] = useState<WorkItem[]>(() => {
-    return safeLoad<WorkItem[]>('gcp_work_items', INITIAL_WORK_ITEMS);
-  });
-
-  const [activities, setActivities] = useState<ProjectActivity[]>(() => {
-    return safeLoad<ProjectActivity[]>('gcp_activities', INITIAL_PROJECT_ACTIVITIES);
-  });
-
-  const [testSuites, setTestSuites] = useState<TestSuite[]>(() => {
-    return safeLoad<TestSuite[]>('gcp_test_suites', INITIAL_TEST_SUITES);
-  });
-
-  const [testCases, setTestCases] = useState<TestCase[]>(() => {
-    return safeLoad<TestCase[]>('gcp_test_cases', INITIAL_TEST_CASES);
-  });
-
-  const [testRuns, setTestRuns] = useState<TestRun[]>(() => {
-    return safeLoad<TestRun[]>('gcp_test_runs', INITIAL_TEST_RUNS);
-  });
-
-  const [mockups, setMockups] = useState<Mockup[]>(() => {
-    return safeLoad<Mockup[]>('gcp_mockups', INITIAL_MOCKUPS);
-  });
-
-  const [mockScreens, setMockScreens] = useState<MockupScreen[]>(() => {
-    return safeLoad<MockupScreen[]>('gcp_mock_screens', INITIAL_MOCKUP_SCREENS);
-  });
-
-  const [mockComponents, setMockComponents] = useState<MockupComponent[]>(() => {
-    return safeLoad<MockupComponent[]>('gcp_mock_components', INITIAL_MOCKUP_COMPONENTS);
-  });
-
-  const [mockConnections, setMockConnections] = useState<MockupConnection[]>(() => {
-    return safeLoad<MockupConnection[]>('gcp_mock_connections', INITIAL_MOCKUP_CONNECTIONS);
-  });
-
-  const [noteTypes, setNoteTypes] = useState<NoteType[]>(() => {
-    return safeLoad<NoteType[]>('gcp_project_note_types', INITIAL_NOTE_TYPES);
-  });
-
-  // Helper for category budgets default allocations
-  const getInitialCategoryBudgets = (loadedProjects: Project[]) => {
-    const initial: { [key: string]: { [cat: string]: number } } = {};
-    loadedProjects.forEach(p => {
-      initial[p.id] = {
-        NOMINA: Math.round(p.budget_total * 0.40),
-        LICENCIAS: Math.round(p.budget_total * 0.15),
-        INFRAESTRUCTURA: Math.round(p.budget_total * 0.20),
-        OUTSOURCING: Math.round(p.budget_total * 0.15),
-        OTROS: Math.round(p.budget_total * 0.10),
-      };
-    });
-    return initial;
-  };
-
-  const [categoryBudgets, setCategoryBudgets] = useState<{ [projectId: string]: { [cat: string]: number } }>(() => {
-    return safeLoad<{ [projectId: string]: { [cat: string]: number } }>('gcp_category_budgets', getInitialCategoryBudgets(INITIAL_PROJECTS || []));
-  });
-
-  const [budgetBaselines, setBudgetBaselines] = useState<{
-    [projectId: string]: {
-      list: Array<{
-        id: string;
-        name: string;
-        capturedAt: string;
-        totalBudget: number;
-        categories: { [cat: string]: number };
-      }>;
-      activeId: string | null;
-    };
-  }>(() => {
-    const local = localStorage.getItem('gcp_budget_baselines_multi');
-    if (local && local !== "undefined" && local !== "null") {
-      try {
-        const parsed = JSON.parse(local);
-        if (parsed !== null && parsed !== undefined) return parsed;
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    const oldLocal = localStorage.getItem('gcp_budget_baselines');
-    if (oldLocal && oldLocal !== "undefined" && oldLocal !== "null") {
-      try {
-        const oldData = JSON.parse(oldLocal);
-        if (oldData) {
-          const newData: any = {};
-          Object.keys(oldData).forEach(projId => {
-            const item = oldData[projId];
-            if (item) {
-              newData[projId] = {
-                list: [{
-                  id: 'baseline-initial',
-                  name: 'Línea Base Inicial',
-                  capturedAt: item.capturedAt || new Date().toLocaleDateString('es-ES'),
-                  totalBudget: item.totalBudget || 150000,
-                  categories: item.categories || {}
-                }],
-                activeId: 'baseline-initial'
-              };
-            }
-          });
-          return newData;
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return {};
-  });
-
-  // Action audit log
-  const [logs, setLogs] = useState<{ id: string; user: string; text: string; time: string }[]>([
-    { id: '1', user: 'Carlos Pérez (PM)', text: 'Creó el cronograma de actividades con 6 fases.', time: '12:45' },
-    { id: '2', user: 'Andrés Mendoza (DBA)', text: 'Registró el esquema recomendado en PostgreSQL.', time: '13:12' },
-    { id: '3', user: 'Valentina Rojas (QA)', text: 'Agregó la Suite 01 de pruebas de la API Multi-tenant.', time: '14:24' }
-  ]);
-
-  // Sync to localstorage
+  // Sync mockups locally
   useEffect(() => {
-    safeSave('gcp_tenants', tenants);
-    safeSave('gcp_users', users);
-    safeSave('gcp_projects', projects);
-    safeSave('gcp_costs', costs);
-    safeSave('gcp_sprints', sprints);
-    safeSave('gcp_work_items', workItems);
-    safeSave('gcp_activities', activities);
-    safeSave('gcp_test_suites', testSuites);
-    safeSave('gcp_test_cases', testCases);
-    safeSave('gcp_test_runs', testRuns);
     safeSave('gcp_mockups', mockups);
     safeSave('gcp_mock_screens', mockScreens);
     safeSave('gcp_mock_components', mockComponents);
     safeSave('gcp_mock_connections', mockConnections);
-    safeSave('gcp_category_budgets', categoryBudgets);
-    safeSave('gcp_budget_baselines_multi', budgetBaselines);
-    safeSave('gcp_project_note_types', noteTypes);
-  }, [tenants, users, projects, costs, sprints, workItems, activities, testSuites, testCases, testRuns, mockups, mockScreens, mockComponents, mockConnections, categoryBudgets, budgetBaselines, noteTypes]);
+  }, [mockups, mockScreens, mockComponents, mockConnections]);
 
-  // Navigation / Filter States
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [isProjectsMenuOpen, setIsProjectsMenuOpen] = useState<boolean>(true);
-  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(true);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('proj-1');
-  const [selectedSprintId, setSelectedSprintId] = useState<string>('sprint-2'); // default Sprint 2 is active/en curso
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
-
-  // Sub-tabs state inside detailed Project View
-  const [projectSubTab, setProjectSubTab] = useState<'wbs' | 'costs' | 'activities' | 'notes'>('wbs');
-  // Sub-tabs state inside central configuration view
-  const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules' | 'tenants' | 'note_types'>('smtp');
-  // Floating Modal for Registering a Cost Support Document
-  const [isRegisterCostModalOpen, setIsRegisterCostModalOpen] = useState(false);
-
-  // Note Type State for creation/editing inside Settings Panel
+  // Navigation & filter states are fully managed by System and Projects stores in AppProviders.tsx
+  // Local note type form control
   const [editingNoteType, setEditingNoteType] = useState<NoteType | null>(null);
   const [noteTypeName, setNoteTypeName] = useState('');
   const [noteTypeDescription, setNoteTypeDescription] = useState('');
   const [noteTypeColor, setNoteTypeColor] = useState('blue');
   const [noteTypeActive, setNoteTypeActive] = useState(true);
-
-  // Custom confirmation modal state to bypass iframe window.confirm blocks
-  const [deleteConfirmState, setDeleteConfirmState] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
-
-  // Floating Modal for project creation
-  const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
-  const [projectStatusModalTarget, setProjectStatusModalTarget] = useState<Project | null>(null);
-  const [projectConfigModalTarget, setProjectConfigModalTarget] = useState<Project | null>(null);
-
-  // Project List Filters
-  const [projectSearch, setProjectSearch] = useState('');
-  const [projectStatusFilter, setProjectStatusFilter] = useState<string[]>(['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS']);
   const [isStatusFilterDropdownOpen, setIsStatusFilterDropdownOpen] = useState(false);
-  const [projectPriorityFilter, setProjectPriorityFilter] = useState<string>('ALL');
-  const [projectClientFilter, setProjectClientFilter] = useState<string>('ALL');
 
   // Drag and drop states for Scrum board
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
@@ -523,24 +333,7 @@ export default function App() {
   const [newRole, setNewRole] = useState('Scrum Master');
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
-  // --- Session & Authentication State ---
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => {
-    const local = localStorage.getItem('gcp_logged_in_user');
-    if (local && local !== "undefined" && local !== "null") {
-      try {
-        const parsed = JSON.parse(local);
-        if (parsed && typeof parsed === 'object') {
-          if ('user' in parsed && parsed.user) {
-            return parsed.user as User;
-          }
-          return parsed as User;
-        }
-      } catch (e) {
-        console.error("Failed to parse loggedInUser from localStorage", e);
-      }
-    }
-    return null;
-  });
+
 
   // Finding 2: Active session integrity loop check to detect and prevent LS tampering
   useEffect(() => {
@@ -1222,7 +1015,7 @@ export default function App() {
 
   const handleLogout = () => {
     if (loggedInUser) {
-      const storedName = `${loggedInUser.first_name} ${loggedInUser.last_name}`;
+      const storedName = `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario';
       addLog(storedName, 'Cerró su sesión de la plataforma.');
     }
     setLoggedInUser(null);
@@ -1919,14 +1712,7 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
     });
   };
 
-  // Common utils
-  const addLog = (user: string, text: string) => {
-    const time = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    setLogs(prev => [
-      { id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, user, text, time },
-      ...prev.slice(0, 15) // limit to 15 logs
-    ]);
-  };
+  // Common utils are now mapped through the main AppProviders storefront layer
 
   // --- Dynamic calculations / KPIs ---
   const activeSprintsItems = workItems.filter(w => w.project_id === selectedProjectId && w.sprint_id === activeSprintIdEffective);
@@ -2852,11 +2638,11 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
           <div className="bg-slate-800/40 p-2.5 rounded-xl flex items-center justify-between gap-3 border border-slate-850">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold uppercase shrink-0 font-mono shadow-sm">
-                {loggedInUser ? `${loggedInUser.first_name[0]}${loggedInUser.last_name[0]}` : 'U'}
+                {loggedInUser ? `${loggedInUser.first_name?.[0] || 'U'}${loggedInUser.last_name?.[0] || 'S'}` : 'U'}
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-white truncate leading-tight">
-                  {loggedInUser ? `${loggedInUser.first_name} ${loggedInUser.last_name}` : 'Invitado'}
+                  {loggedInUser ? `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario' : 'Invitado'}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate mt-0.5" title={loggedInUser?.role}>
                   {loggedInUser ? loggedInUser.role : 'Sin Perfil'}
@@ -2915,12 +2701,12 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
 
             {/* Profile Avatar & Stack */}
             <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200 shrink-0">
-              <div className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center justify-center font-bold text-xs uppercase cursor-help shrink-0 font-mono" title={`${loggedInUser?.first_name} ${loggedInUser?.last_name} (${loggedInUser?.role})`}>
-                {loggedInUser ? `${loggedInUser.first_name[0]}${loggedInUser.last_name[0]}` : 'US'}
+              <div className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center justify-center font-bold text-xs uppercase cursor-help shrink-0 font-mono" title={`${loggedInUser?.first_name || ''} ${loggedInUser?.last_name || ''} (${loggedInUser?.role || ''})`}>
+                {loggedInUser ? `${loggedInUser.first_name?.[0] || 'U'}${loggedInUser.last_name?.[0] || 'S'}` : 'US'}
               </div>
               <div className="hidden sm:flex flex-col text-left min-w-0">
                 <span className="text-xs font-semibold text-slate-850 truncate leading-none mb-0.5">
-                  {loggedInUser ? `${loggedInUser.first_name} ${loggedInUser.last_name}` : 'Usuario'}
+                  {loggedInUser ? `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario' : 'Usuario'}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium truncate">
                   {loggedInUser ? loggedInUser.role : 'Invitado'}

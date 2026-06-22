@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -15,6 +16,63 @@ if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
 
 const JWT_SECRET = process.env.JWT_SECRET || "secure-lifecycle-pmo-pmo-cluster-stack-key-2026-dev-fallback";
 const PASSWORD_SALT = process.env.PASSWORD_SALT || "lifecyclepm-campestre-salt-corp-2026";
+
+// Secure credentials database file path
+const CREDENTIALS_FILE = path.join(process.cwd(), "credentials_db.json");
+
+// Secure PBKDF2 Password Hashing Utility conforming to OWASP specifications
+function hashPasswordSecure(password: string, userSalt: string): string {
+  // Uses PBKDF2 with SHA-512, 100,000 stretching iterations and unique user salt
+  return crypto.pbkdf2Sync(password, userSalt, 100000, 64, "sha512").toString("hex");
+}
+
+function getCredentialsDb(): Record<string, { hash: string; salt: string }> {
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      const raw = fs.readFileSync(CREDENTIALS_FILE, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error("[Cuentas persistentes DB Load Error]", err);
+  }
+  return {};
+}
+
+function saveCredentialsDb(db: Record<string, { hash: string; salt: string }>) {
+  try {
+    fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(db, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[Cuentas persistentes DB Save Error]", err);
+  }
+}
+
+function initializeCredentials() {
+  const db = getCredentialsDb();
+  const initialEmails = [
+    "sa@campestre.com.sv",
+    "alex.castro@campestre.com.sv",
+    "elmer.segovia@campestre.com.sv",
+    "kevin.flores@campestre.com.sv",
+    "cecilia.rodriguez@campestre.com.sv",
+    "rodolfo.galeas@campestre.com.sv"
+  ];
+  const defaultPlaintext = "Camp2026+Prub28";
+  let credentialsUpdated = false;
+
+  initialEmails.forEach(email => {
+    if (!db[email]) {
+      const uniqueSalt = crypto.randomBytes(16).toString("hex");
+      const secureHash = hashPasswordSecure(defaultPlaintext, uniqueSalt);
+      db[email] = { hash: secureHash, salt: uniqueSalt };
+      credentialsUpdated = true;
+    }
+  });
+
+  if (credentialsUpdated) {
+    saveCredentialsDb(db);
+  }
+}
+initializeCredentials();
 
 // Security Allowlist for SMTP Hosts to prevent Server-Side Request Forgery (SSRF)
 const ALLOWED_SMTP_HOSTS = [
@@ -69,33 +127,6 @@ function resetRateLimit(key: string) {
   rateLimitStore.delete(key);
 }
 
-// Secure Dynamic Password Hashing Utility
-function hashPassword(password: string): string {
-  return crypto.createHmac("sha256", PASSWORD_SALT).update(password).digest("hex");
-}
-
-// In-Memory Cryptographically Secure Credentials Store (No plaintext passwords stored in codebase)
-const userCredentialsStore = new Map<string, string>();
-
-function initializeCredentials() {
-  const defaultPlaintext = "Camp2026+Prub28";
-  const defaultHash = hashPassword(defaultPlaintext);
-  
-  const initialEmails = [
-    "sa@campestre.com.sv",
-    "alex.castro@campestre.com.sv",
-    "elmer.segovia@campestre.com.sv",
-    "kevin.flores@campestre.com.sv",
-    "cecilia.rodriguez@campestre.com.sv",
-    "rodolfo.galeas@campestre.com.sv"
-  ];
-  
-  initialEmails.forEach(email => {
-    userCredentialsStore.set(email, defaultHash);
-  });
-}
-initializeCredentials();
-
 // Active security tokens for forgot password (never returned to client)
 const recoveryTokensStore = new Map<string, { token: string; expiresAt: number }>();
 
@@ -103,7 +134,7 @@ const recoveryTokensStore = new Map<string, { token: string; expiresAt: number }
 function signSession(userPayload: any): string {
   const payloadWithExp = {
     ...userPayload,
-    exp: Date.now() + 2 * 60 * 60 * 1000 // 2 hours expiration
+    exp: Date.now() + 2 * 60 * 60 * 1050 // 2 hours expiration plus buffer
   };
   const serialized = JSON.stringify(payloadWithExp);
   const signature = crypto.createHmac("sha256", JWT_SECRET).update(serialized).digest("hex");
@@ -148,7 +179,7 @@ async function startServer() {
     });
   });
 
-  // Finding 2: Server-Side Authentication API
+  // Finding 2: Server-Side Authentication API with secure DB lookup
   app.post("/api/login", (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -167,9 +198,10 @@ async function startServer() {
       });
     }
 
-    const correctPasswordHash = userCredentialsStore.get(normalizedEmail);
+    const db = getCredentialsDb();
+    const userCredentials = db[normalizedEmail];
 
-    if (!correctPasswordHash) {
+    if (!userCredentials || !userCredentials.hash || !userCredentials.salt) {
       recordRateLimitFailedAttempt(normalizedEmail);
       return res.status(401).json({ 
         success: false, 
@@ -177,9 +209,9 @@ async function startServer() {
       });
     }
 
-    // Verify hashed password
-    const incomingHash = hashPassword(password);
-    if (incomingHash !== correctPasswordHash) {
+    // Verify hashed password using user-specific salt and PBKDF2 algorithm
+    const incomingHash = hashPasswordSecure(password, userCredentials.salt);
+    if (incomingHash !== userCredentials.hash) {
       recordRateLimitFailedAttempt(normalizedEmail);
       return res.status(401).json({ 
         success: false, 
@@ -377,9 +409,13 @@ async function startServer() {
       });
     }
 
-    // Hash the new password and update in-memory credentials store securely!
-    const hashedNewPassword = hashPassword(newPassword.trim());
-    userCredentialsStore.set(emailKey, hashedNewPassword);
+    // Hash the new password and update credentials db securely!
+    const db = getCredentialsDb();
+    const uniqueSalt = crypto.randomBytes(16).toString("hex");
+    const hashedNewPassword = hashPasswordSecure(newPassword.trim(), uniqueSalt);
+    db[emailKey] = { hash: hashedNewPassword, salt: uniqueSalt };
+    saveCredentialsDb(db);
+    
     recoveryTokensStore.delete(emailKey); // Cleanup token
     resetRateLimit(emailKey); // Reset any failed login count for this email
 

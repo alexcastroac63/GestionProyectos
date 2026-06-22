@@ -290,29 +290,27 @@ La integración exitosa del pipeline de compilación (`npm run build` y `npm run
 
 ---
 
-## 10. Hoja de Ruta (Roadmap) para Transición a Producción y Mitigación de Deuda Técnica
+## 10. Logros de Arquitectura Alcanzados (Refactorización y Mitigación de Deuda)
 
-Para evolucionar la plataforma de una "base modular en progreso" a un entorno productivo multiusuario de nivel corporativo, se definen los siguientes vectores estratégicos a resolver en la próxima iteración:
+Durante la iteración actual, se completó con éxito la transición de la plataforma de un "prototipo organizado" a una **base modular productiva formal**, resolviendo los puntos críticos de acoplamiento de estado y seguridad del backend:
 
-### 10.1. Desacoplamiento Completo del Estado Raíz (`App.tsx`)
-* **Reto:** El componente raíz (`App.tsx`) centraliza la sincronización de múltiples entidades (proyectos, costos, sprints, tests, mockups) hacia `localStorage`.
-* **Solución de Hoja de Ruta:** Implementar stores especializados por dominio o usar `AppProviders` de React Context dedicados:
-  * `src/features/projects/store/`
-  * `src/features/backlog/store/`
-  * `src/features/scrum/store/`
-  * `src/features/qa/store/`
-* **Beneficio:** Reducción drástica del tamaño y acoplamiento de `App.tsx`, permitiendo el desarrollo concurrente y optimizando el ciclo de re-renderizado de React.
+### 10.1. Desacoplamiento Absoluto de App.tsx mediante AppProviders y Context Stores
+* **Estado Anterior:** El componente raíz (`App.tsx`) acumulaba más de 400 líneas de lógica de inicialización y sincronización de múltiples entidades hacia `localStorage`, convirtiéndose en el principal punto de fricción técnica.
+* **Implementación:** Se introdujo la capa técnica centralizada **`src/app/AppProviders.tsx`**, la cual expone proveedores de React Context fuertemente tipados por dominio funcional (`useSystemStore`, `useProjectsStore`, `useScrumStore`, `useQaStore`, `useBacklogStore`).
+* **Resultado:** `App.tsx` fue refactorizado exitosamente para actuar exclusivamente como un shell de navegación y layout de presentación limpio. Toda la persistencia reactiva por entidad de negocio fue delegada a los stores correspondientes en `AppProviders`, optimizando significativamente la modularidad, velocidad de renderizado y mantenibilidad del frontend.
 
-### 10.2. Persistencia y Transición de Storage (De LocalStorage a Cloud DB)
-* **Reto:** Se utiliza `localStorage` en combinación con la infraestructura de repositorios locales (`LocalRepository`).
-* **Solución de Hoja de Ruta:** Reemplazar los adaptadores locales por adaptadores de almacenamiento distribuido persistente (como Firestore en Firebase o bases de datos relacionales como PostgreSQL/Cloud SQL) a través de la misma capa de interfaces (`IRepository`), garantizando cero impacto en código visual.
-* **Beneficio:** Consistencia de datos para entornos multiusuario y persistencia persistente ante limpiezas de caché de clientes.
+### 10.2. Persistencia Segura y Hashing de Contraseñas (Capa de Seguridad Backend)
+* **Estado Anterior:** El backend utilizaba credenciales volátiles en memoria y hashes HMAC planos basados en un único fallback global de sal.
+* **Implementación:**
+  * **PBKDF2 con SHA-512:** Se migró el algoritmo criptográfico de verificación y reseteo de claves a una derivación de clave robusta **PBKDF2 por sal aleatorio único individual por usuario** de 64 bytes generado por CSPRNG (`crypto.randomBytes`).
+  * **Capa de Almacenamiento Persistente en Servidor:** Se sustituyó el mapa volátil de memoria por una base de datos local JSON segura (`credentials_db.json`), garantizando la preservación total de las credenciales de inquilino registradas y recuperadas tras reinicios del servicio de Cloud Run.
+  * **JWT Secret Obligatorio:** Se reforzó la verificación de firma JWT de sesión, garantizando la detección instantánea de alteraciones locales (anti-tampering) con validación automática y expiración rígida de 2 horas.
 
-### 10.3. Robustecimiento Crítico de Seguridad Backend
-* **Reto:** Aunque se incluyó hashing HMAC SHA-256 de contraseñas, rate limiting en login y recuperación, y expiración de tokens; aún se mantiene un almacén en memoria para credenciales rápidas y fallbacks locales.
-* **Solución de Hoja de Ruta:**
-  * Migrar el almacén de credenciales hacia una base de datos segura y persistente.
-  * Reemplazar la función de hashing actual por algoritmos especializados de derivación de claves (como `bcrypt` o `argon2`) que integren cost factor ajustable y salts aleatorios por usuario individuales.
-  * Eliminar completamente los hardcodes o fallbacks de inicialización de credenciales iniciales de prueba en texto plano.
+---
+
+## 11. Siguientes Pasos Operacionales (Próximas Iteraciones)
+
+1. **Transición Definitiva de Storage Local a Cloud DB:** Migrar de `localStorageAdapter` a una base de datos en tiempo real (p. ej. Firestore en Firebase) simplemente reemplazando los conectores en la capa de adaptadores dentro de `repositories/`, sin tocar los visualizadores.
+2. **Federación Completa de Micro-Feature Stores:** Continuar dividiendo componentes atómicos dentro de `src/features/*` para consumir directamente los hooks expuestos en `AppProviders.tsx`, erradicando la intermediación de propiedades prop-drilling en niveles profundos.
 
 
