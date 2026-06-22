@@ -60,6 +60,13 @@ import ProjectActivitiesSubTab from './features/projects/ProjectActivitiesSubTab
 import ProjectNotesSubTab from './features/projects/ProjectNotesSubTab';
 import { menuRegistry } from './app/menuRegistry';
 
+// Feature Component Imports
+import { SmtpSettingsPanel } from './features/settings/SmtpSettingsPanel';
+import { ClientSponsorSettings } from './features/settings/ClientSponsorSettings';
+import { ForgotPasswordFlow } from './features/auth/ForgotPasswordFlow';
+import { TeamDirectory } from './features/team/components/TeamDirectory';
+import { UserEditorModal } from './features/team/components/UserEditorModal';
+
 // Icons Import
 import {
   FolderKanban,
@@ -1898,353 +1905,16 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 </div>
               </div>
             ) : showLoginForgotPassword ? (
-              <div className="space-y-4">
-                {forgotPasswordStep === 'request' ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Correo Oficial del Usuario</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                          <Mail className="w-4 h-4" />
-                        </div>
-                        <input
-                          type="email"
-                          value={forgotPasswordEmail}
-                          onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                          placeholder="ejemplo@empresa.com"
-                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all font-sans"
-                        />
-                      </div>
-                      <p className="text-[9px] text-slate-500">
-                        Ingrese el correo del usuario cuyas credenciales desea restablecer. Esto simulará o canalizará la entrega de un código de acceso de un solo uso por SMTP.
-                      </p>
-                    </div>
-
-                    {forgotPasswordStatus && (
-                      <div className={`border rounded-xl p-3 flex gap-2.5 text-xs ${
-                        forgotPasswordStatus.type === 'error' 
-                          ? 'bg-red-500/10 border-red-500/25 text-red-400' 
-                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                      }`}>
-                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                        <div className="leading-relaxed whitespace-pre-line text-left flex-1 font-sans">
-                          {forgotPasswordStatus.message}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Local Simulation Option when SMTP doesn't exist */}
-                    {(!smtpAccount.trim() || !smtpPassword.trim()) && (
-                      <div className="bg-slate-950/60 border border-slate-850 p-3 rounded-xl space-y-1.5 animate-fadeIn">
-                        <div className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1.5 leading-none">
-                          <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce" />
-                          Simulación Directa Local (Atajo Rápido)
-                        </div>
-                        <p className="text-[9.5px] text-slate-400 leading-normal">
-                          ¿No cuenta con un servidor SMTP habilitado en este momento? Puede procesar la simulación de restablecimiento de contraseña de forma 100% local aquí mismo.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const emailToFind = forgotPasswordEmail.trim().toLowerCase();
-                            if (!emailToFind) {
-                              setForgotPasswordStatus({
-                                type: 'error',
-                                message: 'Por favor, ingrese un correo oficial registrado primero.'
-                              });
-                              return;
-                            }
-                            const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
-                            if (!targetUser) {
-                              setForgotPasswordStatus({
-                                type: 'error',
-                                message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`
-                              });
-                              return;
-                            }
-                            // Generate local code
-                            const localCode = 'CAMP-' + Math.floor(100000 + Math.random() * 900000);
-                            setForgotPasswordVerificationCode(localCode);
-                            setForgotPasswordStep('verify');
-                            setForgotPasswordStatus({
-                              type: 'success',
-                              message: `🧪 MODO DE SIMULACIÓN LOCAL ACTIVO\n\nSe ha generado un código de seguridad local: ${localCode}\n\nPor favor, cópielo e ingréselo a continuación para actualizar su clave.`
-                            });
-                            addLog('Simulación', `Se generó código de restablecimiento de contraseña local para ${emailToFind}: ${localCode}`);
-                          }}
-                          className="w-full bg-teal-950/50 hover:bg-teal-900/60 border border-teal-800/40 text-teal-300 font-bold py-1.5 rounded-lg text-[10.5px] transition cursor-pointer"
-                        >
-                          🧪 Generar Código y Simular Localmente
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowLoginForgotPassword(false);
-                          setForgotPasswordEmail('');
-                          setForgotPasswordStatus(null);
-                        }}
-                        className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 cursor-pointer text-center"
-                      >
-                        Volver al Inicio
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSendingForgotPassword}
-                        onClick={() => {
-                          const emailToFind = forgotPasswordEmail.trim().toLowerCase();
-                          if (!emailToFind) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: 'Por favor, ingrese un correo oficial registrado.'
-                            });
-                            return;
-                          }
-
-                          const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
-                          if (!targetUser) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`
-                            });
-                            return;
-                          }
-
-                          setIsSendingForgotPassword(true);
-                          setForgotPasswordStatus(null);
-                          
-                          (async () => {
-                            try {
-                              if (!smtpAccount.trim() || !smtpPassword.trim()) {
-                                setIsSendingForgotPassword(false);
-                                setForgotPasswordStatus({
-                                  type: 'error',
-                                  message: `⚠️ CONFIGURACIÓN REQUERIDA (SMTP NO CONFIGURADO)\n\nFallo de envío del correo hacia: ${emailToFind}.\n\nNo se detectó cuenta de envío de notificaciones ni contraseña.\n\nSolución:\n1. Inicie sesión temporalmente con un usuario de Acceso Rápido.\n2. Vaya al menú "Configuración Central" en el panel lateral y proporcione su cuenta de correo y credenciales SMTP.\n3. O bien, intente la opción de "Simulación Directa Local" de arriba.`
-                                });
-                                addLog('Fallo de Envío SMTP', `Se intentó enviar un enlace de recuperación de contraseña a ${emailToFind}, pero la cuenta SMTP no está configurada.`);
-                                return;
-                              }
-
-                              const res = await fetch('/api/send-recovery', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                  host: smtpHost.trim(),
-                                  port: smtpPort.trim(),
-                                  username: smtpAccount.trim(),
-                                  password: smtpPassword.trim(),
-                                  emailToFind: emailToFind
-                                })
-                              });
-
-                              const data = await res.json();
-                              setIsSendingForgotPassword(false);
-
-                              if (res.ok && data.success) {
-                                // Finding 5: Do NOT return or store the code client-side, let the secure backend verify it
-                                setForgotPasswordVerificationCode('EXISTS_SERVER_SIDE_VAL');
-                                setForgotPasswordStep('verify');
-                                setForgotPasswordStatus({
-                                  type: 'success',
-                                  message: `✅ ¡CÓDIGO DE RECUPERACIÓN DESPACHADO CON ÉXITO!\n\nServidor SMTP: ${smtpHost}:${smtpPort}\nRemitente: ${smtpAccount}\n\nUn correo firmado con SSL/TLS fue despachado siguiendo las directivas de seguridad corporativa. Por favor consulte su buzón (incluso Correo no Deseado/Spam) para encontrar el código aleatorio e ingréselo a continuación.`
-                                });
-                                addLog('Servicio SMTP', `Se envió un correo de recuperación de contraseña a ${emailToFind} (secreto guardado en servidor de forma segura)`);
-                              } else {
-                                setForgotPasswordStatus({
-                                  type: 'error',
-                                  message: `❌ ERROR EN SERVIDOR DE ALERTAS SMTP:\n\n${data.message || 'Error técnico desconocido.'}\n\nPor favor, revise que la Cuenta y contraseña de SMTP sean válidas.`
-                                });
-                                addLog('Fallo de Envío SMTP', `Error de despacho SMTP a ${emailToFind}: ${data.message || 'Fallo desconocido'}`);
-                              }
-                            } catch (err: any) {
-                              setIsSendingForgotPassword(false);
-                              setForgotPasswordStatus({
-                                type: 'error',
-                                message: `⚠️ Error de comunicación con la plataforma: ${err.message || 'Fallo general de red.'}`
-                              });
-                            }
-                          })();
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {isSendingForgotPassword ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Espere...</span>
-                          </>
-                        ) : (
-                          <span>Enviar Alerta</span>
-                        )}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-4 animate-fadeIn">
-                    {forgotPasswordStatus && (
-                      <div className={`border rounded-xl p-3 flex gap-2.5 text-[11px] ${
-                        forgotPasswordStatus.type === 'error' 
-                          ? 'bg-red-500/10 border-red-500/25 text-red-400' 
-                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                      }`}>
-                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                        <div className="leading-relaxed whitespace-pre-line text-left flex-1 font-sans">
-                          {forgotPasswordStatus.message}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Input verification code */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Código de Seguridad / Verificación *</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                          <Key className="w-4 h-4" />
-                        </div>
-                        <input
-                          type="text"
-                          value={forgotPasswordCodeInput}
-                          onChange={(e) => setForgotPasswordCodeInput(e.target.value)}
-                          placeholder="Ingrese el código recibido"
-                          required
-                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs font-mono tracking-widest uppercase focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Input new password */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono">Nueva Contraseña de Acceso *</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                          <Lock className="w-4 h-4" />
-                        </div>
-                        <input
-                          type="password"
-                          value={forgotPasswordNewPassword}
-                          onChange={(e) => setForgotPasswordNewPassword(e.target.value)}
-                          placeholder="Establezca su nueva contraseña clave"
-                          required
-                          className="w-full bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl pl-10 pr-4 py-2.5 text-xs tracking-wide focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {forgotPasswordSuccessMessage && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded-xl p-3 flex gap-2.5 text-xs text-left animate-fadeIn">
-                        <Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
-                        <div className="leading-relaxed font-sans">
-                          {forgotPasswordSuccessMessage}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForgotPasswordStep('request');
-                          setForgotPasswordCodeInput('');
-                          setForgotPasswordNewPassword('');
-                          setForgotPasswordStatus(null);
-                          setForgotPasswordSuccessMessage('');
-                        }}
-                        className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 cursor-pointer text-center"
-                      >
-                        Atrás / Solicitar de nuevo
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const typedCode = forgotPasswordCodeInput.trim().toUpperCase();
-                          const emailToFind = forgotPasswordEmail.trim().toLowerCase();
-                          
-                          if (!typedCode) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: 'Por favor, ingrese el código de verificación enviado.'
-                            });
-                            return;
-                          }
-
-                          if (!forgotPasswordNewPassword.trim() || forgotPasswordNewPassword.length < 4) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: 'Por favor, ingrese una nueva contraseña válida (mínimo 4 caracteres).'
-                            });
-                            return;
-                          }
-
-                          const targetUser = users.find(u => u.email.toLowerCase() === emailToFind);
-                          if (!targetUser) {
-                            setForgotPasswordStatus({
-                              type: 'error',
-                              message: 'Error al asociar el usuario para el cambio de credenciales.'
-                            });
-                            return;
-                          }
-
-                          // Call server-side verification and reset logic (Finding 5)
-                          (async () => {
-                            try {
-                              const res = await fetch('/api/reset-password', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                  email: emailToFind,
-                                  code: typedCode,
-                                  newPassword: forgotPasswordNewPassword.trim()
-                                })
-                              });
-
-                              const data = await res.json();
-                              if (!res.ok || !data.success) {
-                                setForgotPasswordStatus({
-                                  type: 'error',
-                                  message: data.message || 'El código de seguridad ingresado es incorrecto o ha expirado.'
-                                });
-                                return;
-                              }
-
-                              // Update parent state
-                              setUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, password: forgotPasswordNewPassword.trim() } : u));
-                              setForgotPasswordSuccessMessage(`¡Contraseña restablecida correctamente para ${targetUser.first_name}!\n\nSu cuenta se ha actualizado en el servidor de forma segura. Volviendo a la ventana de login en 3 segundos...`);
-                              setForgotPasswordStatus(null);
-                              addLog('Seguridad', `Restableció con éxito su propia contraseña para la cuenta de ${targetUser.email} mediante verificación de token de seguridad.`);
-                              
-                              setTimeout(() => {
-                                setShowLoginForgotPassword(false);
-                                setForgotPasswordEmail('');
-                                setForgotPasswordStatus(null);
-                                setForgotPasswordStep('request');
-                                setForgotPasswordCodeInput('');
-                                setForgotPasswordNewPassword('');
-                                setForgotPasswordSuccessMessage('');
-                              }, 3500);
-
-                            } catch (err: any) {
-                              setForgotPasswordStatus({
-                                type: 'error',
-                                message: `Fallo de comunicación con la plataforma: ${err.message || 'Error general de red.'}`
-                              });
-                            }
-                          })();
-                        }}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-205 shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <span>Confirmar Restauración 🔑</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ForgotPasswordFlow
+                onClose={() => setShowLoginForgotPassword(false)}
+                users={users}
+                setUsers={setUsers}
+                addLog={addLog}
+                smtpAccount={smtpAccount}
+                smtpPassword={smtpPassword}
+                smtpHost={smtpHost}
+                smtpPort={smtpPort}
+              />
             ) : (
               <form onSubmit={handleLogin} className="space-y-4">
                 {/* Tenant Selector */}
@@ -4224,6 +3894,45 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
           {activeTab === 'teams' && (
             <div className="space-y-6 animate-fadeIn" id="tab-teams">
               <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                <TeamDirectory
+                  users={users}
+                  setUsers={setUsers}
+                  loggedInUser={loggedInUser}
+                  addLog={addLog}
+                  setIsAddUserModalOpen={setIsAddUserModalOpen}
+                  setEditingUser={setEditingUser}
+                  setShowEditUserModal={setShowEditUserModal}
+                  setPasswordResetUser={setPasswordResetUser}
+                  setShowResetEmailModal={setShowResetEmailModal}
+                />
+              </div>
+
+              <UserEditorModal
+                isAddUserModalOpen={isAddUserModalOpen}
+                setIsAddUserModalOpen={setIsAddUserModalOpen}
+                editingUser={editingUser}
+                setEditingUser={setEditingUser}
+                showEditUserModal={showEditUserModal}
+                setShowEditUserModal={setShowEditUserModal}
+                showResetEmailModal={showResetEmailModal}
+                setShowResetEmailModal={setShowResetEmailModal}
+                passwordResetUser={passwordResetUser}
+                setPasswordResetUser={setPasswordResetUser}
+                users={users}
+                setUsers={setUsers}
+                addLog={addLog}
+                smtpHost={smtpHost}
+                smtpPort={smtpPort}
+                smtpAccount={smtpAccount}
+                smtpPassword={smtpPassword}
+                loggedInUser={loggedInUser}
+              />
+            </div>
+          )}
+
+          {activeTab === 'teams-old-legacy-hidden' && (
+            <div className="space-y-6 animate-fadeIn" id="tab-teams-old-legacy-hidden">
+              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
                   <div>
                     <h3 className="text-slate-900 font-bold text-lg mb-1 flex items-center gap-2">
@@ -4998,368 +4707,26 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                 </div>
 
                 {settingsSubTab === 'smtp' && (
-                  <div className="max-w-2xl mx-auto border border-slate-150 rounded-2xl p-6 bg-slate-50/50 animate-fadeIn">
-                    <div className="flex items-center gap-2.5 border-b border-slate-200 pb-3 mb-5">
-                      <Mail className="w-5 h-5 text-blue-500" />
-                      <div>
-                        <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wider block">Servidor de Alertas SMTP</span>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Establezca los parámetros de host y credenciales para el envío masivo de notificaciones de riesgo.</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
-                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Servidor SMTP (Host)</label>
-                          <input
-                            type="text"
-                            value={smtpHost}
-                            onChange={(e) => {
-                              setSmtpHost(e.target.value);
-                              localStorage.setItem('gcp_smtp_host', e.target.value);
-                            }}
-                            placeholder="smtp.gmail.com"
-                            className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition shadow-xs"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Puerto SMTP</label>
-                          <input
-                            type="text"
-                            value={smtpPort}
-                            onChange={(e) => {
-                              setSmtpPort(e.target.value);
-                              localStorage.setItem('gcp_smtp_port', e.target.value);
-                            }}
-                            placeholder="587"
-                            className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Cuenta de Correo (SMTP User Sender)</label>
-                        <input
-                          type="email"
-                          value={smtpAccount}
-                          onChange={(e) => {
-                            setSmtpAccount(e.target.value);
-                            localStorage.setItem('gcp_smtp_account', e.target.value);
-                          }}
-                          placeholder="notificaciones-pmo@example.com"
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition shadow-xs"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Clave de Correo (App Password / Credentials)</label>
-                        <input
-                          type="password"
-                          value={smtpPassword}
-                          onChange={(e) => {
-                            setSmtpPassword(e.target.value);
-                          }}
-                          placeholder="Ingrese contraseña o app password..."
-                          className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-                          Por políticas de seguridad corporativas, la clave SMTP <span className="font-semibold text-rose-600">nunca se almacena en localStorage</span>. Se mantiene de forma transitoria en la memoria de la sesión activa, o se define de forma segura del lado del servidor como una variable de entorno.
-                        </p>
-
-                        <div className="mt-3.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed shadow-xs">
-                          <div className="flex items-start gap-2.5">
-                            <span className="text-sm shrink-0">💡</span>
-                            <div className="flex-1 space-y-1">
-                              <p className="font-extrabold text-amber-950">¿Gmail u Outlook reportan "Error 535: Invalid login"?</p>
-                              <p className="text-[11px] text-slate-600">
-                                Los servidores SMTP modernos de Gmail u Outlook <span className="font-semibold text-rose-700">no aceptan tu contraseña habitual</span> por motivos de seguridad corporativa.
-                              </p>
-                              <div className="pt-1.5 pl-3 border-l-2 border-amber-300 space-y-1 text-[10.5px]">
-                                <p><strong>Paso 1:</strong> Habilita la "Verificación en dos pasos" en tu cuenta de correo.</p>
-                                <p><strong>Paso 2:</strong> Ve a <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline font-bold text-blue-700 hover:text-blue-800 flex inline-flex items-center gap-0.5">Contraseñas de Aplicaciones de Google<ExternalLink className="w-2.5 h-2.5 inline" /></a>.</p>
-                                <p><strong>Paso 3:</strong> Genera una clave exclusiva de 16 caracteres para "Correo" y copia el código sin espacios en esta casilla.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-5">
-                        <div className="flex items-start gap-3">
-                          <span className="text-lg">✉️</span>
-                          <div className="flex-1">
-                            <span className="text-[11px] font-extrabold text-blue-800 uppercase block mb-1">Prueba Dinámica de Envío</span>
-                            <p className="text-[11px] text-blue-700 leading-normal mb-3">
-                              Verifique que la plataforma de correo alerte correctamente de desviaciones y métricas críticas de presupuesto de Lifecycle PM.
-                            </p>
-                            <button
-                              type="button"
-                              disabled={smtpTestStatus === 'loading'}
-                              onClick={async () => {
-                                if (!smtpHost.trim() || !smtpPort.trim()) {
-                                  setSmtpTestStatus('error');
-                                  setSmtpTestMessage('Por favor configure el Servidor SMTP (Host) y el Puerto.');
-                                  setSmtpTestDetails('La configuración de host y puerto es mandatoria.');
-                                  return;
-                                }
-                                if (!smtpAccount.trim() || !smtpPassword.trim()) {
-                                  setSmtpTestStatus('error');
-                                  setSmtpTestMessage('Por favor complete la Cuenta de Correo y la Contraseña de Alertas antes de probar.');
-                                  setSmtpTestDetails('Las credenciales de correo emisor no pueden estar vacías.');
-                                  return;
-                                }
-
-                                setSmtpTestStatus('loading');
-                                setSmtpTestMessage('Conectando con el servidor SMTP...');
-                                setSmtpTestDetails('Estableciendo conexión por socket de red...');
-
-                                try {
-                                  const res = await fetch('/api/test-smtp', {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify({
-                                      host: smtpHost.trim(),
-                                      port: smtpPort.trim(),
-                                      username: smtpAccount.trim(),
-                                      password: smtpPassword.trim()
-                                    })
-                                  });
-
-                                  const data = await res.json();
-                                  if (res.ok && data.success) {
-                                    setSmtpTestStatus('success');
-                                    setSmtpTestMessage(data.message || '¡Conexión SMTP exitosa!');
-                                    setSmtpTestDetails(data.banner || '');
-                                    addLog('Prueba SMTP', `Envío de prueba exitoso a ${smtpHost}:${smtpPort} desde ${smtpAccount}`);
-                                  } else {
-                                    setSmtpTestStatus('error');
-                                    setSmtpTestMessage(data.message || 'Error al conectar con el servidor.');
-                                    setSmtpTestDetails(data.code ? `Código de error: ${data.code}` : 'Verifique sus credenciales, puertos y bloqueos de seguridad del host.');
-                                    addLog('Prueba SMTP', `Fallo de conexión SMTP a ${smtpHost}:${smtpPort}: ${data.message || 'Error desconocido'}`);
-                                  }
-                                } catch (err: any) {
-                                  setSmtpTestStatus('error');
-                                  setSmtpTestMessage('No se pudo establecer comunicación con el servidor local/remoto.');
-                                  setSmtpTestDetails(err.message || 'Fallo general de red o servicio de pruebas inactivo.');
-                                }
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-xs py-2 px-4 rounded-xl transition active:scale-[0.98] cursor-pointer shadow-sm shadow-blue-500/10 flex items-center gap-1.5"
-                            >
-                              {smtpTestStatus === 'loading' ? (
-                                <>
-                                  <Cpu className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Probando Conexión...</span>
-                                </>
-                              ) : (
-                                <span>Probar Envío de Alerta Ahora</span>
-                              )}
-                            </button>
-
-                            {smtpTestStatus !== 'idle' && (
-                              <div className={`mt-3.5 p-3.5 rounded-xl border text-xs leading-relaxed animate-fadeIn ${
-                                smtpTestStatus === 'loading' ? 'bg-amber-50 border-amber-200 text-amber-800' :
-                                smtpTestStatus === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-                                'bg-rose-50 border-rose-200 text-rose-800'
-                              }`}>
-                                <div className="flex items-start gap-2.5">
-                                  <span className="text-sm shrink-0">
-                                    {smtpTestStatus === 'loading' && '⏳'}
-                                    {smtpTestStatus === 'success' && '✅'}
-                                    {smtpTestStatus === 'error' && '❌'}
-                                  </span>
-                                  <div className="flex-1 space-y-1">
-                                    <p className="font-extrabold">{smtpTestMessage}</p>
-                                    {smtpTestDetails && (
-                                      <p className="text-[10.5px] opacity-95 font-mono bg-white/60 p-2 rounded border border-slate-200/50 break-all select-all mt-1">
-                                        {smtpTestDetails}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <SmtpSettingsPanel
+                    smtpHost={smtpHost}
+                    setSmtpHost={setSmtpHost}
+                    smtpPort={smtpPort}
+                    setSmtpPort={setSmtpPort}
+                    smtpAccount={smtpAccount}
+                    setSmtpAccount={setSmtpAccount}
+                    smtpPassword={smtpPassword}
+                    setSmtpPassword={setSmtpPassword}
+                    addLog={addLog}
+                  />
                 )}
 
                 {settingsSubTab === 'clients' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
-                    {/* Management box for Clients Category */}
-                    <div className="space-y-4 border border-slate-150 rounded-2xl p-5 bg-slate-50/50">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-2">
-                        <div className="flex items-center gap-2">
-                          <Briefcase className="w-4.5 h-4.5 text-emerald-500" />
-                          <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">Clientes (Sponsor Empresas)</span>
-                        </div>
-                        <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full font-mono">Total: {clientsList.length}</span>
-                      </div>
-
-                      {/* Add Client Form */}
-                      <div className="flex gap-2.5">
-                        <input
-                          type="text"
-                          id="new-client-input"
-                          placeholder="Nombre del nuevo cliente corporativo..."
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const val = (e.target as HTMLInputElement).value.trim();
-                              if (val) {
-                                if (!clientsList.includes(val)) {
-                                  const updated = [...clientsList, val];
-                                  setClientsList(updated);
-                                  localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                                  (e.target as HTMLInputElement).value = '';
-                                  addLog('Configuración', `Agregó cliente al catálogo: ${val}`);
-                                } else {
-                                  alert("El cliente ya se encuentra en el catálogo.");
-                                }
-                              }
-                            }
-                          }}
-                          className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-emerald-500 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const input = document.getElementById('new-client-input') as HTMLInputElement;
-                            const val = input?.value.trim();
-                            if (val) {
-                              if (!clientsList.includes(val)) {
-                                const updated = [...clientsList, val];
-                                setClientsList(updated);
-                                localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                                input.value = '';
-                                addLog('Configuración', `Agregó cliente al catálogo: ${val}`);
-                              } else {
-                                alert("El cliente ya se encuentra en el catálogo.");
-                              }
-                            }
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 rounded-xl transition shrink-0 cursor-pointer shadow-sm shadow-emerald-500/10"
-                        >
-                          Añadir
-                        </button>
-                      </div>
-
-                      <div className="border border-slate-200 rounded-xl bg-white max-h-[350px] overflow-y-auto divide-y divide-slate-100 shadow-xs">
-                        {clientsList.map((client, idx) => (
-                          <div key={idx} className="p-3.5 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-705 text-slate-700 transition">
-                            <span className="font-semibold break-all text-slate-800">{client}</span>
-                            <button
-                              onClick={() => {
-                                setDeleteConfirmState({
-                                  isOpen: true,
-                                  title: 'Eliminar Cliente',
-                                  message: `¿Está seguro de que desea eliminar al cliente "${client}" del catálogo corporativo?`,
-                                  onConfirm: () => {
-                                    const updated = clientsList.filter(c => c !== client);
-                                    setClientsList(updated);
-                                    localStorage.setItem('gcp_clients_list', JSON.stringify(updated));
-                                    addLog('Configuración', `Eliminó cliente del catálogo: ${client}`);
-                                  }
-                                });
-                              }}
-                              className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded transition cursor-pointer shrink-0 ml-2 animate-fadeIn"
-                              title="Eliminar cliente"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Management box for Sponsors */}
-                    <div className="space-y-4 border border-slate-150 rounded-2xl p-5 bg-slate-50/50">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-2">
-                        <div className="flex items-center gap-2">
-                          <Users2 className="w-4.5 h-4.5 text-purple-500" />
-                          <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">Sponsors (Líderes Firmas)</span>
-                        </div>
-                        <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded-full font-mono">Total: {sponsorsList.length}</span>
-                      </div>
-
-                      {/* Add Sponsor Form */}
-                      <div className="flex gap-2.5">
-                        <input
-                          type="text"
-                          id="new-sponsor-input"
-                          placeholder="Nombre del nuevo líder de firma / sponsor..."
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const val = (e.target as HTMLInputElement).value.trim();
-                              if (val) {
-                                if (!sponsorsList.includes(val)) {
-                                  const updated = [...sponsorsList, val];
-                                  setSponsorsList(updated);
-                                  localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                                  (e.target as HTMLInputElement).value = '';
-                                  addLog('Configuración', `Agregó sponsor al catálogo: ${val}`);
-                                } else {
-                                  alert("El sponsor ya se encuentra en el catálogo.");
-                                }
-                              }
-                            }
-                          }}
-                          className="flex-1 bg-white border border-slate-200 focus:ring-1 focus:ring-purple-500 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const input = document.getElementById('new-sponsor-input') as HTMLInputElement;
-                            const val = input?.value.trim();
-                            if (val) {
-                              if (!sponsorsList.includes(val)) {
-                                const updated = [...sponsorsList, val];
-                                setSponsorsList(updated);
-                                localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                                input.value = '';
-                                addLog('Configuración', `Agregó sponsor al catálogo: ${val}`);
-                              } else {
-                                alert("El sponsor ya se encuentra en el catálogo.");
-                              }
-                            }
-                          }}
-                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 rounded-xl transition shrink-0 cursor-pointer shadow-sm shadow-purple-500/10"
-                        >
-                          Añadir
-                        </button>
-                      </div>
-
-                      <div className="border border-slate-200 rounded-xl bg-white max-h-[350px] overflow-y-auto divide-y divide-slate-100 shadow-xs">
-                        {sponsorsList.map((sponsor, idx) => (
-                          <div key={idx} className="p-3.5 gap-2 flex items-center justify-between text-xs hover:bg-slate-50 text-slate-700 transition">
-                            <span className="font-semibold break-all text-slate-800">{sponsor}</span>
-                            <button
-                              onClick={() => {
-                                setDeleteConfirmState({
-                                  isOpen: true,
-                                  title: 'Eliminar Sponsor',
-                                  message: `¿Está seguro de que desea eliminar al sponsor "${sponsor}" del catálogo corporativo?`,
-                                  onConfirm: () => {
-                                    const updated = sponsorsList.filter(s => s !== sponsor);
-                                    setSponsorsList(updated);
-                                    localStorage.setItem('gcp_sponsors_list', JSON.stringify(updated));
-                                    addLog('Configuración', `Eliminó sponsor del catálogo: ${sponsor}`);
-                                  }
-                                });
-                              }}
-                                className="text-rose-500 hover:text-rose-700 p-1.5 hover:bg-rose-50 rounded transition cursor-pointer shrink-0 ml-2 animate-fadeIn"
-                                title="Eliminar sponsor"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                  <ClientSponsorSettings
+                    clientsList={clientsList}
+                    setClientsList={setClientsList}
+                    sponsorsList={sponsorsList}
+                    setSponsorsList={setSponsorsList}
+                  />
                 )}
 
                 {settingsSubTab === 'scrum_rules' && (
