@@ -232,9 +232,13 @@ function AppContent() {
   const [smtpAccount, setSmtpAccount] = useState(() => {
     return localStorage.getItem('gcp_smtp_account') || '';
   });
-  const [smtpPassword, setSmtpPassword] = useState(() => {
-    return localStorage.getItem('gcp_smtp_password') || '';
-  });
+  
+  // Clear any existing insecurely stored passwords from localStorage
+  useEffect(() => {
+    localStorage.removeItem('gcp_smtp_password');
+  }, []);
+
+  const [smtpPassword, setSmtpPassword] = useState('');
   const [smtpHost, setSmtpHost] = useState(() => {
     return localStorage.getItem('gcp_smtp_host') || 'smtp.gmail.com';
   });
@@ -5055,13 +5059,12 @@ Verificado por el Almacén de Datos Seguro Local de PMO Web.
                           value={smtpPassword}
                           onChange={(e) => {
                             setSmtpPassword(e.target.value);
-                            localStorage.setItem('gcp_smtp_password', e.target.value);
                           }}
                           placeholder="Ingrese contraseña o app password..."
                           className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
                         />
                         <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-                          Por razones de seguridad de la infraestructura de Lifecycle PM, las credenciales se almacenan localmente en la sesión activa del navegador de forma segura.
+                          Por políticas de seguridad corporativas, la clave SMTP <span className="font-semibold text-rose-600">nunca se almacena en localStorage</span>. Se mantiene de forma transitoria en la memoria de la sesión activa, o se define de forma segura del lado del servidor como una variable de entorno.
                         </p>
 
                         <div className="mt-3.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed shadow-xs">

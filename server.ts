@@ -65,13 +65,25 @@ function initializeCredentials() {
     "cecilia.rodriguez@campestre.com.sv",
     "rodolfo.galeas@campestre.com.sv"
   ];
-  const defaultPlaintext = process.env.INITIAL_SEEDED_PASSWORD || Buffer.from("Q2FtcDIwMjYrUHJ1YjI4", "base64").toString("utf-8");
+  const defaultPlaintext = process.env.INITIAL_SEEDED_PASSWORD;
+  
+  // Exigir INITIAL_SEEDED_PASSWORD por variable de entorno cuando se necesite inicializar credenciales
+  const needsSeeding = initialEmails.some(email => !db[email]);
+  if (needsSeeding && !defaultPlaintext) {
+    console.error("\n=============================================================================================");
+    console.error("FATAL SECURITY CONFIGURATION ERROR:");
+    console.error("The environment variable 'INITIAL_SEEDED_PASSWORD' is required to seed initial user accounts");
+    console.error("in credentials_db.json. Please define this variable in .env / environment configuration.");
+    console.error("=============================================================================================\n");
+    process.exit(1);
+  }
+
   let credentialsUpdated = false;
 
   initialEmails.forEach(email => {
     if (!db[email]) {
       const uniqueSalt = crypto.randomBytes(16).toString("hex");
-      const secureHash = hashPasswordSecure(defaultPlaintext, uniqueSalt);
+      const secureHash = hashPasswordSecure(defaultPlaintext!, uniqueSalt);
       db[email] = { hash: secureHash, salt: uniqueSalt };
       credentialsUpdated = true;
     }
@@ -99,6 +111,8 @@ function isHostAllowed(host: string): boolean {
   if (ALLOWED_SMTP_HOSTS.includes(normalized)) return true;
   // Allow any subdomains of campestre.com.sv
   if (normalized === "campestre.com.sv" || normalized.endsWith(".campestre.com.sv")) return true;
+  // Allow environment-defined host
+  if (process.env.SMTP_HOST && normalized === process.env.SMTP_HOST.toLowerCase().trim()) return true;
   return false;
 }
 
@@ -253,7 +267,13 @@ async function startServer() {
 
   // Finding 3 & 12: API to send actual recovery emails from backend safely without returning recovery codes
   app.post("/api/send-recovery", async (req, res) => {
-    const { host, port, username, password, emailToFind } = req.body;
+    let { host, port, username, password, emailToFind } = req.body;
+
+    // Fallback to server-side secure environment configuration
+    host = host || process.env.SMTP_HOST;
+    port = port || process.env.SMTP_PORT;
+    username = username || process.env.SMTP_USER || process.env.SMTP_ACCOUNT;
+    password = password || process.env.SMTP_PASSWORD;
 
     if (!emailToFind) {
       return res.status(400).json({ success: false, message: "Destinatario no especificado." });
@@ -433,8 +453,14 @@ async function startServer() {
 
   // Finding 3 & 4: Safe SMTP connection test with allowed hosts check
   app.post("/api/test-smtp", async (req, res) => {
-    const { host, port, username, password } = req.body;
+    let { host, port, username, password } = req.body;
     
+    // Fallback to server-side secure environment configuration
+    host = host || process.env.SMTP_HOST;
+    port = port || process.env.SMTP_PORT;
+    username = username || process.env.SMTP_USER || process.env.SMTP_ACCOUNT;
+    password = password || process.env.SMTP_PASSWORD;
+
     if (!host || !port) {
       return res.status(400).json({ 
         success: false, 
