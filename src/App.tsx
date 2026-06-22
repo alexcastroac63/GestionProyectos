@@ -115,61 +115,7 @@ import {
   FileText
 } from 'lucide-react';
 
-function safeLoad<T>(key: string, defaultValue: T): T {
-  try {
-    const local = localStorage.getItem(key);
-    if (local && local !== "undefined" && local !== "null") {
-      const parsed = JSON.parse(local);
-      if (parsed !== null && parsed !== undefined) {
-        if (Array.isArray(defaultValue) && !Array.isArray(parsed)) {
-          console.warn(`Localstorage mismatch for key "${key}": expected array, got difference.`);
-          return defaultValue;
-        }
-        if (defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)) {
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            console.warn(`Localstorage mismatch for key "${key}": expected object, got difference.`);
-            return defaultValue;
-          }
-        }
-        return parsed as T;
-      }
-    }
-  } catch (err) {
-    console.warn(`Error parsing localStorage key "${key}":`, err);
-  }
-  return defaultValue;
-}
-
-function safeSave(key: string, value: any): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    if (err instanceof DOMException && (
-      err.name === 'QuotaExceededError' ||
-      err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
-    )) {
-      console.warn(`[QuotaExceededError] La clave "${key}" excedió la cuota de localStorage (5MB). Optimizando espacio...`);
-      
-      if (Array.isArray(value)) {
-        const reduced = value.map(item => {
-          if (item && typeof item === 'object') {
-            return { ...item, raw_base64: undefined };
-          }
-          return item;
-        });
-        try {
-          localStorage.setItem(key, JSON.stringify(reduced));
-          console.warn(`[QuotaExceededError Fix] Guardada copia optimizada (sin base64) para "${key}" exitosamente.`);
-          return;
-        } catch (innerErr) {
-          console.error(`[QuotaExceededError Fatal] Incluso sin base64 falló el guardado para "${key}":`, innerErr);
-        }
-      }
-    } else {
-      console.error(`Error guardando en localStorage key "${key}":`, err);
-    }
-  }
-}
+import { safeLoad, safeSave } from './shared/storage/localStorageAdapter';
 
 const INITIAL_NOTE_TYPES: NoteType[] = [
   {
@@ -195,7 +141,7 @@ const INITIAL_NOTE_TYPES: NoteType[] = [
   }
 ];
 
-import { AppProviders, useSystemStore, useProjectsStore, useScrumStore, useQaStore, useBacklogStore } from './app/AppProviders';
+import { AppProviders, useSystemStore, useProjectsStore, useScrumStore, useQaStore, useBacklogStore, useMockupStore } from './app/AppProviders';
 
 export default function App() {
   return (
@@ -236,19 +182,10 @@ function AppContent() {
     testSuites, setTestSuites, testCases, setTestCases, testRuns, setTestRuns
   } = useQaStore();
 
-  // Mockups and UI components states reside locally within AppContent
-  const [mockups, setMockups] = useState<Mockup[]>(() => safeLoad<Mockup[]>('gcp_mockups', INITIAL_MOCKUPS));
-  const [mockScreens, setMockScreens] = useState<MockupScreen[]>(() => safeLoad<MockupScreen[]>('gcp_mock_screens', INITIAL_MOCKUP_SCREENS));
-  const [mockComponents, setMockComponents] = useState<MockupComponent[]>(() => safeLoad<MockupComponent[]>('gcp_mock_components', INITIAL_MOCKUP_COMPONENTS));
-  const [mockConnections, setMockConnections] = useState<MockupConnection[]>(() => safeLoad<MockupConnection[]>('gcp_mock_connections', INITIAL_MOCKUP_CONNECTIONS));
-
-  // Sync mockups locally
-  useEffect(() => {
-    safeSave('gcp_mockups', mockups);
-    safeSave('gcp_mock_screens', mockScreens);
-    safeSave('gcp_mock_components', mockComponents);
-    safeSave('gcp_mock_connections', mockConnections);
-  }, [mockups, mockScreens, mockComponents, mockConnections]);
+  // Mockups and UI components states reside in central decoupled MockupContext provider
+  const {
+    mockups, setMockups, mockScreens, setMockScreens, mockComponents, setMockComponents, mockConnections, setMockConnections
+  } = useMockupStore();
 
   // Navigation & filter states are fully managed by System and Projects stores in AppProviders.tsx
   // Local note type form control
