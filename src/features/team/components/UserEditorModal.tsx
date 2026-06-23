@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Key, Mail, UserPlus, Edit2, Check, AlertTriangle } from 'lucide-react';
 import { User } from '../../../types';
+import { useSystemStore } from '../../../app/providers/SystemProvider';
 
 interface UserEditorModalProps {
   isAddUserModalOpen: boolean;
@@ -19,7 +20,6 @@ interface UserEditorModalProps {
   smtpHost: string;
   smtpPort: string;
   smtpAccount: string;
-  smtpPassword: string;
   loggedInUser: any;
 }
 
@@ -40,9 +40,10 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
   smtpHost,
   smtpPort,
   smtpAccount,
-  smtpPassword,
   loggedInUser,
 }) => {
+  const { smtpPassword } = useSystemStore();
+
   // Local state for Add User form
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');

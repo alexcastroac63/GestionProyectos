@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Tenant, User, NoteType } from '../../types';
 import { systemRepository } from '../../shared/infrastructure/systemRepository';
 import { safeLoad, safeSave } from '../../shared/storage/localStorageAdapter';
+import { settingsRepository } from '../../features/settings/infrastructure/settingsRepository';
 
 export interface SystemContextType {
   tenants: Tenant[];
@@ -27,6 +28,12 @@ export interface SystemContextType {
   setSettingsSubTab: (tab: 'smtp' | 'clients' | 'scrum_rules' | 'tenants' | 'note_types') => void;
   deleteConfirmState: { isOpen: boolean; title: string; message: string; onConfirm: () => void } | null;
   setDeleteConfirmState: React.Dispatch<React.SetStateAction<{ isOpen: boolean; title: string; message: string; onConfirm: () => void } | null>>;
+  smtpPassword: string;
+  setSmtpPassword: React.Dispatch<React.SetStateAction<string>>;
+  clientsList: string[];
+  setClientsList: React.Dispatch<React.SetStateAction<string[]>>;
+  sponsorsList: string[];
+  setSponsorsList: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export const SystemContext = createContext<SystemContextType | undefined>(undefined);
@@ -113,6 +120,17 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules' | 'tenants' | 'note_types'>('smtp');
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
 
+  // SMTP password (transient)
+  const [smtpPassword, setSmtpPassword] = useState<string>('');
+
+  // Clients & Sponsors Lists (bound to Settings Repository)
+  const [clientsList, setClientsList] = useState<string[]>(() => {
+    return settingsRepository.loadClients();
+  });
+  const [sponsorsList, setSponsorsList] = useState<string[]>(() => {
+    return settingsRepository.loadSponsors();
+  });
+
   // Sync state with repository on changes
   useEffect(() => {
     systemRepository.saveTenants(tenants);
@@ -132,7 +150,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       loggedInUser, setLoggedInUser, activeTab, setActiveTab,
       isMobileMenuOpen, setIsMobileMenuOpen, isProjectsMenuOpen, setIsProjectsMenuOpen,
       isSettingsMenuOpen, setIsSettingsMenuOpen, settingsSubTab, setSettingsSubTab,
-      deleteConfirmState, setDeleteConfirmState
+      deleteConfirmState, setDeleteConfirmState,
+      smtpPassword, setSmtpPassword,
+      clientsList, setClientsList,
+      sponsorsList, setSponsorsList
     }}>
       {children}
     </SystemContext.Provider>

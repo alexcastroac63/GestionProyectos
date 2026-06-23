@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import { Mail, Key, Lock, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import { User } from '../../types';
+import { useSystemStore } from '../../app/providers/SystemProvider';
+import { settingsRepository } from '../settings/infrastructure/settingsRepository';
 
 interface ForgotPasswordFlowProps {
   onClose: () => void;
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   addLog: (user: string, action: string) => void;
-  smtpAccount: string;
-  smtpPassword: string;
-  smtpHost: string;
-  smtpPort: string;
 }
 
 export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
@@ -18,11 +16,13 @@ export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
   users,
   setUsers,
   addLog,
-  smtpAccount,
-  smtpPassword,
-  smtpHost,
-  smtpPort,
 }) => {
+  const { smtpPassword } = useSystemStore();
+  const smtpConfig = settingsRepository.loadSmtpConfig();
+  const smtpAccount = smtpConfig.account;
+  const smtpHost = smtpConfig.host;
+  const smtpPort = smtpConfig.port;
+
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordStatus, setForgotPasswordStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSendingForgotPassword, setIsSendingForgotPassword] = useState(false);
