@@ -16,18 +16,20 @@ import {
 
 // Component Imports
 import GanttChart from './features/projects/GanttChart';
-import MockupCanvas from './features/mockups/MockupCanvas';
-import DbaSchema from './features/dba/DbaSchema';
-import DevOpsPipeline from './features/devops/DevOpsPipeline';
 import ProjectWBSManager from './features/projects/ProjectWBSManager';
 import ProductBacklogManager from './features/backlog/ProductBacklogManager';
 import { QuickBacklogItemForm } from './features/backlog/components/QuickBacklogItemForm';
 import ScrumBoardAndQaManager from './features/scrum/ScrumBoardAndQaManager';
 import KPIDashboard from './features/dashboard/KPIDashboard';
-import QaSuiteWorkspace from './features/qa/QaSuiteWorkspace';
 import ProjectActivitiesSubTab from './features/projects/ProjectActivitiesSubTab';
 import ProjectNotesSubTab from './features/projects/ProjectNotesSubTab';
 import { menuRegistry } from './app/menuRegistry';
+
+// Lazy Loaded Large Components
+const MockupCanvas = React.lazy(() => import('./features/mockups/MockupCanvas'));
+const DbaSchema = React.lazy(() => import('./features/dba/DbaSchema'));
+const DevOpsPipeline = React.lazy(() => import('./features/devops/DevOpsPipeline'));
+const QaSuiteWorkspace = React.lazy(() => import('./features/qa/QaSuiteWorkspace'));
 
 // Feature Component Imports
 import { TeamDirectoryView } from './features/team/TeamDirectoryView';
@@ -38,8 +40,13 @@ import { ProjectBudgetView } from './features/projects/components/ProjectBudgetV
 
 // Custom Hooks and Selectors
 import { useSessionVerification } from './features/auth/hooks/useSessionVerification';
+import { useAuthActions } from './features/auth/hooks/useAuthActions';
 import { getSegmentedProjects, getSegmentedUsers } from './app/selectors/tenantSelectors';
+import { getActiveProject, getProjectSprints, getActiveSprint } from './app/selectors/projectSelectors';
 import { useProjectActions } from './features/projects/hooks/useProjectActions';
+
+// Layout Imports
+import { AppShell } from './app/layout/AppShell';
 
 // Icons Import
 import {
@@ -150,14 +157,7 @@ function AppContent() {
 
   // --- Actions ---
 
-  const handleLogout = () => {
-    if (loggedInUser) {
-      const storedName = `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario';
-      addLog(storedName, 'Cerró su sesión de la plataforma.');
-    }
-    setLoggedInUser(null);
-    localStorage.removeItem('gcp_logged_in_user');
-  };
+  const { handleLogout } = useAuthActions({ loggedInUser, setLoggedInUser, addLog });
 
   // Active session integrity loop check to detect and prevent LS tampering
   useSessionVerification({ loggedInUser, handleLogout });
@@ -169,9 +169,9 @@ function AppContent() {
   const segmentedUsers = getSegmentedUsers(users, loggedInUser);
 
   // Active contextual references
-  const activeProject = segmentedProjects.find(p => p.id === selectedProjectId) || segmentedProjects[0] || INITIAL_PROJECTS[0];
-  const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
-  const activeSprint = projectSprints.find(s => s.id === selectedSprintId) || projectSprints[0];
+  const activeProject = getActiveProject(segmentedProjects, selectedProjectId, INITIAL_PROJECTS[0]);
+  const projectSprints = getProjectSprints(sprints, selectedProjectId);
+  const activeSprint = getActiveSprint(projectSprints, selectedSprintId);
 
   const { updateProjectStatus } = useProjectActions({ setProjects, addLog });
 
@@ -182,242 +182,10 @@ function AppContent() {
   const menuItems = menuRegistry;
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden antialiased relative">
-      {/* Sidebar Overlay for Mobile */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/60 md:hidden backdrop-blur-xs transition-opacity duration-300"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Sidebar Navigation */}
-      <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 flex flex-col border-r border-slate-800 transition-transform duration-300 md:translate-x-0 md:static ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } shrink-0`}
-      >
-        <div className="p-6 flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white text-base shadow-sm">
-              L
-            </div>
-            <div className="flex flex-col">
-              <span className="text-white font-semibold text-sm tracking-tight leading-none mb-0.5">Lifecycle PM</span>
-              <span className="text-[10px] text-slate-500 font-mono tracking-wide uppercase">v1.2.0 (Stable)</span>
-            </div>
-          </div>
-          
-          {/* Close button for Mobile */}
-          <button
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-white md:hidden cursor-pointer hover:bg-slate-800 rounded-lg transition-colors"
-            aria-label="Cerrar menú"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto">
-          <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-3 pb-2 font-mono">Menú de Ciclo de Vida</span>
-          
-          {menuItems.map(item => {
-            if (item.isGroup) {
-              const Icon = item.icon;
-              const isAnyChildActive = item.children?.some(child => activeTab === child.id);
-              const isGroupOpen = item.id === 'projects_group' ? isProjectsMenuOpen : isSettingsMenuOpen;
-              const toggleGroup = () => {
-                if (item.id === 'projects_group') {
-                  setIsProjectsMenuOpen(prev => !prev);
-                } else {
-                  setIsSettingsMenuOpen(prev => !prev);
-                }
-              };
-              
-              return (
-                <div key={item.id} className="space-y-1">
-                  <button
-                    onClick={toggleGroup}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold tracking-tight transition-all text-left cursor-pointer ${
-                      isAnyChildActive
-                        ? 'text-blue-400 bg-slate-800/30'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{item.label}</span>
-                    </div>
-                    {isGroupOpen ? (
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                  
-                  {isGroupOpen && (
-                    <div className="pl-3.5 space-y-1.5 border-l border-slate-800 ml-4 mt-1">
-                      {item.children?.map(child => {
-                        const ChildIcon = child.icon;
-                        const isChildActive = activeTab === child.id;
-                        return (
-                          <button
-                            key={child.id}
-                            onClick={() => {
-                              setActiveTab(child.id);
-                              setIsMobileMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-3.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold tracking-tight transition-all text-left cursor-pointer ${
-                              isChildActive
-                                ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-500 pl-2 font-bold'
-                                : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-                            }`}
-                          >
-                            <ChildIcon className="w-3" />
-                            <span>{child.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold tracking-tight transition-all text-left cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-500 pl-2.5 font-bold'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-
-          <div className="pt-4 border-t border-slate-800 mt-4 space-y-2">
-            <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-3 flex items-center gap-1.5 font-mono">
-              <History className="w-3 h-3 text-blue-400" />
-              Eventos Recientes
-            </span>
-            <div className="space-y-2 max-h-36 overflow-y-auto pr-1 pl-2">
-              {logs.slice(0, 6).map(log => (
-                <div key={log.id} className="text-[10px] border-b border-slate-800/50 pb-1.5 last:border-0">
-                  <div className="flex justify-between text-slate-400 font-mono text-[9px]">
-                    <span className="truncate max-w-[100px] font-semibold">{log.user.split(" ")[0]}</span>
-                    <span>{log.time}</span>
-                  </div>
-                  <p className="text-slate-300 font-normal leading-tight text-[9px] truncate" title={log.text}>{log.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </nav>
-
-        <div className="p-4 border-t border-slate-800 shrink-0">
-          <div className="bg-slate-800/40 p-2.5 rounded-xl flex items-center justify-between gap-3 border border-slate-850">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold uppercase shrink-0 font-mono shadow-sm">
-                {loggedInUser ? `${loggedInUser.first_name?.[0] || 'U'}${loggedInUser.last_name?.[0] || 'S'}` : 'U'}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-white truncate leading-tight">
-                  {loggedInUser ? `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario' : 'Invitado'}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5" title={loggedInUser?.role}>
-                  {loggedInUser ? loggedInUser.role : 'Sin Perfil'}
-                </p>
-              </div>
-            </div>
-            
-            {/* Quick Logout inside the Sidebar card block */}
-            <button
-              onClick={handleLogout}
-              className="p-1.5 bg-slate-800 hover:bg-red-950/40 text-slate-400 hover:text-red-400 border border-slate-700/50 hover:border-red-900/50 rounded-lg transition-all duration-200 cursor-pointer shrink-0"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Explicit, high-visibility block logout button for Mobile viewports */}
-          <button
-            onClick={handleLogout}
-            className="w-full mt-2.5 flex items-center justify-center gap-2 py-2 bg-red-650/10 hover:bg-red-650/25 text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/45 rounded-xl text-[11px] font-bold cursor-pointer transition-all duration-200 md:hidden"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Cerrar Sesión</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden w-full">
-        {/* Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Hamburger toggle button for Mobile */}
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="p-1.5 -ml-1 text-slate-650 hover:text-slate-900 md:hidden hover:bg-slate-100 rounded-lg transition-all cursor-pointer shrink-0"
-              aria-label="Abrir menú"
-            >
-              <Menu className="w-5.5 h-5.5" />
-            </button>
-            <h1 className="text-sm sm:text-base font-bold text-slate-800 truncate max-w-[140px] xs:max-w-[180px] sm:max-w-none">
-              Gestión Integral de proyectos
-            </h1>
-          </div>
-
-          {/* User Session and Tenant Header Tools */}
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            {/* Tenant Status Tag */}
-            <div className="hidden lg:flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-full px-3 py-1">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-[10px] text-slate-500 font-mono tracking-tight">
-                CIA: <strong className="text-slate-700 uppercase">{(tenants.find(t => t.id === loggedInUser?.tenant_id)?.name) || loggedInUser?.tenant_id}</strong>
-              </span>
-            </div>
-
-            {/* Profile Avatar & Stack */}
-            <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200 shrink-0">
-              <div className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center justify-center font-bold text-xs uppercase cursor-help shrink-0 font-mono" title={`${loggedInUser?.first_name || ''} ${loggedInUser?.last_name || ''} (${loggedInUser?.role || ''})`}>
-                {loggedInUser ? `${loggedInUser.first_name?.[0] || 'U'}${loggedInUser.last_name?.[0] || 'S'}` : 'US'}
-              </div>
-              <div className="hidden sm:flex flex-col text-left min-w-0">
-                <span className="text-xs font-semibold text-slate-850 truncate leading-none mb-0.5">
-                  {loggedInUser ? `${loggedInUser.first_name || ''} ${loggedInUser.last_name || ''}`.trim() || 'Usuario' : 'Usuario'}
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium truncate">
-                  {loggedInUser ? loggedInUser.role : 'Invitado'}
-                </span>
-              </div>
-            </div>
-
-            {/* Logout interactive Button */}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-650 border border-slate-200 hover:border-red-200 rounded-xl text-xs font-semibold tracking-tight transition-all duration-200 cursor-pointer shadow-xs shrink-0"
-              title="Cerrar sesión de forma segura"
-            >
-              <LogOut className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Cerrar Sesión</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <AppShell
+      handleLogout={handleLogout}
+      updateProjectStatus={updateProjectStatus}
+    >
 
               {/* 1. TAB: DASHBOARD */}
               {activeTab === 'dashboard' && (
@@ -1190,37 +958,49 @@ function AppContent() {
 
           {/* 5. TAB: QA TESTING SUITE */}
           {activeTab === 'qa' && (
-            <QaSuiteWorkspace
-              selectedProjectId={selectedProjectId}
-              setSelectedProjectId={setSelectedProjectId}
-              projects={segmentedProjects}
-              users={segmentedUsers}
-              sprints={sprints}
-              setSprints={setSprints}
-              workItems={workItems}
-              setWorkItems={setWorkItems}
-              testCases={testCases}
-              setTestCases={setTestCases}
-              testSuites={testSuites}
-              setTestSuites={setTestSuites}
-              testRuns={testRuns}
-              setTestRuns={setTestRuns}
-              addLog={addLog}
-              loggedInUser={loggedInUser || undefined}
-              activities={activities}
-              setActivities={setActivities}
-            />
+            <React.Suspense fallback={
+              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-mono text-xs animate-pulse">
+                Cargando Módulo de Pruebas de Calidad (QA)...
+              </div>
+            }>
+              <QaSuiteWorkspace
+                selectedProjectId={selectedProjectId}
+                setSelectedProjectId={setSelectedProjectId}
+                projects={segmentedProjects}
+                users={segmentedUsers}
+                sprints={sprints}
+                setSprints={setSprints}
+                workItems={workItems}
+                setWorkItems={setWorkItems}
+                testCases={testCases}
+                setTestCases={setTestCases}
+                testSuites={testSuites}
+                setTestSuites={setTestSuites}
+                testRuns={testRuns}
+                setTestRuns={setTestRuns}
+                addLog={addLog}
+                loggedInUser={loggedInUser || undefined}
+                activities={activities}
+                setActivities={setActivities}
+              />
+            </React.Suspense>
           )}
 
           {/* 6. TAB: MOCKUPS LIVE CANVAS */}
           {activeTab === 'mockup' && (
             <div className="space-y-6 animate-fadeIn" id="tab-mockups">
               {/* Load Mockup canvas component with projects and selection details */}
-              <MockupCanvas
-                projects={segmentedProjects}
-                selectedProjectId={selectedProjectId}
-                setSelectedProjectId={setSelectedProjectId}
-              />
+              <React.Suspense fallback={
+                <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-mono text-xs animate-pulse">
+                  Cargando Canvas de Prototipado (Mockups)...
+                </div>
+              }>
+                <MockupCanvas
+                  projects={segmentedProjects}
+                  selectedProjectId={selectedProjectId}
+                  setSelectedProjectId={setSelectedProjectId}
+                />
+              </React.Suspense>
             </div>
           )}
 
@@ -1232,7 +1012,13 @@ function AppContent() {
           {/* 8. TAB: DBA POSTGRESQL */}
           {activeTab === 'dba' && (
             <div className="space-y-6 animate-fadeIn" id="tab-dba">
-              <DbaSchema />
+              <React.Suspense fallback={
+                <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-mono text-xs animate-pulse">
+                  Cargando Modelador de Base de Datos (DBA)...
+                </div>
+              }>
+                <DbaSchema />
+              </React.Suspense>
             </div>
           )}
 
@@ -1280,7 +1066,13 @@ function AppContent() {
               </div>
 
                {/* CI/CD Dynamic Simulator Actions */}
-              <DevOpsPipeline selectedProjectId={selectedProjectId} projects={segmentedProjects} />
+              <React.Suspense fallback={
+                <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-mono text-xs animate-pulse">
+                  Cargando Pipeline de Integración Continua (DevOps)...
+                </div>
+              }>
+                <DevOpsPipeline selectedProjectId={selectedProjectId} projects={segmentedProjects} />
+              </React.Suspense>
             </div>
           )}
 
@@ -1295,330 +1087,6 @@ function AppContent() {
               setSponsorsList={setSponsorsList}
             />
           )}
-
-        </div>
-
-        {/* Status Bar */}
-        <footer className="h-8 bg-slate-200 border-t border-slate-300 flex items-center justify-between px-6 shrink-0">
-          <div className="flex gap-4 text-[10px] font-bold text-slate-500 uppercase">
-            <span>SCRUM Master: Sofía Ramírez</span>
-            <span className="hidden sm:inline">•</span>
-            <span>Autor Principal: Alex Castro</span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline">Release Candidate: v1.2.0-stable</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <span className="text-[10px] font-bold text-slate-600 uppercase">All Systems Nominal</span>
-          </div>
-        </footer>
-
-
-
-        {/* PROJECT CONFIGURATION MODAL */}
-        {projectConfigModalTarget && (
-          <div 
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" 
-            onClick={() => setProjectConfigModalTarget(null)}
-          >
-            <div 
-              className="bg-white border border-slate-200 text-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col pt-1" 
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center font-sans">
-                <div className="flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-slate-700" />
-                  <h4 className="font-bold text-sm text-slate-850 font-sans text-slate-900">
-                    Configurar Proyecto: [{projectConfigModalTarget.code}]
-                  </h4>
-                </div>
-                <button
-                  onClick={() => setProjectConfigModalTarget(null)}
-                  className="text-slate-400 hover:text-slate-600 font-bold text-lg select-none px-1.5 focus:outline-none transition cursor-pointer"
-                >
-                  ×
-                </button>
-              </div>
-
-              <form 
-                onSubmit={e => {
-                  e.preventDefault();
-                  setProjects(prev => prev.map(p => p.id === projectConfigModalTarget.id ? projectConfigModalTarget : p));
-                  addLog('Carlos Pérez (PM)', `Actualizó la configuración global del proyecto [${projectConfigModalTarget.code}] ${projectConfigModalTarget.name}`);
-                  setProjectConfigModalTarget(null);
-                }}
-                className="p-5 space-y-4 text-xs font-sans"
-              >
-                <div>
-                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Nombre del Proyecto</label>
-                  <input
-                    type="text"
-                    required
-                    value={projectConfigModalTarget.name}
-                    onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Cliente</label>
-                    <select
-                      value={projectConfigModalTarget.client}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, client: e.target.value } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
-                    >
-                      {clientsList.map(c => (
-                        <option key={c} value={c}>🏢 {c}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Sponsor Principal</label>
-                    <select
-                      value={projectConfigModalTarget.sponsor}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, sponsor: e.target.value } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
-                    >
-                      {sponsorsList.map(s => (
-                        <option key={s} value={s}>👤 {s}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Fecha de Inicio</label>
-                    <input
-                      type="date"
-                      required
-                      value={projectConfigModalTarget.start_date}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, start_date: e.target.value } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Fecha de Fin</label>
-                    <input
-                      type="date"
-                      required
-                      value={projectConfigModalTarget.end_date}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, end_date: e.target.value } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Presupuesto ($ USD)</label>
-                    <input
-                      type="number"
-                      required
-                      value={projectConfigModalTarget.budget_total}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, budget_total: Number(e.target.value) } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tamaño de Sprint (Días Hábiles)*</label>
-                    <input
-                      type="number"
-                      required
-                      min={1}
-                      max={90}
-                      value={projectConfigModalTarget.sprint_size_days !== undefined ? projectConfigModalTarget.sprint_size_days : 10}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, sprint_size_days: Number(e.target.value) } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Prioridad de Portafolio</label>
-                  <select
-                    value={projectConfigModalTarget.priority}
-                    onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, priority: e.target.value as any } : null)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
-                  >
-                    <option value="HIGH">🔴 Alta</option>
-                    <option value="MEDIUM">🟡 Media</option>
-                    <option value="LOW">🟢 Baja</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tipo de Desarrollo</label>
-                    <select
-                      value={projectConfigModalTarget.desarrollo || 'Interno'}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, desarrollo: e.target.value as any } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
-                    >
-                      <option value="Interno">⚙️ Interno</option>
-                      <option value="Mixto">🔄 Mixto</option>
-                      <option value="Externo">📦 Externo</option>
-                      <option value="Sin desarrollo">🚫 Sin desarrollo</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Categoría del Proyecto</label>
-                    <select
-                      value={projectConfigModalTarget.categoria || 'Mediano'}
-                      onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, categoria: e.target.value as any } : null)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
-                    >
-                      <option value="Pequeño">🟢 Pequeño</option>
-                      <option value="Mediano">🟡 Mediano</option>
-                      <option value="Grande">🟠 Grande</option>
-                      <option value="Muy Grande">🔴 Muy Grande</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 text-xs pt-4 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setProjectConfigModalTarget(null)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-bold transition cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-extrabold transition cursor-pointer"
-                  >
-                    Guardar Cambios
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* PROJECT STATUS TRANSITION MODAL */}
-        {projectStatusModalTarget && (
-          <div 
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn" 
-            onClick={() => setProjectStatusModalTarget(null)}
-          >
-            <div 
-              className="bg-white border border-slate-200 text-slate-800 w-full max-w-md rounded-xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col" 
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <FolderKanban className="w-4 h-4 text-blue-600" />
-                  <h4 className="font-bold text-sm text-slate-900 font-sans">
-                    Actualizar Ciclo de Vida del Proyecto
-                  </h4>
-                </div>
-                <button
-                  onClick={() => setProjectStatusModalTarget(null)}
-                  className="text-slate-400 hover:text-slate-600 font-bold text-lg select-none px-1.5 focus:outline-none transition cursor-pointer"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div>
-                  <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 font-mono">Proyecto Seleccionado</span>
-                  <h3 className="text-sm font-bold text-slate-900 mt-1">
-                    {projectStatusModalTarget.name}
-                  </h3>
-                  <span className="text-[10.5px] text-slate-500 font-mono">
-                    Código: {projectStatusModalTarget.code} | Cliente: {projectStatusModalTarget.client}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 font-mono mb-2">Seleccione Nuevo Estado</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS', 'FINALIZADO', 'CANCELADO'].map(st => {
-                      const worksAsActive = projectStatusModalTarget.status === st;
-                      return (
-                        <button
-                          key={st}
-                          onClick={() => {
-                            updateProjectStatus(projectStatusModalTarget.id, st as any);
-                            // Update state of local target as well to show instant visual confirmation before close
-                            setProjectStatusModalTarget(prev => prev ? { ...prev, status: st as any } : null);
-                          }}
-                          className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all text-left flex items-center justify-between border cursor-pointer ${
-                            worksAsActive
-                              ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-3xs'
-                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                          }`}
-                        >
-                          <span>{st}</span>
-                          {worksAsActive && <span className="text-[10.5px]">🟢</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <p className="text-[10px] text-slate-400 font-medium leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-105 mt-2">
-                  💡 Cambiar el estado del ciclo de vida afectará los reportes de cumplimiento de hitos, dashboards integrados, alertas, y auditoría general.
-                </p>
-
-                <div className="flex justify-end gap-2 text-xs pt-4 border-t border-slate-100">
-                  <button
-                    onClick={() => setProjectStatusModalTarget(null)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition cursor-pointer"
-                  >
-                    Cerrar Ventana
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CREATE PROJECT MODAL */}
-        <CreateProjectModal />
-      </main>
-
-      {deleteConfirmState && deleteConfirmState.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center z-[999999] p-4 text-slate-805 text-slate-800 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-100 overflow-hidden">
-            <div className="p-5">
-              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2">
-                ⚠️ {deleteConfirmState.title}
-              </h3>
-              <p className="text-xs text-slate-650 mt-2.5 leading-normal">
-                {deleteConfirmState.message}
-              </p>
-            </div>
-            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmState(null)}
-                className="px-3.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer transition hover:bg-slate-105 hover:bg-slate-100"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  deleteConfirmState.onConfirm();
-                  setDeleteConfirmState(null);
-                }}
-                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer transition shadow-sm shadow-rose-100 hover:shadow-md"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
+    </AppShell>
   );
 }
