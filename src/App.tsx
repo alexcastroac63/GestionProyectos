@@ -7,7 +7,6 @@ import React, { useState, useEffect } from 'react';
 import {
   User,
   Project,
-  ProjectCost,
   Sprint,
   WorkItem,
   ProjectActivity,
@@ -118,32 +117,6 @@ import {
   FileText
 } from 'lucide-react';
 
-import { safeLoad, safeSave } from './shared/storage/localStorageAdapter';
-
-const INITIAL_NOTE_TYPES: NoteType[] = [
-  {
-    id: 'type-general',
-    name: 'Generales',
-    description: 'Notas e información general de alcance, minutas de reuniones y requerimientos generales.',
-    color: 'indigo',
-    active: true
-  },
-  {
-    id: 'type-atraso',
-    name: 'Atrasos',
-    description: 'Alertas críticas sobre desviaciones, cuellos de botella y atrasos en el cronograma programado.',
-    color: 'amber',
-    active: true
-  },
-  {
-    id: 'type-tecnica',
-    name: 'Especificaciones Técnicas',
-    description: 'Definiciones de arquitectura de software, bases de datos o detalles técnicos del equipo.',
-    color: 'emerald',
-    active: true
-  }
-];
-
 import { AppProviders, useSystemStore, useProjectsStore, useScrumStore, useQaStore, useBacklogStore, useMockupStore } from './app/AppProviders';
 
 export default function App() {
@@ -250,69 +223,6 @@ function AppContent() {
   const updateProjectStatus = (projId: string, status: any) => {
     setProjects(prev => prev.map(p => p.id === projId ? { ...p, status } : p));
     addLog('Carlos Pérez (PM)', `Actualizó estado del proyecto a: ${status}`);
-  };
-
-  // Add Activity (Gantt)
-  const handleAddActivity = (activity: Omit<ProjectActivity, 'id'>) => {
-    const newAct: ProjectActivity = {
-      ...activity,
-      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
-    };
-    setActivities(prev => [...prev, newAct]);
-    addLog('Carlos Pérez (PM)', `Añadió la fase Gantt "${newAct.name}"`);
-  };
-
-  const handleUpdateActivityProgress = (id: string, progress: number) => {
-    setActivities(prev => prev.map(a => {
-      if (a.id === id) {
-        const status = progress === 100 ? 'COMPLETADA' : progress > 0 ? 'EN_CURSO' : 'PENDIENTE';
-        return { ...a, progress, status };
-      }
-      return a;
-    }));
-  };
-
-  const handleDeleteActivity = (id: string) => {
-    const act = activities.find(a => a.id === id);
-    const actName = act ? `"${act.name}"` : 'esta actividad';
-    setDeleteConfirmState({
-      isOpen: true,
-      title: 'Eliminar Fase de Trabajo',
-      message: `¿Está seguro de que desea eliminar permanentemente la fase de planificación ${actName}?`,
-      onConfirm: () => {
-        setActivities(prev => prev.filter(a => a.id !== id));
-      }
-    });
-  };
-
-  // Backlog and Sprint Assignment
-  const [newHUTitle, setNewHUTitle] = useState('');
-  const [newHUPoints, setNewHUPoints] = useState('5');
-  const [newHUType, setNewHUType] = useState<'HISTORIA_USUARIO' | 'TAREA' | 'BUG'>('HISTORIA_USUARIO');
-
-  const handleAddBacklogItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newHUTitle) return;
-
-    const count = workItems.filter(w => w.type === newHUType).length + 1;
-    const key = newHUType === 'HISTORIA_USUARIO' ? `HU000${count}` : newHUType === 'TAREA' ? `T000${count}` : `BG000${count}`;
-
-    const newItem: WorkItem = {
-      id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      project_id: selectedProjectId,
-      key,
-      title: newHUTitle,
-      description: 'Requerimiento estructurado según metodología ágil',
-      type: newHUType,
-      status: 'BACKLOG',
-      priority: 'MEDIUM',
-      story_points: Number(newHUPoints) || undefined,
-      created_at: new Date().toISOString().split('T')[0]
-    };
-
-    setWorkItems(prev => [...prev, newItem]);
-    setNewHUTitle('');
-    addLog('Mateo Herrera (PO)', `Creó requerimiento ágil ${newItem.key}: "${newItem.title}"`);
   };
 
   // --- Dynamic calculations / KPIs ---
