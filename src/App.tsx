@@ -6,41 +6,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   User,
-  Project,
-  Sprint,
-  WorkItem,
-  ProjectActivity,
-  TestSuite,
-  TestCase,
-  TestRun,
-  Mockup,
-  MockupScreen,
-  MockupComponent,
-  MockupConnection,
-  WorkItemStatus,
-  WorkItemType,
-  TransitionRule,
-  Tenant,
-  NoteType
+  Project
 } from './types';
 import {
-  INITIAL_USERS,
-  INITIAL_PORTFOLIOS,
   INITIAL_PROJECTS,
-  INITIAL_SPRINTS,
-  INITIAL_WORK_ITEMS,
-  INITIAL_PROJECT_ACTIVITIES,
-  INITIAL_TEST_SUITES,
-  INITIAL_TEST_CASES,
-  INITIAL_TEST_RUNS,
-  INITIAL_MOCKUPS,
-  INITIAL_MOCKUP_SCREENS,
-  INITIAL_MOCKUP_COMPONENTS,
-  INITIAL_MOCKUP_CONNECTIONS,
   INITIAL_COMMITS,
-  INITIAL_PRS,
-  INITIAL_GITHUB_CONNECTION,
-  DEFAULT_TRANSITION_RULES
+  INITIAL_PRS
 } from './data';
 
 // Component Imports
