@@ -65,6 +65,11 @@ import { AuthFlow } from './features/auth/components/AuthFlow';
 import { CreateProjectModal } from './features/projects/components/CreateProjectModal';
 import { ProjectBudgetView } from './features/projects/components/ProjectBudgetView';
 
+// Custom Hooks and Selectors
+import { useSessionVerification } from './features/auth/hooks/useSessionVerification';
+import { getSegmentedProjects, getSegmentedUsers } from './app/selectors/tenantSelectors';
+import { useProjectActions } from './features/projects/hooks/useProjectActions';
+
 // Icons Import
 import {
   FolderKanban,
@@ -172,44 +177,6 @@ function AppContent() {
 
 
 
-  // Finding 2: Active session integrity loop check to detect and prevent LS tampering
-  useEffect(() => {
-    const verifySessionOnBackend = async () => {
-      const local = localStorage.getItem('gcp_logged_in_user');
-      if (local && local !== "undefined" && local !== "null") {
-        try {
-          const parsed = JSON.parse(local);
-          if (parsed && typeof parsed === 'object' && parsed.token) {
-            const res = await fetch('/api/verify-session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token: parsed.token })
-            });
-            if (!res.ok) {
-              console.warn("Session signature mismatch or expired. Log out triggered.");
-              handleLogout();
-            }
-          }
-        } catch (e) {
-          console.error("Failed to verify signature", e);
-        }
-      }
-    };
-    verifySessionOnBackend();
-  }, []);
-
-  const isDevRole = false;
-
-  // Multi-tenant segmentation selectors
-  const segmentedProjects = projects.filter(p => !p.tenant_id || p.tenant_id === loggedInUser?.tenant_id || (!loggedInUser && p.tenant_id === 'grupo-campestre'));
-  const segmentedUsers = users.filter(u => !u.tenant_id || u.tenant_id === loggedInUser?.tenant_id || (!loggedInUser && u.tenant_id === 'grupo-campestre'));
-
-  // Active contextual references
-  const activeProject = segmentedProjects.find(p => p.id === selectedProjectId) || segmentedProjects[0] || INITIAL_PROJECTS[0];
-  const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
-  const activeSprint = projectSprints.find(s => s.id === selectedSprintId) || projectSprints[0];
-  const activeSprintIdEffective = activeSprint?.id || '';
-
   // --- Actions ---
 
   const handleLogout = () => {
@@ -221,39 +188,21 @@ function AppContent() {
     localStorage.removeItem('gcp_logged_in_user');
   };
 
-  const updateProjectStatus = (projId: string, status: any) => {
-    setProjects(prev => prev.map(p => p.id === projId ? { ...p, status } : p));
-    addLog('Carlos Pérez (PM)', `Actualizó estado del proyecto a: ${status}`);
-  };
+  // Active session integrity loop check to detect and prevent LS tampering
+  useSessionVerification({ loggedInUser, handleLogout });
 
-  // --- Dynamic calculations / KPIs ---
-  const activeSprintsItems = workItems.filter(w => w.project_id === selectedProjectId && w.sprint_id === activeSprintIdEffective);
-  const totalPoints = activeSprintsItems.reduce((acc, current) => acc + (current.story_points || 0), 0);
-  const completedPoints = activeSprintsItems
-    .filter(w => w.status === 'FINALIZADO')
-    .reduce((acc, cur) => acc + (cur.story_points || 0), 0);
+  const isDevRole = false;
 
-  // Business Rule Calculation of Sprint Status:
-  // "Sprint sin HU o solo Por hacer queda No iniciado; mezcla queda En curso; todo finalizado queda Finalizado"
-  const getSprintCalculatedStatus = (spId: string) => {
-    const spItems = workItems.filter(w => w.sprint_id === spId);
-    if (spItems.length === 0) return 'NO_INICIADO';
-    
-    const allPorHacer = spItems.every(w => w.status === 'POR_HACER' || w.status === 'BACKLOG');
-    if (allPorHacer) return 'NO_INICIADO';
-    
-    const allFinalizado = spItems.every(w => w.status === 'FINALIZADO');
-    if (allFinalizado) return 'FINALIZADO';
-    
-    return 'EN_CURSO';
-  };
+  // Multi-tenant segmentation selectors
+  const segmentedProjects = getSegmentedProjects(projects, loggedInUser);
+  const segmentedUsers = getSegmentedUsers(users, loggedInUser);
 
-  // QA Metrics
-  const projectSuites = testSuites.filter(s => s.project_id === selectedProjectId);
-  const suiteIds = projectSuites.map(s => s.id);
-  const suiteCases = testCases.filter(c => suiteIds.includes(c.suite_id));
-  const passedCasesCount = suiteCases.filter(c => c.status === 'PASSED').length;
-  const qaPassRate = suiteCases.length > 0 ? Math.round((passedCasesCount / suiteCases.length) * 100) : 100;
+  // Active contextual references
+  const activeProject = segmentedProjects.find(p => p.id === selectedProjectId) || segmentedProjects[0] || INITIAL_PROJECTS[0];
+  const projectSprints = sprints.filter(s => s.project_id === selectedProjectId);
+  const activeSprint = projectSprints.find(s => s.id === selectedSprintId) || projectSprints[0];
+
+  const { updateProjectStatus } = useProjectActions({ setProjects, addLog });
 
   if (!loggedInUser) {
     return <AuthFlow />;
