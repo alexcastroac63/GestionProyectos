@@ -50,6 +50,7 @@ import DbaSchema from './features/dba/DbaSchema';
 import DevOpsPipeline from './features/devops/DevOpsPipeline';
 import ProjectWBSManager from './features/projects/ProjectWBSManager';
 import ProductBacklogManager from './features/backlog/ProductBacklogManager';
+import { QuickBacklogItemForm } from './features/backlog/components/QuickBacklogItemForm';
 import ScrumBoardAndQaManager from './features/scrum/ScrumBoardAndQaManager';
 import KPIDashboard from './features/dashboard/KPIDashboard';
 import QaSuiteWorkspace from './features/qa/QaSuiteWorkspace';
@@ -1225,6 +1226,12 @@ function AppContent() {
           {/* 3. TAB: BACKLOG */}
           {activeTab === 'backlog' && (
             <div className="space-y-6 animate-fadeIn" id="tab-backlog">
+              <QuickBacklogItemForm
+                projectId={selectedProjectId}
+                workItems={workItems}
+                setWorkItems={setWorkItems}
+                addLog={addLog}
+              />
               <ProductBacklogManager
                 selectedProjectId={selectedProjectId}
                 setSelectedProjectId={setSelectedProjectId}
