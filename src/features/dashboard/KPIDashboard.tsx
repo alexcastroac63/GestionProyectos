@@ -59,6 +59,7 @@ export default function KPIDashboard({
   const [viewMode, setViewMode] = useState<'ejecutiva' | 'operativa'>('ejecutiva');
   const [activeIndicatorInfo, setActiveIndicatorInfo] = useState<number | null>(null);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(true);
 
   // --- Filtering States ---
   const [selectedProjFilter, setSelectedProjFilter] = useState<string>('ALL');
@@ -461,243 +462,283 @@ export default function KPIDashboard({
       </div>
 
       {/* 2. FLEXIBLE FILTERS CONSOLE */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-500" />
-            <h3 className="font-bold text-slate-800 text-sm">Filtros Avanzados de Consulta</h3>
-          </div>
-          {hasActiveFilters && (
-            <button
-              onClick={handleClearFilters}
-              className="text-xs text-rose-600 hover:text-rose-700 font-extrabold flex items-center gap-1 cursor-pointer transition-all hover:underline"
-            >
-              <X className="w-3 h-3" /> Limpiar Filtros
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-          {/* Text Search */}
-          <div className="md:col-span-1">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Búsqueda de Texto
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Proyecto, Líder..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white transition-all font-semibold"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+      {isFiltersCollapsed ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-row justify-between items-center gap-4 transition-all duration-200">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-slate-100 p-2 rounded-lg text-slate-500">
+              <Filter className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm">Filtros de Consulta</h3>
+              <p className="text-[11px] text-slate-500 hidden sm:block">
+                Segmentación por líder, área solicitante, cliente/empresa, Scrum Master o estado de ciclo de vida.
+              </p>
             </div>
           </div>
-
-          {/* Project SELECTOR */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Identificador Proyecto
-            </label>
-            <select
-              value={selectedProjFilter}
-              onChange={e => setSelectedProjFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+          <div className="flex items-center gap-3">
+            <div className="text-[11px] font-mono text-slate-600 bg-slate-50 border border-slate-150 px-2.5 py-1 rounded-lg hidden md:block">
+              Mostrando: <strong>{filteredProjects.length} / {projects.length}</strong> Proyectos
+            </div>
+            {hasActiveFilters && (
+              <span className="bg-amber-105 text-amber-800 font-extrabold text-[10px] px-2 py-0.5 rounded-full border border-amber-200">
+                Filtros Activos
+              </span>
+            )}
+            <button 
+              onClick={() => setIsFiltersCollapsed(false)}
+              className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-250 font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0"
             >
-              <option value="ALL">Todos los Proyectos</option>
-              {enrichedProjects.map(p => (
-                <option key={p.id} value={p.id}>
-                  [{p.code}] {p.name.substring(0, 24)}...
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Company Client Selector */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Compañía / Cliente
-            </label>
-            <select
-              value={selectedCompanyFilter}
-              onChange={e => setSelectedCompanyFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
-            >
-              <option value="ALL">Cualquier Compañía</option>
-              {companies.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Area solicitante */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Área Solicitante
-            </label>
-            <select
-              value={selectedAreaFilter}
-              onChange={e => setSelectedAreaFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
-            >
-              <option value="ALL">Cualquier Área</option>
-              {areas.map(a => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Project Manager Leader */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Líder de Proyecto / PM
-            </label>
-            <select
-              value={selectedLeaderFilter}
-              onChange={e => setSelectedLeaderFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
-            >
-              <option value="ALL">Cualquier Líder</option>
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
-              ))}
-            </select>
+              <span>Mostrar Filtros</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+            </button>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-          {/* Scrum Master */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Scrum Master
-            </label>
-            <select
-              value={selectedScrumFilter}
-              onChange={e => setSelectedScrumFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
-            >
-              <option value="ALL">Cualquier Scrum Master</option>
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Tipo de Proyecto */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Tipo de Proyecto
-            </label>
-            <select
-              value={selectedTypeFilter}
-              onChange={e => setSelectedTypeFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
-            >
-              <option value="ALL">Cualquier Tipo ({types.length})</option>
-              {types.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Estado Proyecto */}
-          <div className="relative">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Estado Ciclo de Vida (Múltiple)
-            </label>
-            <button
-              type="button"
-              onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 text-left cursor-pointer font-bold flex justify-between items-center whitespace-nowrap overflow-hidden min-h-[34px]"
-            >
-              <span className="truncate">
-                {selectedStatusFilter.length === 6
-                  ? '🟢 Todos los Estados'
-                  : selectedStatusFilter.length === 0
-                  ? '⚠️ Cualquier Estado (Sin filtro)'
-                  : selectedStatusFilter.map(val => {
-                      const matching = [
-                        { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
-                        { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
-                        { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
-                        { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
-                        { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
-                        { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
-                      ].find(s => s.value === val);
-                      return matching ? `${matching.icon} ${matching.label}` : val;
-                    }).join(', ')}
-              </span>
-              <span className="text-slate-400 text-[9px] ml-1">▼</span>
-            </button>
-            
-            {isStatusDropdownOpen && (
-              <>
-                <div 
-                  className="fixed inset-0 z-10" 
-                  onClick={() => setIsStatusDropdownOpen(false)} 
-                />
-                <div className="absolute right-0 left-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl p-2 z-20 space-y-1">
-                  <div className="flex justify-between items-center pb-1.5 mb-1.5 border-b border-slate-100 text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStatusFilter(['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS', 'FINALIZADO', 'CANCELADO'])}
-                      className="text-indigo-600 font-extrabold hover:underline"
-                    >
-                      Todos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStatusFilter([])}
-                      className="text-slate-500 font-extrabold hover:underline"
-                    >
-                      Limpiar
-                    </button>
-                  </div>
-                  {[
-                    { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
-                    { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
-                    { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
-                    { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
-                    { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
-                    { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
-                  ].map(option => {
-                    const isChecked = selectedStatusFilter.includes(option.value);
-                    return (
-                      <label 
-                        key={option.value} 
-                        className="flex items-center gap-2 p-1 px-2 hover:bg-slate-50 rounded cursor-pointer text-xs font-semibold select-none text-slate-705"
-                      >
-                        <input 
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            if (isChecked) {
-                              setSelectedStatusFilter(selectedStatusFilter.filter(s => s !== option.value));
-                            } else {
-                              setSelectedStatusFilter([...selectedStatusFilter, option.value]);
-                            }
-                          }}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer w-3.5 h-3.5"
-                        />
-                        <span>{option.icon} {option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-slate-500" />
+              <h3 className="font-bold text-slate-800 text-sm">Filtros Avanzados de Consulta</h3>
+              <button
+                onClick={() => setIsFiltersCollapsed(true)}
+                className="ml-2 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 px-2.5 py-0.5 rounded border border-slate-250 font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>Contraer</span>
+                <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            </div>
+            {hasActiveFilters && (
+              <button
+                onClick={handleClearFilters}
+                className="text-xs text-rose-600 hover:text-rose-700 font-extrabold flex items-center gap-1 cursor-pointer transition-all hover:underline"
+              >
+                <X className="w-3 h-3" /> Limpiar Filtros
+              </button>
             )}
           </div>
 
-          {/* Active stats indicator summary */}
-          <div className="flex items-end justify-end pb-0.5">
-            <div className="text-right text-[11px] text-slate-500 bg-slate-50 border border-slate-150 px-3 py-1.5 rounded-lg w-full flex items-center justify-between">
-              <span className="font-semibold text-slate-600">Mostrando:</span>
-              <span className="font-mono font-bold text-slate-900">{filteredProjects.length} / {projects.length} Proyectos</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+            {/* Text Search */}
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Búsqueda de Texto
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Proyecto, Líder..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white transition-all font-semibold"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            {/* Project SELECTOR */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Identificador Proyecto
+              </label>
+              <select
+                value={selectedProjFilter}
+                onChange={e => setSelectedProjFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Todos los Proyectos</option>
+                {enrichedProjects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    [{p.code}] {p.name.substring(0, 24)}...
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Company Client Selector */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Compañía / Cliente
+              </label>
+              <select
+                value={selectedCompanyFilter}
+                onChange={e => setSelectedCompanyFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Cualquier Compañía</option>
+                {companies.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Area solicitante */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Área Solicitante
+              </label>
+              <select
+                value={selectedAreaFilter}
+                onChange={e => setSelectedAreaFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Cualquier Área</option>
+                {areas.map(a => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project Manager Leader */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Líder de Proyecto / PM
+              </label>
+              <select
+                value={selectedLeaderFilter}
+                onChange={e => setSelectedLeaderFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Cualquier Líder</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+            {/* Scrum Master */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Scrum Master
+              </label>
+              <select
+                value={selectedScrumFilter}
+                onChange={e => setSelectedScrumFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Cualquier Scrum Master</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tipo de Proyecto */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Tipo de Proyecto
+              </label>
+              <select
+                value={selectedTypeFilter}
+                onChange={e => setSelectedTypeFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 transition-all font-semibold"
+              >
+                <option value="ALL">Cualquier Tipo ({types.length})</option>
+                {types.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Estado Proyecto */}
+            <div className="relative">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Estado Ciclo de Vida (Múltiple)
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 text-left cursor-pointer font-bold flex justify-between items-center whitespace-nowrap overflow-hidden min-h-[34px]"
+              >
+                <span className="truncate">
+                  {selectedStatusFilter.length === 6
+                    ? '🟢 Todos los Estados'
+                    : selectedStatusFilter.length === 0
+                    ? '⚠️ Cualquier Estado (Sin filtro)'
+                    : selectedStatusFilter.map(val => {
+                        const matching = [
+                          { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
+                          { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
+                          { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
+                          { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
+                          { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
+                          { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
+                        ].find(s => s.value === val);
+                        return matching ? `${matching.icon} ${matching.label}` : val;
+                      }).join(', ')}
+                </span>
+                <span className="text-slate-400 text-[9px] ml-1">▼</span>
+              </button>
+              
+              {isStatusDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setIsStatusDropdownOpen(false)} 
+                  />
+                  <div className="absolute right-0 left-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl p-2 z-20 space-y-1">
+                    <div className="flex justify-between items-center pb-1.5 mb-1.5 border-b border-slate-100 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStatusFilter(['REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS', 'FINALIZADO', 'CANCELADO'])}
+                        className="text-indigo-600 font-extrabold hover:underline"
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStatusFilter([])}
+                        className="text-slate-500 font-extrabold hover:underline"
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                    {[
+                      { value: 'REQUERIMIENTOS', label: 'REQUERIMIENTOS', icon: '📋' },
+                      { value: 'APROBADO', label: 'APROBADO', icon: '✅' },
+                      { value: 'DESARROLLO', label: 'DESARROLLO', icon: '💻' },
+                      { value: 'PRUEBAS', label: 'PRUEBAS', icon: '🧪' },
+                      { value: 'FINALIZADO', label: 'FINALIZADO', icon: '🏁' },
+                      { value: 'CANCELADO', label: 'CANCELADO', icon: '🚫' },
+                    ].map(option => {
+                      const isChecked = selectedStatusFilter.includes(option.value);
+                      return (
+                        <label 
+                          key={option.value} 
+                          className="flex items-center gap-2 p-1 px-2 hover:bg-slate-50 rounded cursor-pointer text-xs font-semibold select-none text-slate-705"
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              if (isChecked) {
+                                setSelectedStatusFilter(selectedStatusFilter.filter(s => s !== option.value));
+                              } else {
+                                setSelectedStatusFilter([...selectedStatusFilter, option.value]);
+                              }
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer w-3.5 h-3.5"
+                          />
+                          <span>{option.icon} {option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Active stats indicator summary */}
+            <div className="flex items-end justify-end pb-0.5">
+              <div className="text-right text-[11px] text-slate-500 bg-slate-50 border border-slate-150 px-3 py-1.5 rounded-lg w-full flex items-center justify-between">
+                <span className="font-semibold text-slate-600">Mostrando:</span>
+                <span className="font-mono font-bold text-slate-900">{filteredProjects.length} / {projects.length} Proyectos</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* =======================================================
           3A. EXECUTIVE VIEW TAB

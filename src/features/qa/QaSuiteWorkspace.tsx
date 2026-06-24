@@ -30,6 +30,7 @@ import {
   Eye, 
   ChevronRight, 
   ChevronDown, 
+  ChevronUp,
   TrendingUp, 
   HelpCircle,
   FileText,
@@ -106,6 +107,7 @@ export default function QaSuiteWorkspace({
   
   // Tabs: metrics, test_cases, executions, bugs, audit_matrix
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'metrics' | 'test_cases' | 'executions' | 'bugs' | 'audit_matrix'>('metrics');
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(true);
 
   // Filter project-specific test suites
   const projectSuites = testSuites.filter(s => s.project_id === selectedProjectId);
@@ -500,39 +502,77 @@ export default function QaSuiteWorkspace({
     <div className="space-y-6 animate-fadeIn pb-12" id="qas-suite-workspace">
       
       {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-md">
-        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-          <ShieldCheck className="w-48 h-48 text-indigo-505" />
+      {isHeaderCollapsed ? (
+        <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 relative overflow-hidden flex flex-row justify-between items-center gap-4 shadow-sm transition-all duration-200">
+          <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
+            <ShieldCheck className="w-16 h-16 text-indigo-505" />
+          </div>
+          <div className="flex items-center gap-3 z-10">
+            <div className="bg-slate-800 p-2 rounded-lg text-teal-400">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-extrabold tracking-tight flex items-center gap-2">
+                Aseguramiento de Calidad y Suite QA (QAS)
+                <span className="bg-teal-500/20 text-teal-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  Score: {complianceScore}%
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                Módulo dedicado de control de calidad para el seguimiento del ciclo completo de pruebas integrado.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setIsHeaderCollapsed(false)}
+            className="text-[11px] bg-slate-800 hover:bg-slate-750 text-slate-350 hover:text-white px-2.5 py-1.5 rounded-lg border border-slate-700/60 font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+          >
+            <span>Detalles</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
         </div>
-        <div className="space-y-2 z-10">
-          <div className="flex items-center gap-2">
-            <span className="bg-teal-500 text-teal-950 font-black text-[9px] uppercase px-2 py-0.5 rounded tracking-widest font-mono">
-              QA Audit Platform
+      ) : (
+        <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-md transition-all duration-200">
+          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+            <ShieldCheck className="w-48 h-48 text-indigo-505" />
+          </div>
+          <div className="space-y-2 z-10">
+            <div className="flex items-center gap-2">
+              <span className="bg-teal-500 text-teal-950 font-black text-[9px] uppercase px-2 py-0.5 rounded tracking-widest font-mono">
+                QA Audit Platform
+              </span>
+              <span className="text-[10px] text-slate-400 font-bold font-mono">
+                Traceability Suite
+              </span>
+              <button
+                onClick={() => setIsHeaderCollapsed(true)}
+                className="ml-2 text-[10px] bg-slate-800/80 hover:bg-slate-700 text-slate-350 hover:text-white px-2.5 py-0.5 rounded border border-slate-700 font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>Contraer</span>
+                <ChevronUp className="w-3 h-3 text-slate-400" />
+              </button>
+            </div>
+            <h2 className="text-2xl font-extrabold tracking-tight">
+              Aseguramiento de Calidad y Suite QA (QAS)
+            </h2>
+            <p className="text-xs text-slate-400 max-w-2xl">
+              Módulo dedicado de control de calidad para el seguimiento del ciclo completo de pruebas integrado. Administre casos de prueba, ejecuciones detalladas, evidencias, defectos sincronizados y matrices de cumplimiento del producto.
+            </p>
+          </div>
+          <div className="flex flex-col items-center bg-slate-800/60 border border-indigo-500/20 px-6 py-4 rounded-xl shrink-0 text-center min-w-[170px] relative z-10">
+            <BarChart2 className="w-5 h-5 text-teal-400 mb-1" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Marcador General
             </span>
-            <span className="text-[10px] text-slate-400 font-bold font-mono">
-              Traceability Suite
+            <span className="text-3xl font-black font-mono text-white mt-1">
+              {complianceScore}%
+            </span>
+            <span className="text-[10px] font-medium text-emerald-400 mt-1">
+              Calificación de Calidad
             </span>
           </div>
-          <h2 className="text-2xl font-extrabold tracking-tight">
-            Aseguramiento de Calidad y Suite QA (QAS)
-          </h2>
-          <p className="text-xs text-slate-400 max-w-2xl">
-            Módulo dedicado de control de calidad para el seguimiento del ciclo completo de pruebas integrado. Administre casos de prueba, ejecuciones detalladas, evidencias, defectos sincronizados y matrices de cumplimiento del producto.
-          </p>
         </div>
-        <div className="flex flex-col items-center bg-slate-800/60 border border-indigo-500/20 px-6 py-4 rounded-xl shrink-0 text-center min-w-[170px]">
-          <BarChart2 className="w-5 h-5 text-teal-400 mb-1" />
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Marcador General
-          </span>
-          <span className="text-3xl font-black font-mono text-white mt-1">
-            {complianceScore}%
-          </span>
-          <span className="text-[10px] font-medium text-emerald-400 mt-1">
-            Calificación de Calidad
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Nav Sub-tabs */}
       <div className="bg-slate-100 p-1.5 rounded-xl border border-slate-200 flex flex-wrap gap-1.5">
