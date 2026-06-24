@@ -12,126 +12,406 @@ export default function DbaSchema() {
   const [testQueryLogs, setTestQueryLogs] = useState<string[]>([]);
   const [runningAnalysis, setRunningAnalysis] = useState(false);
 
-  // Recommendations detailed in OCR
+  // Recommendations detailed in OCR and Normalization Audit
   const recommendations = [
     {
-      area: 'Costos',
-      actual: 'Project.budgetDetails JSON string flexible',
-      recomendado: 'project_cost_types + project_costs tables',
-      beneficio: 'Permite consultas compuestas de sumas de costos en SQL nativo, agrupación de presupuestos por fase y reportes reales vs estimados sin sobrecargar el procesador con JSON parsing.'
+      area: 'Eliminación de TEXT[] (1FN)',
+      actual: 'team_members.skills y test_cases.steps como TEXT[]',
+      recomendado: 'skills + team_member_skills, test_case_steps',
+      beneficio: 'Cumple con la Primera Forma Normal (1FN). Facilita filtrados atómicos en Power BI, agregaciones por tecnologías y desglose secuencial de ejecuciones de QA.'
     },
     {
-      area: 'Personal',
-      actual: 'Project.staffing JSON string',
-      recomendado: 'project_members table asociada a users',
-      beneficio: 'Referencia íntegra de llaves foráneas. Bloquea la eliminación de un usuario si posee asignaciones vigentes, útil para auditoría de horas.'
+      area: 'Multi-Tenant Completo',
+      actual: 'portfolios y teams sin tenant_id',
+      recomendado: 'tenant_id VARCHAR(50) REFERENCES tenants(id)',
+      beneficio: 'Garantiza el aislamiento lógico multi-tenant en todas las capas del sistema, impidiendo fugas de visibilidad en portafolios de inversión o equipos de trabajo.'
     },
     {
-      area: 'Actividades/Gantt',
-      actual: 'Estado UI o localStorage',
-      recomendado: 'project_activities + project_activity_dependencies',
-      beneficio: 'Conserva dependencias de predecesores en cascada directamente en Postgres, útil para recalcular fechas de fin si el predecesor se atrasa.'
+      area: 'Separación de Adjuntos (3FN)',
+      actual: 'project_costs con campos storage_* de archivos',
+      recomendado: 'project_costs + project_cost_documents',
+      beneficio: 'Cumple con la Tercera Forma Normal (3FN). Desacopla la entidad transaccional financiera del costo de los metadatos físicos de almacenamiento en la nube (GCS).'
     },
     {
-      area: 'Mockups',
-      actual: 'Estado UI o localStorage',
-      recomendado: 'mockups + mockup_screens + mockup_components',
-      beneficio: 'Persistir las maquetas de pantallas ligadas a historias de usuario para que el QA visual pueda revisarlas.'
+      area: 'Sustitución de CHECK por Catálogos',
+      actual: 'Estados, prioridades, tipos y categorías como CHECK text',
+      recomendado: 'project_statuses, project_priorities, cost_types, etc.',
+      beneficio: 'Establece dimensiones corporativas limpias y estandarizadas en Power BI, permitiendo la creación de un modelo estrella nativo y auditoría centralizada.'
+    },
+    {
+      area: 'Auditoría e Inc. Loading',
+      actual: 'Pocos campos de control de cambios temporal',
+      recomendado: 'created_at, updated_at, created_by_id, active',
+      beneficio: 'Permite esquemas óptimos de carga incremental de datos en Power BI y rastreo histórico completo para propósitos de auditoría de calidad.'
     }
   ];
 
   const suggestedIndexes = [
-    { name: 'idx_project_org_status', table: 'projects', cols: 'organization_id, status', active: true },
-    { name: 'idx_work_item_project_sprint_status', table: 'work_items', cols: 'project_id, sprint_id, status', active: true },
-    { name: 'idx_work_item_assignee_status', table: 'work_items', cols: 'assignee_id, status', active: true },
-    { name: 'idx_sprint_project_dates', table: 'sprints', cols: 'project_id, start_date, end_date', active: true },
-    { name: 'idx_attachment_project', table: 'attachments', cols: 'project_id, created_at DESC', active: true }
+    { name: 'idx_project_tenant_status', table: 'projects', cols: 'tenant_id, status_id', active: true },
+    { name: 'idx_work_item_proj_sprint_status', table: 'work_items', cols: 'project_id, sprint_id, status_id', active: true },
+    { name: 'idx_work_item_assignee_status', table: 'work_items', cols: 'assignee_id, status_id', active: true },
+    { name: 'idx_team_members_unique', table: 'team_members', cols: 'team_id, user_id', active: true },
+    { name: 'idx_cost_documents_cost', table: 'project_cost_documents', cols: 'cost_id', active: true }
   ];
 
   const ddlSql = `-- -----------------------------------------------------------------
--- ESQUEMA COMPLETO NORMALIZADO POSTGRESQL (DBA RECOMMENDED)
--- CONTROL PROYECTOS SAAS MULTI-TENANT
+-- ESQUEMA COMPLETO ALTAMENTE NORMALIZADO POSTGRESQL (POWER BI READY)
+-- SISTEMA MULTI-TENANT DE PROYECTOS Y AUDITORÍA DE CALIDAD
 -- -----------------------------------------------------------------
 
-CREATE TABLE organizations (
-  id text PRIMARY KEY,
-  name text NOT NULL,
-  slug text NOT NULL UNIQUE,
+-- 1. ESTRUCTURA BASE MULTI-TENANT
+CREATE TABLE tenants (
+  id varchar(50) PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  subdomain varchar(50) UNIQUE,
+  active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- 2. TABLAS DE CATÁLOGOS / DIMENSIONES (Evitan CHECK constraints y facilitan Power BI)
+CREATE TABLE project_statuses (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL,
+  description text
+);
+
+CREATE TABLE project_priorities (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE work_item_types (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE work_item_statuses (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE cost_types (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE development_types (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE project_categories (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE test_statuses (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE skills (
+  id varchar(50) PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  category varchar(50)
+);
+
+-- 3. TABLAS ESTRUCTURALES DE PORTAFOLIOS Y EQUIPOS (Multi-Tenant)
+CREATE TABLE portfolios (
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name varchar(150) NOT NULL,
+  description text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE teams (
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  description text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 4. USUARIOS Y CONTROL DE ACCESO
 CREATE TABLE users (
-  id text PRIMARY KEY,
-  organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  first_name text NOT NULL,
-  last_name text NOT NULL,
-  email text NOT NULL UNIQUE,
-  password_hash text,
-  status text NOT NULL DEFAULT 'ACTIVE',
-  failed_attempts integer NOT NULL DEFAULT 0,
-  locked_until timestamptz,
-  last_access_at timestamptz,
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  first_name varchar(100) NOT NULL,
+  last_name varchar(100) NOT NULL,
+  email varchar(150) NOT NULL UNIQUE,
+  password_hash varchar(255),
+  status varchar(20) NOT NULL DEFAULT 'ACTIVE',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE roles (
-  id text PRIMARY KEY,
-  organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  description text,
-  can_view_assigned_projects_only boolean NOT NULL DEFAULT false,
-  can_view_active_sprint_only boolean NOT NULL DEFAULT false,
-  UNIQUE (organization_id, name)
+-- 5. RELACIONES DE PERSONAL NORMALIZADAS (1FN)
+CREATE TABLE team_members (
+  id varchar(50) PRIMARY KEY,
+  team_id varchar(50) NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id varchar(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role varchar(100) NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(team_id, user_id)
 );
 
+CREATE TABLE team_member_skills (
+  team_member_id varchar(50) NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+  skill_id varchar(50) NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+  PRIMARY KEY (team_member_id, skill_id)
+);
+
+-- 6. PROYECTOS (Totalmente Normalizado, Multi-Tenant)
 CREATE TABLE projects (
-  id text PRIMARY KEY,
-  organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  portfolio_id text REFERENCES portfolios(id) ON DELETE SET NULL,
-  program_id text REFERENCES programs(id) ON DELETE SET NULL,
-  team_id text REFERENCES teams(id) ON DELETE SET NULL,
-  name text NOT NULL,
-  code text NOT NULL,
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  portfolio_id varchar(50) REFERENCES portfolios(id) ON DELETE SET NULL,
+  team_id varchar(50) REFERENCES teams(id) ON DELETE SET NULL,
+  name varchar(150) NOT NULL,
+  code varchar(30) NOT NULL,
   description text,
-  client text,
-  sponsor text,
-  project_manager_id text REFERENCES users(id) ON DELETE SET NULL,
-  scrum_master_id text REFERENCES users(id) ON DELETE SET NULL,
-  product_owner_id text REFERENCES users(id) ON DELETE SET NULL,
-  status text NOT NULL DEFAULT 'REQUERIMIENTOS',
-  priority text NOT NULL DEFAULT 'MEDIUM',
-  project_type text,
-  business_area text,
+  client varchar(100),
+  sponsor varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  project_manager_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  scrum_master_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  product_owner_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  status_id varchar(30) NOT NULL REFERENCES project_statuses(id),
+  priority_id varchar(20) NOT NULL REFERENCES project_priorities(id),
+  dev_type_id varchar(30) NOT NULL REFERENCES development_types(id),
+  category_id varchar(30) NOT NULL REFERENCES project_categories(id),
   sprint_size_weeks integer NOT NULL DEFAULT 2,
   start_date date,
   end_date date,
+  budget_total numeric(14,2) NOT NULL DEFAULT 0.00 CHECK (budget_total >= 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(organization_id, code)
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true,
+  UNIQUE(tenant_id, code)
 );
 
-CREATE TABLE project_cost_types (
-  id text PRIMARY KEY,
-  organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  UNIQUE(organization_id, name)
-);
-
+-- 7. COSTOS DE PROYECTO Y DOCUMENTACIÓN SEGREGADA (3FN Estricta)
 CREATE TABLE project_costs (
-  id text PRIMARY KEY,
-  project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  cost_type_id text NOT NULL REFERENCES project_cost_types(id),
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  cost_type_id varchar(30) NOT NULL REFERENCES cost_types(id),
   description text,
   amount numeric(14,2) NOT NULL CHECK (amount >= 0),
-  currency text NOT NULL DEFAULT 'USD',
-  created_at timestamptz NOT NULL DEFAULT now()
+  currency varchar(10) NOT NULL DEFAULT 'USD',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true
 );
 
--- RECOMENDACIÓN DE ÍNDICES BBN
-CREATE INDEX idx_project_org_status ON projects(organization_id, status);
-CREATE INDEX idx_work_item_project_sprint_status ON work_items(project_id, sprint_id, status);`;
+CREATE TABLE project_cost_documents (
+  id varchar(50) PRIMARY KEY,
+  cost_id varchar(50) NOT NULL REFERENCES project_costs(id) ON DELETE CASCADE,
+  storage_key varchar(255) NOT NULL,
+  storage_url text NOT NULL,
+  file_name varchar(255) NOT NULL,
+  file_size integer NOT NULL CHECK (file_size > 0),
+  uploaded_at timestamptz NOT NULL DEFAULT now(),
+  uploaded_by_id varchar(50) REFERENCES users(id)
+);
+
+-- 8. GESTIÓN ÁGIL (SPRINTS Y REQUERIMIENTOS KANBAN)
+CREATE TABLE sprints (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'PLANNING',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE work_items (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sprint_id varchar(50) REFERENCES sprints(id) ON DELETE SET NULL,
+  parent_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  title varchar(150) NOT NULL,
+  description text,
+  type_id varchar(20) NOT NULL REFERENCES work_item_types(id),
+  status_id varchar(30) NOT NULL REFERENCES work_item_statuses(id),
+  priority_id varchar(20) NOT NULL REFERENCES project_priorities(id),
+  story_points integer CHECK (story_points >= 0),
+  assignee_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true
+);
+
+-- 9. CRONOGRAMA Y GANTT (ACTIVIDADES DE PROYECTO)
+CREATE TABLE project_activities (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sprint_id varchar(50) REFERENCES sprints(id) ON DELETE SET NULL,
+  name varchar(150) NOT NULL,
+  description text,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  progress integer NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  work_item_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE project_activity_dependencies (
+  activity_id varchar(50) NOT NULL REFERENCES project_activities(id) ON DELETE CASCADE,
+  predecessor_id varchar(50) NOT NULL REFERENCES project_activities(id) ON DELETE CASCADE,
+  PRIMARY KEY (activity_id, predecessor_id)
+);
+
+-- 10. GESTIÓN DE CALIDAD Y QA (1FN Estricta)
+CREATE TABLE test_suites (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title varchar(150) NOT NULL,
+  description text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE test_cases (
+  id varchar(50) PRIMARY KEY,
+  suite_id varchar(50) NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
+  work_item_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  title varchar(150) NOT NULL,
+  expected_result text NOT NULL,
+  status_id varchar(20) NOT NULL REFERENCES test_statuses(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE test_case_steps (
+  id varchar(50) PRIMARY KEY,
+  test_case_id varchar(50) NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+  step_number integer NOT NULL CHECK (step_number > 0),
+  instruction text NOT NULL,
+  expected_behavior text,
+  UNIQUE(test_case_id, step_number)
+);
+
+CREATE TABLE test_runs (
+  id varchar(50) PRIMARY KEY,
+  test_case_id varchar(50) NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+  tester_id varchar(50) NOT NULL REFERENCES users(id),
+  run_date timestamptz NOT NULL DEFAULT now(),
+  status_id varchar(20) NOT NULL REFERENCES test_statuses(id),
+  actual_result text,
+  comments text
+);
+
+-- 11. MAQUETACIÓN VISUAL (MOCKUPS DE FRONTEND)
+CREATE TABLE mockups (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  description text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE mockup_screens (
+  id varchar(50) PRIMARY KEY,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  title varchar(100) NOT NULL,
+  description text,
+  x_position integer NOT NULL DEFAULT 100,
+  y_position integer NOT NULL DEFAULT 100,
+  width integer NOT NULL DEFAULT 375,
+  height integer NOT NULL DEFAULT 812
+);
+
+CREATE TABLE mockup_components (
+  id varchar(50) PRIMARY KEY,
+  screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  type varchar(50) NOT NULL,
+  label varchar(100) NOT NULL,
+  x_position integer NOT NULL,
+  y_position integer NOT NULL,
+  width integer NOT NULL,
+  height integer NOT NULL,
+  properties jsonb
+);
+
+CREATE TABLE mockup_connections (
+  id varchar(50) PRIMARY KEY,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  source_screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  target_screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  trigger_element_id varchar(50),
+  connection_type varchar(50) NOT NULL DEFAULT 'NAVIGATE'
+);
+
+-- 12. VISTAS DE MODELADO ESTRELLA COMPATIBLES CON POWER BI (vw_dim_* y vw_fact_*)
+CREATE VIEW vw_dim_tenants AS
+SELECT id AS tenant_key, name AS tenant_name, subdomain, active FROM tenants;
+
+CREATE VIEW vw_dim_users AS
+SELECT u.id AS user_key, u.tenant_id AS tenant_key, u.first_name, u.last_name, u.email, u.status,
+       (u.first_name || ' ' || u.last_name) AS full_name
+FROM users u;
+
+CREATE VIEW vw_dim_projects AS
+SELECT p.id AS project_key, p.tenant_id AS tenant_key, p.portfolio_id AS portfolio_key, p.team_id AS team_key,
+       p.name AS project_name, p.code AS project_code, p.client, p.start_date, p.end_date,
+       ps.name AS status, pp.name AS priority, dt.name AS development_type, pc.name AS category
+FROM projects p
+JOIN project_statuses ps ON p.status_id = ps.id
+JOIN project_priorities pp ON p.priority_id = pp.id
+JOIN development_types dt ON p.dev_type_id = dt.id
+JOIN project_categories pc ON p.category_id = pc.id
+WHERE p.active = true;
+
+CREATE VIEW vw_fact_project_costs AS
+SELECT pc.id AS cost_key, pc.project_id AS project_key, p.tenant_id AS tenant_key,
+       pc.cost_type_id AS cost_type_key, ct.name AS cost_type, pc.description,
+       pc.amount, pc.currency, pc.created_at AS date_key
+FROM project_costs pc
+JOIN projects p ON pc.project_id = p.id
+JOIN cost_types ct ON pc.cost_type_id = ct.id
+WHERE pc.active = true;
+
+CREATE VIEW vw_fact_work_items AS
+SELECT wi.id AS item_key, wi.project_id AS project_key, p.tenant_id AS tenant_key,
+       wi.sprint_id AS sprint_key, wi.assignee_id AS assignee_key, wi.title,
+       wit.name AS work_item_type, wis.name AS work_item_status, pp.name AS priority,
+       wi.story_points, wi.created_at AS date_key
+FROM work_items wi
+JOIN projects p ON wi.project_id = p.id
+JOIN work_item_types wit ON wi.type_id = wit.id
+JOIN work_item_statuses wis ON wi.status_id = wis.id
+JOIN project_priorities pp ON wi.priority_id = pp.id
+WHERE wi.active = true;
+
+-- 13. ÍNDICES DE RENDIMIENTO RECOMENDADOS
+CREATE INDEX idx_project_tenant_status ON projects(tenant_id, status_id);
+CREATE INDEX idx_work_item_proj_sprint_status ON work_items(project_id, sprint_id, status_id);
+CREATE INDEX idx_work_item_assignee_status ON work_items(assignee_id, status_id);
+CREATE INDEX idx_team_members_unique ON team_members(team_id, user_id);
+CREATE INDEX idx_cost_documents_cost ON project_cost_documents(cost_id);`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(ddlSql);

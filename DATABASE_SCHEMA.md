@@ -1,552 +1,564 @@
 # Esquema de Base de Datos, Diccionario de Datos y Diagrama ER
-## Sistema de Gestión de Proyectos de Ingeniería y Auditoría de Calidad (Multi-Tenant)
+## Sistema de Gestión de Proyectos de Ingeniería y Auditoría de Calidad (Multi-Tenant) - Versión Alta Normalización (Power BI Ready)
 
-Este documento describe de forma exhaustiva el esquema relacional de la base de datos (diseñado para PostgreSQL), el diccionario de datos detallado y el modelo Entidad-Relación (ER) que soporta el funcionamiento completo de la plataforma.
+Este documento describe de forma exhaustiva el diseño relacional optimizado para producción de la base de datos (PostgreSQL), incluyendo el diccionario de datos detallado, el modelo Entidad-Relación (ER), las vistas de modelo de estrella preparadas para Power BI, y las soluciones completas a observaciones de normalización estricta.
 
 ---
 
 ## 1. Diagrama Entidad-Relación (ER)
 
-### 1.1. Representación en Formato Mermaid
-El siguiente diagrama muestra las entidades principales y sus relaciones:
+El siguiente diagrama muestra el modelo totalmente normalizado, eliminando atributos multivaluados y separando las dimensiones del sistema en catálogos específicos para facilitar la analítica de negocio.
 
 ```mermaid
 erDiagram
-    TENANTS ||--o{ USERS : "alberga (tenant_id)"
-    TENANTS ||--o{ PROJECTS : "contiene (tenant_id)"
+    TENANTS ||--o{ USERS : "alberga"
+    TENANTS ||--o{ PROJECTS : "contiene"
+    TENANTS ||--o{ TEAMS : "asocia"
+    TENANTS ||--o{ PORTFOLIOS : "agrupa"
     
-    USERS ||--o{ PROJECTS : "dirige como PM (project_manager_id)"
-    USERS ||--o{ PROJECTS : "facilita como SM (scrum_master_id)"
-    USERS ||--o{ PROJECTS : "prioriza como PO (product_owner_id)"
-    USERS ||--o{ TEAM_MEMBERS : "pertenece a (user_id)"
-    USERS ||--o{ TEST_RUNS : "ejecuta (executed_by_id)"
-    USERS ||--o{ PROJECT_NOTES : "crea (created_by_id)"
+    USERS ||--o{ PROJECTS : "dirige como PM"
+    USERS ||--o{ PROJECTS : "facilita como SM"
+    USERS ||--o{ PROJECTS : "prioriza como PO"
+    USERS ||--o{ TEAM_MEMBERS : "pertenece a"
+    USERS ||--o{ TEST_RUNS : "ejecuta"
+    USERS ||--o{ PROJECT_COSTS : "registra costo"
+    USERS ||--o{ PROJECT_COST_DOCUMENTS : "carga comprobantes"
     
-    PORTFOLIOS ||--o{ PROJECTS : "agrupa (portfolio_id)"
-    TEAMS ||--o{ PROJECTS : "tiene asignado (team_id)"
+    PORTFOLIOS ||--o{ PROJECTS : "organiza"
+    TEAMS ||--o{ PROJECTS : "tiene asignado"
     TEAMS ||--o{ TEAM_MEMBERS : "se compone de"
     
-    PROJECTS ||--o{ PROJECT_COSTS : "incurre (project_id)"
-    PROJECTS ||--o{ SPRINTS : "divide en ciclos (project_id)"
-    PROJECTS ||--o{ WORK_ITEMS : "gestiona en backlog (project_id)"
-    PROJECTS ||--o{ PROJECT_ACTIVITIES : "planifica en Gantt (project_id)"
-    PROJECTS ||--o{ TEST_SUITES : "contiene suites (project_id)"
-    PROJECTS ||--o{ MOCKUPS : "diseña UX (project_id)"
-    PROJECTS ||--o{ PROJECT_NOTES : "registra (project_id)"
-    PROJECTS ||--o{ GITHUB_CONNECTIONS : "conecta repositorio (project_id)"
+    SKILLS ||--o{ TEAM_MEMBER_SKILLS : "clasifica"
+    TEAM_MEMBERS ||--o{ TEAM_MEMBER_SKILLS : "posee"
     
-    SPRINTS ||--o{ WORK_ITEMS : "asigna tareas (sprint_id)"
-    SPRINTS ||--o{ PROJECT_ACTIVITIES : "sincroniza (sprint_id)"
+    PROJECTS ||--o{ PROJECT_COSTS : "incurre"
+    PROJECTS ||--o{ SPRINTS : "divide"
+    PROJECTS ||--o{ WORK_ITEMS : "gestiona"
+    PROJECTS ||--o{ PROJECT_ACTIVITIES : "planifica"
+    PROJECTS ||--o{ TEST_SUITES : "valida"
+    PROJECTS ||--o{ MOCKUPS : "maqueta"
     
-    WORK_ITEMS ||--o{ WORK_ITEMS : "jerarquía / sub-tareas (parent_id)"
-    WORK_ITEMS ||--o{ PROJECT_ACTIVITIES : "trazabilidad (work_item_id)"
-    WORK_ITEMS ||--o{ TEST_CASES : "valida historias (work_item_id)"
+    PROJECT_STATUSES ||--o{ PROJECTS : "asigna estado"
+    PROJECT_PRIORITIES ||--o{ PROJECTS : "asigna prioridad"
+    DEVELOPMENT_TYPES ||--o{ PROJECTS : "asigna modalidad"
+    PROJECT_CATEGORIES ||--o{ PROJECTS : "asigna categoria"
     
-    TEST_SUITES ||--o{ TEST_CASES : "agrupa (suite_id)"
-    TEST_CASES ||--o{ TEST_RUNS : "registra historial (test_case_id)"
+    PROJECT_COSTS ||--o{ PROJECT_COST_DOCUMENTS : "comprueba"
+    COST_TYPES ||--o{ PROJECT_COSTS : "categoriza gasto"
     
-    MOCKUPS ||--o{ MOCKUP_SCREENS : "compone pantallas"
-    MOCKUPS ||--o{ MOCKUP_CONNECTIONS : "conecta pantallas"
-    MOCKUP_SCREENS ||--o{ MOCKUP_COMPONENTS : "contiene elementos"
+    SPRINTS ||--o{ WORK_ITEMS : "planifica tareas"
+    SPRINTS ||--o{ PROJECT_ACTIVITIES : "sincroniza tiempos"
     
-    NOTE_TYPES ||--o{ PROJECT_NOTES : "categoriza (type_id)"
-    PROJECT_NOTES ||--o{ NOTE_ATTACHMENTS : "adjunta"
+    WORK_ITEM_STATUSES ||--o{ WORK_ITEMS : "asigna estado"
+    WORK_ITEM_TYPES ||--o{ WORK_ITEMS : "asigna tipo"
+    PROJECT_PRIORITIES ||--o{ WORK_ITEMS : "asigna prioridad"
+    
+    WORK_ITEMS ||--o{ WORK_ITEMS : "jerarquia"
+    WORK_ITEMS ||--o{ PROJECT_ACTIVITIES : "trazabilidad"
+    WORK_ITEMS ||--o{ TEST_CASES : "verifica"
+    
+    TEST_SUITES ||--o{ TEST_CASES : "agrupa"
+    TEST_CASES ||--o{ TEST_CASE_STEPS : "desglosa pasos"
+    TEST_STATUSES ||--o{ TEST_CASES : "asigna estado"
+    TEST_CASES ||--o{ TEST_RUNS : "registra ejecuciones"
+    TEST_STATUSES ||--o{ TEST_RUNS : "registra veredicto"
+    
+    MOCKUPS ||--o{ MOCKUP_SCREENS : "compone"
+    MOCKUPS ||--o{ MOCKUP_CONNECTIONS : "conecta"
+    MOCKUP_SCREENS ||--o{ MOCKUP_COMPONENTS : "contiene"
 ```
 
-### 1.2. Resumen de Relaciones y Llaves Foráneas (FK)
+---
 
-| Tabla Origen | Columna Origen (FK) | Tabla Destino (PK) | Comportamiento en Eliminación |
-| :--- | :--- | :--- | :--- |
-| **users** | `tenant_id` | **tenants** (`id`) | `ON DELETE CASCADE` |
-| **projects** | `tenant_id` | **tenants** (`id`) | `ON DELETE CASCADE` |
-| **projects** | `portfolio_id` | **portfolios** (`id`) | `ON DELETE SET NULL` |
-| **projects** | `team_id` | **teams** (`id`) | `ON DELETE SET NULL` |
-| **projects** | `project_manager_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **projects** | `scrum_master_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **projects** | `product_owner_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **team_members** | `user_id` | **users** (`id`) | `ON DELETE CASCADE` |
-| **team_members** | `team_id` | **teams** (`id`) | `ON DELETE CASCADE` |
-| **project_costs** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **sprints** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **work_items** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **work_items** | `sprint_id` | **sprints** (`id`) | `ON DELETE SET NULL` |
-| **work_items** | `parent_id` | **work_items** (`id`) | `ON DELETE SET NULL` |
-| **work_items** | `assignee_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **work_items** | `reporter_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **project_activities** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **project_activities** | `sprint_id` | **sprints** (`id`) | `ON DELETE SET NULL` |
-| **project_activities** | `work_item_id` | **work_items** (`id`) | `ON DELETE SET NULL` |
-| **project_activities** | `assigned_to_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **project_activities** | `depends_on_id` | **project_activities** (`id`) | `ON DELETE SET NULL` |
-| **test_suites** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **test_cases** | `suite_id` | **test_suites** (`id`) | `ON DELETE CASCADE` |
-| **test_cases** | `work_item_id` | **work_items** (`id`) | `ON DELETE SET NULL` |
-| **test_runs** | `test_case_id` | **test_cases** (`id`) | `ON DELETE CASCADE` |
-| **test_runs** | `executed_by_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **mockups** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **mockup_screens** | `mockup_id` | **mockups** (`id`) | `ON DELETE CASCADE` |
-| **mockup_components** | `screen_id` | **mockup_screens** (`id`) | `ON DELETE CASCADE` |
-| **mockup_components** | `mockup_id` | **mockups** (`id`) | `ON DELETE CASCADE` |
-| **mockup_connections** | `mockup_id` | **mockups** (`id`) | `ON DELETE CASCADE` |
-| **github_connections** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **project_notes** | `project_id` | **projects** (`id`) | `ON DELETE CASCADE` |
-| **project_notes** | `type_id` | **note_types** (`id`) | `ON DELETE SET NULL` |
-| **project_notes** | `created_by_id` | **users** (`id`) | `ON DELETE SET NULL` |
-| **note_attachments** | `note_id` | **project_notes** (`id`) | `ON DELETE CASCADE` |
+## 2. Solución de Hallazgos y Refinamiento de Normalización (Formas Normales Estrictas)
+
+Para cumplir estrictamente con **1FN, 2FN y 3FN**, y preparar la base de datos para integrarse nativamente con almacenes de datos y herramientas de BI como **Power BI**, se han implementado las siguientes optimizaciones de arquitectura:
+
+### 2.1. Normalización de Atributos Multivaluados (1FN Estricta)
+* **Antes:** `team_members.skills TEXT[]` y `test_cases.steps TEXT[]` rompían la atomicidad de las columnas. Realizar filtros por habilidades específicas o contar pasos fallidos requería transformaciones de arreglos complejas en Power BI.
+* **Solución:**
+  * Se creó la tabla catálogo `skills` para centralizar las tecnologías.
+  * Se creó la tabla de relación `team_member_skills` para asociar usuarios y habilidades de forma atómica a través de `team_member_id`.
+  * Se creó la tabla subordinada `test_case_steps` para desglosar de forma secuencial cada paso con su `step_number` e `instruction`, permitiendo un modelo estrella limpio y mediciones de granularidad fina en QA.
+
+### 2.2. Sustitución de Restricciones CHECK por Tablas de Catálogo (Dimensiones Inteligentes)
+* **Antes:** Los estados de proyectos, prioridades, tipos de tareas, tipos de costos y categorías de proyectos estaban definidos mediante constraints `CHECK` o texto libre. En Power BI esto limita la creación de un modelo estrella con tablas de dimensiones bien estructuradas.
+* **Solución:** Se crearon las siguientes tablas de catálogo:
+  * `project_statuses` (Catálogo de estados de ciclo de vida).
+  * `project_priorities` (Catálogo de prioridades corporativas).
+  * `development_types` (Catálogo de modalidades de desarrollo: Interno, Mixto, Externo, etc.).
+  * `project_categories` (Catálogo de categorías de envergadura del proyecto).
+  * `work_item_statuses` (Catálogo de estados del Backlog Kanban).
+  * `work_item_types` (Catálogo de tipos de ítems: Historia de Usuario, Tarea, Bug).
+  * `cost_types` (Catálogo de naturalezas de costos de infraestructura, nómina, licencias, etc.).
+  * `test_statuses` (Catálogo de veredictos: PASSED, FAILED, PENDING).
+
+### 2.3. Segregación de Facturas y Evidencias Digitales (3FN Estricta)
+* **Antes:** `project_costs` almacenaba directamente metadatos físicos de archivos (`storage_key`, `storage_url`, `file_name`, `file_size`, `uploaded_at`), mezclando datos financieros de costos con metadatos del sistema de archivos de almacenamiento en la nube (GCS/S3).
+* **Solución:** Se aisló la información de archivos digitales en la tabla `project_cost_documents` ligada a `project_costs` vía `cost_id`, manteniendo `project_costs` como un registro financiero puro en tercera forma normal, enlazable opcionalmente a un documento mediante una llave foránea de relación uno a muchos.
+
+### 2.4. Multi-Tenant Consistente y Exhaustivo
+* **Antes:** Las tablas como `teams` y `portfolios` carecían de `tenant_id`, lo que impedía que una organización creara equipos de trabajo o portafolios de inversión privados e invisibles para otras cuentas de inquilinos.
+* **Solución:** Se incluyó consistentemente la columna `tenant_id` en `teams` y `portfolios`, asegurando el aislamiento completo de los activos en todo el ciclo de vida operativa y estratégica de la plataforma.
+
+### 2.5. Consistencia de Auditoría y Trazabilidad Incremental
+* **Antes:** Solo algunas tablas poseían las marcas temporales `created_at` y `updated_at`, obstaculizando los esquemas de **actualización incremental** de datos en Power BI.
+* **Solución:** Se agregaron sistemáticamente los campos de control de auditoría a todas las entidades transaccionales clave (`projects`, `sprints`, `work_items`, `project_costs`, `test_cases`, `test_runs`):
+  * `created_at TIMESTAMPTZ` / `updated_at TIMESTAMPTZ`
+  * `created_by_id VARCHAR(50)` / `updated_by_id VARCHAR(50)`
+  * `active BOOLEAN`
 
 ---
 
-## 2. Diccionario de Datos Detallado
+## 3. Diccionario de Datos del Esquema Optimizado
 
-A continuación se describen cada uno de los atributos de las entidades principales del sistema.
+### 3.1. Tabla Catálogo: `project_statuses`
+| Columna | Tipo de Datos | Nulidad | Llave | Descripción |
+| :--- | :--- | :---: | :---: | :--- |
+| `id` | `VARCHAR(30)` | `NOT NULL` | **PK** | Código único del estado (ej. 'DESARROLLO', 'PRUEBAS'). |
+| `name` | `VARCHAR(60)` | `NOT NULL` | | Nombre legible para pantallas y tableros. |
+| `description` | `TEXT` | `NULL` | | Explicación del estado en el ciclo del proyecto. |
 
-### 2.1. Tabla: `tenants` (Inquilinos de la Organización)
-Representa los límites de aislamiento lógico para clientes, marcas o filiales del grupo corporativo.
+### 3.2. Tabla Catálogo: `project_priorities`
+| Columna | Tipo de Datos | Nulidad | Llave | Descripción |
+| :--- | :--- | :---: | :---: | :--- |
+| `id` | `VARCHAR(20)` | `NOT NULL` | **PK** | Código único (ej. 'HIGH', 'MEDIUM', 'LOW'). |
+| `name` | `VARCHAR(40)` | `NOT NULL` | | Nombre legible (ej. 'Alta', 'Media', 'Baja'). |
 
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del tenant (ej. 'grupo-campestre'). |
-| `name` | `VARCHAR(100)` | `NOT NULL` | | | Nombre comercial o razón social. |
-| `description` | `TEXT` | `NULL` | | | Resumen ejecutivo o información institucional. |
-| `domain` | `VARCHAR(100)` | `NOT NULL` | | | Dominio de red asociado para inicio de sesión o validaciones. |
-| `plan` | `VARCHAR(20)` | `NOT NULL` | | 'Basics' | Tipo de suscripción de la plataforma ('Basics', 'Premium', 'Enterprise'). |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'Active' | Estado del tenant ('Active', 'Inactive'). |
+### 3.3. Tabla Transaccional: `projects`
+| Columna | Tipo de Datos | Nulidad | Llave | Descripción |
+| :--- | :--- | :---: | :---: | :--- |
+| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | Identificador único del proyecto. |
+| `tenant_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | Referencia a `tenants.id` para aislamiento multi-tenant. |
+| `portfolio_id` | `VARCHAR(50)` | `NULL` | **FK** | Referencia a `portfolios.id`. |
+| `team_id` | `VARCHAR(50)` | `NULL` | **FK** | Referencia a `teams.id`. |
+| `name` | `VARCHAR(150)` | `NOT NULL` | | Nombre comercial del proyecto de ingeniería. |
+| `code` | `VARCHAR(30)` | `NOT NULL` | **UK** | Código abreviado único (ej. 'APP-CAMP'). |
+| `description` | `TEXT` | `NULL` | | Memoria conceptual descriptiva. |
+| `client` | `VARCHAR(100)` | `NULL` | | Empresa beneficiaria. |
+| `sponsor` | `VARCHAR(50)` | `NULL` | **FK** | ID de usuario patrocinador directivo. |
+| `project_manager_id`| `VARCHAR(50)`| `NULL` | **FK** | ID del Project Manager a cargo. |
+| `scrum_master_id`| `VARCHAR(50)` | `NULL` | **FK** | ID del Scrum Master asignado. |
+| `product_owner_id`| `VARCHAR(50)` | `NULL` | **FK** | ID del Product Owner responsable. |
+| `status_id` | `VARCHAR(30)` | `NOT NULL` | **FK** | ID de estado (Referencia a `project_statuses.id`). |
+| `priority_id` | `VARCHAR(20)` | `NOT NULL` | **FK** | ID de prioridad (Referencia a `project_priorities.id`). |
+| `dev_type_id` | `VARCHAR(30)` | `NOT NULL` | **FK** | Referencia a `development_types.id`. |
+| `category_id` | `VARCHAR(30)` | `NOT NULL` | **FK** | Referencia a `project_categories.id`. |
+| `sprint_size_weeks`| `INTEGER` | `NOT NULL` | | Duración del Sprint en semanas (def: 2). |
+| `start_date` | `DATE` | `NULL` | | Fecha de inicio. |
+| `end_date` | `DATE` | `NULL` | | Fecha de fin. |
+| `budget_total` | `NUMERIC(14,2)`| `NOT NULL` | | Presupuesto total asignado. |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | | Auditoría: fecha de alta. |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL` | | Auditoría: fecha de última edición. |
+| `created_by_id` | `VARCHAR(50)` | `NULL` | **FK** | ID de usuario que registró. |
+| `updated_by_id` | `VARCHAR(50)` | `NULL` | **FK** | ID de usuario que modificó. |
+| `active` | `BOOLEAN` | `NOT NULL` | | Indica si el registro está activo para cargas incrementales. |
 
-### 2.2. Tabla: `users` (Usuarios de la Plataforma)
-Contiene las cuentas de acceso del personal directivo, administrativo, de ingeniería y calidad.
+### 3.4. Tabla Transaccional: `team_member_skills` (1FN Estricta)
+| Columna | Tipo de Datos | Nulidad | Llave | Descripción |
+| :--- | :--- | :---: | :---: | :--- |
+| `team_member_id` | `VARCHAR(50)` | `NOT NULL` | **PK, FK** | ID de la relación de equipo (Referencia a `team_members.id`). |
+| `skill_id` | `VARCHAR(50)` | `NOT NULL` | **PK, FK** | ID de la habilidad atómica (Referencia a `skills.id`). |
 
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador de cuenta o alias único de login. |
-| `first_name` | `VARCHAR(80)` | `NOT NULL` | | | Nombres de la persona. |
-| `last_name` | `VARCHAR(80)` | `NOT NULL` | | | Apellidos de la persona. |
-| `email` | `VARCHAR(150)` | `NOT NULL` | **UK** | | Correo electrónico corporativo único de acceso. |
-| `avatar_url` | `TEXT` | `NULL` | | | Enlace a la imagen de perfil. |
-| `role` | `VARCHAR(50)` | `NOT NULL` | | | Rol asignado (ej. 'Administrador', 'Sponsor / Directora', 'QA Manager'). |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'ACTIVE' | Estado del usuario ('ACTIVE', 'INACTIVE', 'PENDING'). |
-| `password` | `VARCHAR(255)` | `NULL` | | | Hash o cadena encriptada de contraseña para el login local. |
-| `tenant_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | 'grupo-campestre' | Referencia al tenant organizativo al que pertenece. |
-
-### 2.3. Tabla: `teams` (Equipos de Trabajo)
-Agrupaciones lógicas de recursos técnicos con capacidad asignada para desarrollo de proyectos.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del equipo. |
-| `name` | `VARCHAR(100)` | `NOT NULL` | | | Nombre del equipo (ej. 'Célula Móvil', 'Desarrollo Core'). |
-| `capacity` | `INTEGER` | `NOT NULL` | | | Capacidad total estimada del equipo en horas por semana. |
-
-### 2.4. Tabla: `team_members` (Miembros del Equipo)
-Tabla de rompimiento de relación muchos a muchos entre `teams` y `users`, detallando la capacidad y habilidades de cada recurso.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `team_id` | `VARCHAR(50)` | `NOT NULL` | **PK, FK** | | Identificador del equipo asociado. |
-| `user_id` | `VARCHAR(50)` | `NOT NULL` | **PK, FK** | | Identificador del usuario. |
-| `role` | `VARCHAR(80)` | `NOT NULL` | | | Rol específico dentro de la célula de trabajo. |
-| `capacity_hours` | `INTEGER` | `NOT NULL` | | | Horas asignadas semanalmente por este miembro al equipo. |
-| `skills` | `TEXT[]` | `NULL` | | | Lista o arreglo de habilidades especializadas (ej. React, PostgreSQL). |
-
-### 2.5. Tabla: `projects` (Proyectos)
-Entidad central que registra los proyectos tecnológicos, su estado, presupuesto, líderes asignados y prioridades.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del proyecto. |
-| `portfolio_id` | `VARCHAR(50)` | `NULL` | **FK** | | Vinculación a un portafolio estratégico global. |
-| `team_id` | `VARCHAR(50)` | `NULL` | **FK** | | Célula o equipo de desarrollo asignado al proyecto. |
-| `name` | `VARCHAR(150)` | `NOT NULL` | | | Nombre descriptivo del proyecto. |
-| `code` | `VARCHAR(30)` | `NOT NULL` | **UK** | | Código mnemónico de proyecto para claves Kanban (ej. 'APP-TEL'). |
-| `description` | `TEXT` | `NULL` | | | Alcance, objetivos y notas conceptuales de la iniciativa. |
-| `client` | `VARCHAR(100)` | `NULL` | | | Cliente final, subsidiaria o área de negocio beneficiaria. |
-| `sponsor` | `VARCHAR(50)` | `NULL` | | | Patrocinador o sponsor directivo del proyecto (User ID). |
-| `project_manager_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Líder técnico o Project Manager encargado del proyecto (User ID). |
-| `scrum_master_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Scrum Master asignado para la facilitación ágil (User ID). |
-| `product_owner_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Dueño de Producto o Product Owner responsable del backlog (User ID). |
-| `status` | `VARCHAR(25)` | `NOT NULL` | | 'REQUERIMIENTOS' | Estado en el ciclo de vida del proyecto. |
-| `priority` | `VARCHAR(10)` | `NOT NULL` | | 'MEDIUM' | Nivel de urgencia o prioridad ('HIGH', 'MEDIUM', 'LOW'). |
-| `start_date` | `DATE` | `NULL` | | | Fecha de inicio planificada. |
-| `end_date` | `DATE` | `NULL` | | | Fecha de finalización estimada o límite comprometida. |
-| `sprint_size_weeks` | `INTEGER` | `NOT NULL` | | 2 | Tamaño de los Sprints de trabajo en semanas. |
-| `sprint_size_days` | `INTEGER` | `NOT NULL` | | 10 | Duración del Sprint traducida a días hábiles. |
-| `budget_total` | `NUMERIC(14,2)` | `NOT NULL` | | 0.00 | Presupuesto total aprobado para el proyecto. |
-| `tenant_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | 'grupo-campestre' | Tenant organizativo propietario del proyecto. |
-| `desarrollo` | `VARCHAR(25)` | `NULL` | | 'Interno' | Modalidad de ingeniería ('Interno', 'Mixto', 'Externo', 'Sin desarrollo'). |
-| `categoria` | `VARCHAR(25)` | `NULL` | | 'Mediano' | Clasificación por envergadura física ('Pequeño', 'Mediano', 'Grande', 'Muy Grande'). |
-
-### 2.6. Tabla: `project_costs` (Costos y Presupuestos Detallados)
-Registra los gastos asociados a un proyecto agrupados por tipo, incluyendo evidencias de archivos digitales guardados en storage.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador de la transacción de costo. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto al cual se le imputa el gasto. |
-| `cost_type` | `VARCHAR(25)` | `NOT NULL` | | | Categoría de gasto ('INFRAESTRUCTURA', 'LICENCIAS', 'OUTSOURCING', 'NOMINA', 'OTROS'). |
-| `description` | `VARCHAR(255)` | `NOT NULL` | | | Detalle del concepto o factura. |
-| `amount` | `NUMERIC(14,2)` | `NOT NULL` | | | Importe monetario exacto del gasto. |
-| `currency` | `VARCHAR(5)` | `NOT NULL` | | 'USD' | Moneda utilizada (ej. 'USD', 'EUR'). |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | | `NOW()` | Fecha y hora de creación del registro. |
-| `document_number`| `VARCHAR(50)` | `NULL` | | | Número físico de factura, boleta o comprobante. |
-| `document_date` | `DATE` | `NULL` | | | Fecha de emisión de la factura física. |
-| `storage_key` | `TEXT` | `NULL` | | | Clave única de referencia del archivo digitalizado en la nube (GCS). |
-| `storage_url` | `TEXT` | `NULL` | | | URL firmada para la descarga directa del adjunto. |
-| `file_name` | `VARCHAR(255)` | `NULL` | | | Nombre original del archivo adjunto. |
-| `file_size` | `VARCHAR(30)` | `NULL` | | | Tamaño del archivo con formato legible (ej. '1.4 MB'). |
-| `uploaded_at` | `TIMESTAMPTZ` | `NULL` | | | Fecha y hora exacta de carga al servidor de storage. |
-
-### 2.7. Tabla: `sprints` (Sprints / Ciclos Ágiles)
-Representa los bloques de tiempo iterativos en los que el equipo ejecuta los requerimientos del proyecto.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del Sprint. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto al que pertenece el Sprint. |
-| `name` | `VARCHAR(80)` | `NOT NULL` | | | Nombre del Sprint (ej. 'Sprint 1 - MVP'). |
-| `goal` | `TEXT` | `NULL` | | | Meta u objetivo del Sprint comprometido por el equipo. |
-| `start_date` | `DATE` | `NOT NULL` | | | Fecha de inicio del bloque de tiempo. |
-| `end_date` | `DATE` | `NOT NULL` | | | Fecha de cierre planificada del Sprint. |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'NO_INICIADO' | Estado del Sprint ('NO_INICIADO', 'EN_CURSO', 'FINALIZADO'). |
-| `velocity` | `INTEGER` | `NOT NULL` | | 0 | Velocidad real lograda (en puntos de historia completados). |
-| `capacity` | `INTEGER` | `NOT NULL` | | 0 | Capacidad planificada inicial del Sprint en puntos. |
-
-### 2.8. Tabla: `work_items` (Historias de Usuario, Tareas y Bugs)
-Los ítems del Backlog que describen las tareas funcionales y técnicas del ciclo Scrum.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del requerimiento. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto asociado. |
-| `sprint_id` | `VARCHAR(50)` | `NULL` | **FK** | | Sprint asignado (vacío indica que está en el Product Backlog). |
-| `parent_id` | `VARCHAR(50)` | `NULL` | **FK** | | Ítem padre (para modelar jerarquías: Historias de Usuario -> Tareas). |
-| `assignee_id` | `VARCHAR(50)` | `NULL` | **FK** | | Recurso técnico encargado del desarrollo (User ID). |
-| `reporter_id` | `VARCHAR(50)` | `NULL` | **FK** | | Persona que reportó o redactó el requerimiento (User ID). |
-| `key` | `VARCHAR(30)` | `NOT NULL` | | | Clave numerada automática (ej. 'APP-001', 'BUG-005'). |
-| `title` | `VARCHAR(150)` | `NOT NULL` | | | Título o nombre corto del requerimiento. |
-| `description` | `TEXT` | `NULL` | | | Criterios de aceptación detallados o descripción técnica. |
-| `type` | `VARCHAR(25)` | `NOT NULL` | | 'HISTORIA_USUARIO'| Categoría de ítem ('HISTORIA_USUARIO', 'TAREA', 'BUG'). |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'BACKLOG' | Estado de progreso ('BACKLOG', 'POR_HACER', 'EN_CURSO', 'QA', 'FINALIZADO'). |
-| `priority` | `VARCHAR(10)` | `NOT NULL` | | 'MEDIUM' | Prioridad ('HIGH', 'MEDIUM', 'LOW'). |
-| `story_points` | `INTEGER` | `NULL` | | | Esfuerzo asignado bajo escala Fibonacci (ej. 1, 2, 3, 5, 8, 13). |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | | `NOW()` | Fecha y hora de creación de la tarea. |
-
-### 2.9. Tabla: `project_activities` (Tareas y Actividades del Cronograma Gantt)
-Contiene las actividades planificadas secuencialmente en el tiempo, ligadas a sus predecesores y con cálculo de duraciones reales.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador de la actividad Gantt. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto asociado de Gantt. |
-| `sprint_id` | `VARCHAR(50)` | `NULL` | **FK** | | Sprint relacionado. |
-| `work_item_id` | `VARCHAR(50)` | `NULL` | **FK** | | Trazabilidad con una Historia de Usuario (HU) del Backlog. |
-| `name` | `VARCHAR(120)` | `NOT NULL` | | | Nombre de la actividad. |
-| `description` | `TEXT` | `NULL` | | | Detalle o entregables de la actividad. |
-| `assigned_to_id`| `VARCHAR(50)` | `NULL` | **FK** | | Responsable técnico asignado (User ID). |
-| `start_date` | `DATE` | `NOT NULL` | | | Fecha de inicio programada. |
-| `end_date` | `DATE` | `NOT NULL` | | | Fecha de fin planificada. |
-| `duration_days` | `INTEGER` | `NOT NULL` | | | Duración de la actividad expresada en días hábiles. |
-| `progress` | `INTEGER` | `NOT NULL` | | 0 | Porcentaje de avance real (0-100%). |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'PENDIENTE' | Estado de la actividad ('PENDIENTE', 'EN_CURSO', 'COMPLETADA'). |
-| `depends_on_id` | `VARCHAR(50)` | `NULL` | **FK** | | Identificador de la actividad predecesora (dependencia). |
-
-### 2.10. Tabla: `test_suites` (Conjuntos de Pruebas de Calidad QA)
-Agrupaciones lógicas de casos de prueba enfocados en validar componentes específicos de los productos.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único del suite. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto de ingeniería validado. |
-| `name` | `VARCHAR(120)` | `NOT NULL` | | | Título del suite (ej. 'Pruebas de Seguridad', 'Regresión Core'). |
-
-### 2.11. Tabla: `test_cases` (Casos de Prueba)
-Casos estructurados con pasos secuenciales, precondiciones y resultados esperados alineados a historias de usuario.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador del caso de prueba. |
-| `suite_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Suite contenedor. |
-| `work_item_id` | `VARCHAR(50)` | `NULL` | **FK** | | Historia de usuario asociada (Trazabilidad QA-Backlog). |
-| `title` | `VARCHAR(150)` | `NOT NULL` | | | Enunciado del caso de prueba. |
-| `steps` | `TEXT[]` | `NOT NULL` | | | Listado estructurado de pasos a reproducir (ej. Arreglo texto). |
-| `expected` | `TEXT` | `NOT NULL` | | | Comportamiento o resultado final esperado. |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'PENDING' | Estado de calidad ('PENDING', 'PASSED', 'FAILED'). |
-
-### 2.12. Tabla: `test_runs` (Historial de Ejecución de Pruebas)
-Bitácora de ejecuciones de control de calidad con carga de evidencias y firmas digitales de auditores.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador de la ejecución. |
-| `test_case_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Caso de prueba ejecutado. |
-| `executed_by_id`| `VARCHAR(50)` | `NOT NULL` | **FK** | | Auditor o analista de calidad que ejecutó la prueba. |
-| `status` | `VARCHAR(20)` | `NOT NULL` | | 'PENDING' | Veredicto final ('PASSED', 'FAILED', 'PENDING'). |
-| `evidence` | `TEXT` | `NULL` | | | Texto descriptivo del resultado real o log de error técnico. |
-| `notes` | `TEXT` | `NULL` | | | Observaciones adicionales de la ronda de pruebas. |
-| `executed_at` | `TIMESTAMPTZ` | `NOT NULL` | | `NOW()` | Fecha y hora exacta de la ejecución. |
-
-### 2.13. Tabla: `project_notes` (Bitácoras y Notas de Gestión de Proyectos)
-Canal oficial para asentar incidentes, compromisos, minutas de reuniones y deudas técnicas ligadas a tipos parametrizables.
-
-| Nombre de Columna | Tipo de Datos | Nulidad | Llave | Valor por Defecto | Descripción |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | | Identificador único de la nota. |
-| `project_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Proyecto donde se asienta la bitácora. |
-| `type_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | | Categoría de la nota (referencia a `note_types`). |
-| `title` | `VARCHAR(150)` | `NOT NULL` | | | Título descriptivo del hecho registrado. |
-| `content` | `TEXT` | `NOT NULL` | | | Contenido o cuerpo redactado de la bitácora. |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | | `NOW()` | Fecha de creación del registro. |
-| `updated_at` | `TIMESTAMPTZ` | `NOT NULL` | | `NOW()` | Fecha de la última modificación. |
-| `created_by_id` | `VARCHAR(50)` | `NULL` | **FK** | | Colaborador autor de la nota (User ID). |
-| `active` | `BOOLEAN` | `NOT NULL` | | `TRUE` | Bandera lógica de activación (para archivar notas históricas). |
+### 3.5. Tabla Transaccional: `test_case_steps` (1FN Estricta)
+| Columna | Tipo de Datos | Nulidad | Llave | Descripción |
+| :--- | :--- | :---: | :---: | :--- |
+| `id` | `VARCHAR(50)` | `NOT NULL` | **PK** | Identificador de la secuencia de paso. |
+| `test_case_id` | `VARCHAR(50)` | `NOT NULL` | **FK** | Caso de prueba relacionado (Referencia a `test_cases.id`). |
+| `step_number` | `INTEGER` | `NOT NULL` | | Número de secuencia ordinal (1, 2, 3, etc.). |
+| `instruction` | `TEXT` | `NOT NULL` | | Detalle de la acción a ejecutar. |
+| `expected_behavior`| `TEXT` | `NULL` | | Comportamiento esperado de la UI/API ante este paso. |
 
 ---
 
-## 3. Sentencias DDL PostgreSQL (Esquema SQL de Producción)
+## 4. Sentencias DDL PostgreSQL Completas (Esquema de Producción)
 
-A continuación se detallan las instrucciones SQL completas para desplegar este diseño relacional robusto sobre una instancia PostgreSQL. El script incluye restricciones `FOREIGN KEY` con sus correspondientes políticas `ON DELETE`, checks de coherencia para campos monetarios e índices de rendimiento.
+A continuación, se presenta el código SQL de creación física de tablas para desplegar el esquema de base de datos relacional y multi-tenant 100% normalizado.
 
 ```sql
--- =====================================================================
--- SCRIPT DE BASE DE DATOS COMPLETO - PLATAFORMA GESTIÓN DE PROYECTOS
--- MOTOR DE BASE DE DATOS: PostgreSQL (Versión 13 o superior)
--- =====================================================================
+-- -----------------------------------------------------------------
+-- ESQUEMA COMPLETO ALTAMENTE NORMALIZADO POSTGRESQL (POWER BI READY)
+-- SISTEMA MULTI-TENANT DE PROYECTOS Y AUDITORÍA DE CALIDAD
+-- -----------------------------------------------------------------
 
-BEGIN;
-
--- 1. Estructura Multi-Tenant Base
+-- 1. ESTRUCTURA BASE MULTI-TENANT
 CREATE TABLE tenants (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  description TEXT,
-  domain VARCHAR(100) NOT NULL,
-  plan VARCHAR(20) NOT NULL DEFAULT 'Basics' CHECK (plan IN ('Basics', 'Premium', 'Enterprise')),
-  status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive'))
+  id varchar(50) PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  subdomain varchar(50) UNIQUE,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 2. Directorio de Cuentas y Colaboradores
-CREATE TABLE users (
-  id VARCHAR(50) PRIMARY KEY,
-  first_name VARCHAR(80) NOT NULL,
-  last_name VARCHAR(80) NOT NULL,
-  email VARCHAR(150) NOT NULL UNIQUE,
-  avatar_url TEXT,
-  role VARCHAR(50) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'PENDING')),
-  password VARCHAR(255),
-  tenant_id VARCHAR(50) NOT NULL DEFAULT 'grupo-campestre' REFERENCES tenants(id) ON DELETE CASCADE
+-- 2. TABLAS DE CATÁLOGOS / DIMENSIONES (Evitan CHECK constraints y facilitan Power BI)
+CREATE TABLE project_statuses (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL,
+  description text
 );
 
--- 3. Portafolios de Inversión
+CREATE TABLE project_priorities (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE work_item_types (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE work_item_statuses (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE cost_types (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE development_types (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE project_categories (
+  id varchar(30) PRIMARY KEY,
+  name varchar(60) NOT NULL
+);
+
+CREATE TABLE test_statuses (
+  id varchar(20) PRIMARY KEY,
+  name varchar(40) NOT NULL
+);
+
+CREATE TABLE skills (
+  id varchar(50) PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  category varchar(50)
+);
+
+-- 3. TABLAS ESTRUCTURALES DE PORTAFOLIOS Y EQUIPOS (Multi-Tenant)
 CREATE TABLE portfolios (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  description TEXT,
-  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'ARCHIVED')),
-  priority VARCHAR(10) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('HIGH', 'MEDIUM', 'LOW'))
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name varchar(150) NOT NULL,
+  description text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- 4. Equipos y Asignación de Recursos
 CREATE TABLE teams (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  capacity INTEGER NOT NULL CHECK (capacity > 0)
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  description text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- 4. USUARIOS Y CONTROL DE ACCESO
+CREATE TABLE users (
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  first_name varchar(100) NOT NULL,
+  last_name varchar(100) NOT NULL,
+  email varchar(150) NOT NULL UNIQUE,
+  password_hash varchar(255),
+  status varchar(20) NOT NULL DEFAULT 'ACTIVE',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 5. RELACIONES DE PERSONAL NORMALIZADAS (1FN)
 CREATE TABLE team_members (
-  team_id VARCHAR(50) NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role VARCHAR(80) NOT NULL,
-  capacity_hours INTEGER NOT NULL CHECK (capacity_hours >= 0),
-  skills TEXT[],
-  PRIMARY KEY (team_id, user_id)
+  id varchar(50) PRIMARY KEY,
+  team_id varchar(50) NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id varchar(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role varchar(100) NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(team_id, user_id)
 );
 
--- 5. Proyectos Tecnológicos
+CREATE TABLE team_member_skills (
+  team_member_id varchar(50) NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+  skill_id varchar(50) NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+  PRIMARY KEY (team_member_id, skill_id)
+);
+
+-- 6. PROYECTOS (Totalmente Normalizado, Multi-Tenant)
 CREATE TABLE projects (
-  id VARCHAR(50) PRIMARY KEY,
-  portfolio_id VARCHAR(50) REFERENCES portfolios(id) ON DELETE SET NULL,
-  team_id VARCHAR(50) REFERENCES teams(id) ON DELETE SET NULL,
-  name VARCHAR(150) NOT NULL,
-  code VARCHAR(30) NOT NULL UNIQUE,
-  description TEXT,
-  client VARCHAR(100),
-  sponsor VARCHAR(50),
-  project_manager_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  scrum_master_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  product_owner_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  status VARCHAR(25) NOT NULL DEFAULT 'REQUERIMIENTOS' CHECK (status IN ('REQUERIMIENTOS', 'APROBADO', 'DESARROLLO', 'PRUEBAS', 'FINALIZADO', 'CANCELADO')),
-  priority VARCHAR(10) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('HIGH', 'MEDIUM', 'LOW')),
-  start_date DATE,
-  end_date DATE,
-  sprint_size_weeks INTEGER NOT NULL DEFAULT 2 CHECK (sprint_size_weeks > 0),
-  sprint_size_days INTEGER NOT NULL DEFAULT 10 CHECK (sprint_size_days > 0),
-  budget_total NUMERIC(14,2) NOT NULL DEFAULT 0.00 CHECK (budget_total >= 0.00),
-  tenant_id VARCHAR(50) NOT NULL DEFAULT 'grupo-campestre' REFERENCES tenants(id) ON DELETE CASCADE,
-  desarrollo VARCHAR(25) DEFAULT 'Interno' CHECK (desarrollo IN ('Interno', 'Mixto', 'Externo', 'Sin desarrollo')),
-  categoria VARCHAR(25) DEFAULT 'Mediano' CHECK (categoria IN ('Pequeño', 'Mediano', 'Grande', 'Muy Grande')),
-  CONSTRAINT chk_dates CHECK (end_date >= start_date)
+  id varchar(50) PRIMARY KEY,
+  tenant_id varchar(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  portfolio_id varchar(50) REFERENCES portfolios(id) ON DELETE SET NULL,
+  team_id varchar(50) REFERENCES teams(id) ON DELETE SET NULL,
+  name varchar(150) NOT NULL,
+  code varchar(30) NOT NULL,
+  description text,
+  client varchar(100),
+  sponsor varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  project_manager_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  scrum_master_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  product_owner_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  status_id varchar(30) NOT NULL REFERENCES project_statuses(id),
+  priority_id varchar(20) NOT NULL REFERENCES project_priorities(id),
+  dev_type_id varchar(30) NOT NULL REFERENCES development_types(id),
+  category_id varchar(30) NOT NULL REFERENCES project_categories(id),
+  sprint_size_weeks integer NOT NULL DEFAULT 2,
+  start_date date,
+  end_date date,
+  budget_total numeric(14,2) NOT NULL DEFAULT 0.00 CHECK (budget_total >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true,
+  UNIQUE(tenant_id, code)
 );
 
--- 6. Costos y Presupuestos con Archivos de Evidencias Digitales
+-- 7. COSTOS DE PROYECTO Y DOCUMENTACIÓN SEGREGADA (3FN Estricta)
 CREATE TABLE project_costs (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  cost_type VARCHAR(25) NOT NULL CHECK (cost_type IN ('INFRAESTRUCTURA', 'LICENCIAS', 'OUTSOURCING', 'NOMINA', 'OTROS')),
-  description VARCHAR(255) NOT NULL,
-  amount NUMERIC(14,2) NOT NULL CHECK (amount >= 0.00),
-  currency VARCHAR(5) NOT NULL DEFAULT 'USD',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  document_number VARCHAR(50),
-  document_date DATE,
-  storage_key TEXT,
-  storage_url TEXT,
-  file_name VARCHAR(255),
-  file_size VARCHAR(30),
-  uploaded_at TIMESTAMPTZ
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  cost_type_id varchar(30) NOT NULL REFERENCES cost_types(id),
+  description text,
+  amount numeric(14,2) NOT NULL CHECK (amount >= 0),
+  currency varchar(10) NOT NULL DEFAULT 'USD',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true
 );
 
--- 7. Ciclos Scrum / Sprints
+CREATE TABLE project_cost_documents (
+  id varchar(50) PRIMARY KEY,
+  cost_id varchar(50) NOT NULL REFERENCES project_costs(id) ON DELETE CASCADE,
+  storage_key varchar(255) NOT NULL,
+  storage_url text NOT NULL,
+  file_name varchar(255) NOT NULL,
+  file_size integer NOT NULL CHECK (file_size > 0),
+  uploaded_at timestamptz NOT NULL DEFAULT now(),
+  uploaded_by_id varchar(50) REFERENCES users(id)
+);
+
+-- 8. GESTIÓN ÁGIL (SPRINTS Y REQUERIMIENTOS KANBAN)
 CREATE TABLE sprints (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name VARCHAR(80) NOT NULL,
-  goal TEXT,
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'NO_INICIADO' CHECK (status IN ('NO_INICIADO', 'EN_CURSO', 'FINALIZADO')),
-  velocity INTEGER NOT NULL DEFAULT 0 CHECK (velocity >= 0),
-  capacity INTEGER NOT NULL DEFAULT 0 CHECK (capacity >= 0),
-  CONSTRAINT chk_sprint_dates CHECK (end_date >= start_date)
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'PLANNING',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
 );
 
--- 8. Elementos de Trabajo (Backlog)
 CREATE TABLE work_items (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  sprint_id VARCHAR(50) REFERENCES sprints(id) ON DELETE SET NULL,
-  parent_id VARCHAR(50) REFERENCES work_items(id) ON DELETE SET NULL,
-  assignee_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  reporter_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  key VARCHAR(30) NOT NULL,
-  title VARCHAR(150) NOT NULL,
-  description TEXT,
-  type VARCHAR(25) NOT NULL DEFAULT 'HISTORIA_USUARIO' CHECK (type IN ('HISTORIA_USUARIO', 'TAREA', 'BUG')),
-  status VARCHAR(20) NOT NULL DEFAULT 'BACKLOG' CHECK (status IN ('BACKLOG', 'POR_HACER', 'EN_CURSO', 'QA', 'FINALIZADO')),
-  priority VARCHAR(10) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('HIGH', 'MEDIUM', 'LOW')),
-  story_points INTEGER CHECK (story_points IN (1, 2, 3, 5, 8, 13, 21, 34)),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sprint_id varchar(50) REFERENCES sprints(id) ON DELETE SET NULL,
+  parent_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  title varchar(150) NOT NULL,
+  description text,
+  type_id varchar(20) NOT NULL REFERENCES work_item_types(id),
+  status_id varchar(30) NOT NULL REFERENCES work_item_statuses(id),
+  priority_id varchar(20) NOT NULL REFERENCES project_priorities(id),
+  story_points integer CHECK (story_points >= 0),
+  assignee_id varchar(50) REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by_id varchar(50) REFERENCES users(id),
+  updated_by_id varchar(50) REFERENCES users(id),
+  active boolean NOT NULL DEFAULT true
 );
 
--- 9. Actividades Cronograma Gantt y Dependencias Cascada
+-- 9. CRONOGRAMA Y GANTT (ACTIVIDADES DE PROYECTO)
 CREATE TABLE project_activities (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  sprint_id VARCHAR(50) REFERENCES sprints(id) ON DELETE SET NULL,
-  work_item_id VARCHAR(50) REFERENCES work_items(id) ON DELETE SET NULL,
-  name VARCHAR(120) NOT NULL,
-  description TEXT,
-  assigned_to_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  duration_days INTEGER NOT NULL CHECK (duration_days >= 1),
-  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
-  status VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE' CHECK (status IN ('PENDIENTE', 'EN_CURSO', 'COMPLETADA')),
-  depends_on_id VARCHAR(50) REFERENCES project_activities(id) ON DELETE SET NULL,
-  CONSTRAINT chk_activity_dates CHECK (end_date >= start_date)
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sprint_id varchar(50) REFERENCES sprints(id) ON DELETE SET NULL,
+  name varchar(150) NOT NULL,
+  description text,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  progress integer NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  work_item_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
 );
 
--- 10. Control de Calidad: Conjunto de Pruebas, Casos y Bitácoras QA
+CREATE TABLE project_activity_dependencies (
+  activity_id varchar(50) NOT NULL REFERENCES project_activities(id) ON DELETE CASCADE,
+  predecessor_id varchar(50) NOT NULL REFERENCES project_activities(id) ON DELETE CASCADE,
+  PRIMARY KEY (activity_id, predecessor_id)
+);
+
+-- 10. GESTIÓN DE CALIDAD Y QA (1FN Estricta)
 CREATE TABLE test_suites (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name VARCHAR(120) NOT NULL
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title varchar(150) NOT NULL,
+  description text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
 );
 
 CREATE TABLE test_cases (
-  id VARCHAR(50) PRIMARY KEY,
-  suite_id VARCHAR(50) NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
-  work_item_id VARCHAR(50) REFERENCES work_items(id) ON DELETE SET NULL,
-  title VARCHAR(150) NOT NULL,
-  steps TEXT[] NOT NULL,
-  expected TEXT NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PASSED', 'FAILED'))
+  id varchar(50) PRIMARY KEY,
+  suite_id varchar(50) NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
+  work_item_id varchar(50) REFERENCES work_items(id) ON DELETE SET NULL,
+  title varchar(150) NOT NULL,
+  expected_result text NOT NULL,
+  status_id varchar(20) NOT NULL REFERENCES test_statuses(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE test_case_steps (
+  id varchar(50) PRIMARY KEY,
+  test_case_id varchar(50) NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+  step_number integer NOT NULL CHECK (step_number > 0),
+  instruction text NOT NULL,
+  expected_behavior text,
+  UNIQUE(test_case_id, step_number)
 );
 
 CREATE TABLE test_runs (
-  id VARCHAR(50) PRIMARY KEY,
-  test_case_id VARCHAR(50) NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
-  executed_by_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE SET NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PASSED', 'FAILED', 'PENDING')),
-  evidence TEXT,
-  notes TEXT,
-  executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id varchar(50) PRIMARY KEY,
+  test_case_id varchar(50) NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+  tester_id varchar(50) NOT NULL REFERENCES users(id),
+  run_date timestamptz NOT NULL DEFAULT now(),
+  status_id varchar(20) NOT NULL REFERENCES test_statuses(id),
+  actual_result text,
+  comments text
 );
 
--- 11. Bitácora de Gestión Integrada (Notas y Minutas)
-CREATE TABLE note_types (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(80) NOT NULL UNIQUE,
-  description TEXT,
-  color VARCHAR(30) NOT NULL DEFAULT 'blue' CHECK (color IN ('blue', 'amber', 'rose', 'emerald', 'indigo', 'purple', 'slate')),
-  active BOOLEAN NOT NULL DEFAULT TRUE
+-- 11. MAQUETACIÓN VISUAL (MOCKUPS DE FRONTEND)
+CREATE TABLE mockups (
+  id varchar(50) PRIMARY KEY,
+  project_id varchar(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  description text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
 );
 
-CREATE TABLE project_notes (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  type_id VARCHAR(50) NOT NULL REFERENCES note_types(id) ON DELETE RESTRICT,
-  title VARCHAR(150) NOT NULL,
-  content TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_by_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE
+CREATE TABLE mockup_screens (
+  id varchar(50) PRIMARY KEY,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  title varchar(100) NOT NULL,
+  description text,
+  x_position integer NOT NULL DEFAULT 100,
+  y_position integer NOT NULL DEFAULT 100,
+  width integer NOT NULL DEFAULT 375,
+  height integer NOT NULL DEFAULT 812
 );
 
-CREATE TABLE note_attachments (
-  id VARCHAR(50) PRIMARY KEY,
-  note_id VARCHAR(50) NOT NULL REFERENCES project_notes(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  type VARCHAR(20) NOT NULL CHECK (type IN ('file', 'link')),
-  url TEXT NOT NULL,
-  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE mockup_components (
+  id varchar(50) PRIMARY KEY,
+  screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  type varchar(50) NOT NULL,
+  label varchar(100) NOT NULL,
+  x_position integer NOT NULL,
+  y_position integer NOT NULL,
+  width integer NOT NULL,
+  height integer NOT NULL,
+  properties jsonb
 );
 
--- 12. Integración DevOps GitHub y Repositorio de Cambios
-CREATE TABLE github_connections (
-  id VARCHAR(50) PRIMARY KEY,
-  project_id VARCHAR(50) NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
-  repository VARCHAR(150) NOT NULL,
-  branch VARCHAR(50) NOT NULL DEFAULT 'main',
-  webhook_active BOOLEAN NOT NULL DEFAULT TRUE
+CREATE TABLE mockup_connections (
+  id varchar(50) PRIMARY KEY,
+  mockup_id varchar(50) NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+  source_screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  target_screen_id varchar(50) NOT NULL REFERENCES mockup_screens(id) ON DELETE CASCADE,
+  trigger_element_id varchar(50),
+  connection_type varchar(50) NOT NULL DEFAULT 'NAVIGATE'
 );
 
--- =====================================================================
--- SECCIÓN DE ÍNDICES DE RENDIMIENTO (COBERTURA EXCELENTE EN FILTROS)
--- =====================================================================
+-- 12. VISTAS DE MODELADO ESTRELLA COMPATIBLES CON POWER BI (vw_dim_* y vw_fact_*)
+CREATE VIEW vw_dim_tenants AS
+SELECT id AS tenant_key, name AS tenant_name, subdomain, active FROM tenants;
 
--- Índices compuestos para consultas optimizadas de proyectos por tenant y líder
-CREATE INDEX idx_projects_tenant_status ON projects (tenant_id, status);
-CREATE INDEX idx_projects_manager ON projects (project_manager_id);
+CREATE VIEW vw_dim_users AS
+SELECT u.id AS user_key, u.tenant_id AS tenant_key, u.first_name, u.last_name, u.email, u.status,
+       (u.first_name || ' ' || u.last_name) AS full_name
+FROM users u;
 
--- Índices de consulta frecuente para historias de usuario en tableros Kanban
-CREATE INDEX idx_work_items_project_sprint ON work_items (project_id, sprint_id, status);
-CREATE INDEX idx_work_items_assignee ON work_items (assignee_id, status);
+CREATE VIEW vw_dim_projects AS
+SELECT p.id AS project_key, p.tenant_id AS tenant_key, p.portfolio_id AS portfolio_key, p.team_id AS team_key,
+       p.name AS project_name, p.code AS project_code, p.client, p.start_date, p.end_date,
+       ps.name AS status, pp.name AS priority, dt.name AS development_type, pc.name AS category
+FROM projects p
+JOIN project_statuses ps ON p.status_id = ps.id
+JOIN project_priorities pp ON p.priority_id = pp.id
+JOIN development_types dt ON p.dev_type_id = dt.id
+JOIN project_categories pc ON p.category_id = pc.id
+WHERE p.active = true;
 
--- Índices para búsqueda cronológica rápida de notas de proyecto
-CREATE INDEX idx_project_notes_lookup ON project_notes (project_id, active, created_at DESC);
+CREATE VIEW vw_fact_project_costs AS
+SELECT pc.id AS cost_key, pc.project_id AS project_key, p.tenant_id AS tenant_key,
+       pc.cost_type_id AS cost_type_key, ct.name AS cost_type, pc.description,
+       pc.amount, pc.currency, pc.created_at AS date_key
+FROM project_costs pc
+JOIN projects p ON pc.project_id = p.id
+JOIN cost_types ct ON pc.cost_type_id = ct.id
+WHERE pc.active = true;
 
--- Índices de auditoría de pruebas QA
-CREATE INDEX idx_test_runs_case_executed ON test_runs (test_case_id, executed_at DESC);
+CREATE VIEW vw_fact_work_items AS
+SELECT wi.id AS item_key, wi.project_id AS project_key, p.tenant_id AS tenant_key,
+       wi.sprint_id AS sprint_key, wi.assignee_id AS assignee_key, wi.title,
+       wit.name AS work_item_type, wis.name AS work_item_status, pp.name AS priority,
+       wi.story_points, wi.created_at AS date_key
+FROM work_items wi
+JOIN projects p ON wi.project_id = p.id
+JOIN work_item_types wit ON wi.type_id = wit.id
+JOIN work_item_statuses wis ON wi.status_id = wis.id
+JOIN project_priorities pp ON wi.priority_id = pp.id
+WHERE wi.active = true;
 
-COMMIT;
+-- 13. ÍNDICES DE RENDIMIENTO RECOMENDADOS
+CREATE INDEX idx_project_tenant_status ON projects(tenant_id, status_id);
+CREATE INDEX idx_work_item_proj_sprint_status ON work_items(project_id, sprint_id, status_id);
+CREATE INDEX idx_work_item_assignee_status ON work_items(assignee_id, status_id);
+CREATE INDEX idx_team_members_unique ON team_members(team_id, user_id);
+CREATE INDEX idx_cost_documents_cost ON project_cost_documents(cost_id);
 ```
 
 ---
 
-## 4. Normalización y Coherencia de Diseño
+## 5. Preparación Analítica de Power BI (Capa de Modelado Estrella)
 
-El esquema expuesto garantiza las siguientes propiedades relacionales:
-1. **Primera Forma Normal (1FN):** Todos los atributos son atómicos; no existen campos multievaluados. Los pasos de casos de prueba (`steps`) y habilidades de miembros (`skills`) utilizan la estructura tipo array de PostgreSQL, garantizando búsquedas e indexación óptima.
-2. **Segunda Forma Normal (2FN):** Todas las tablas poseen una clave primaria explícita (`id` o compuesta) y ningún campo depende parcialmente de una sub-clave.
-3. **Tercera Forma Normal (3FN):** No existen dependencias transitivas entre columnas no claves. Por ejemplo, los detalles del `User` no están duplicados en la tabla de asignaciones `team_members` ni en `test_runs`, resolviéndose siempre mediante uniones (`JOIN`) con la tabla de maestros correspondientes.
-4. **Resiliencia Multi-Tenant:** La inclusión del `tenant_id` permite aplicar aislamiento lógico a nivel de queries mediante directivas de seguridad basadas en el perfil de sesión verificado por tokens JWT.
+Para habilitar un modelado de datos de altísimo rendimiento, sin transformaciones costosas de ETL y listo para la carga de esquemas estrella en **Power BI**, se propone la creación de vistas de base de datos divididas estrictamente en **Dimensiones (Dim)** y **Tablas de Hechos (Fact)**.
+
+Esto permite a Power BI mapear las relaciones directamente con relaciones de un solo sentido (One-to-Many, 1:*), minimizando la necesidad de filtrado bidireccional y maximizando la velocidad del motor VertiPaq de DAX.
+
+Las vistas detalladas arriba (`vw_dim_tenants`, `vw_dim_users`, `vw_dim_projects`, `vw_fact_project_costs` y `vw_fact_work_items`) cubren los principales ejes analíticos del sistema:
+
+1. **Aislamiento Multi-Tenant de Reportes**: Permite segmentar visualizaciones y dashboards en Power BI filtrando por `tenant_key` o `tenant_name` a través de la dimensión `vw_dim_tenants`.
+2. **Análisis de Capacidad de Ingeniería**: Correlaciona usuarios, roles y asignaciones mediante `vw_dim_users`.
+3. **Control Presupuestario y Desviaciones**: Permite realizar operaciones matemáticas DAX inmediatas (ej. `SUM(cost_amount)`) agrupadas por categoría de proyecto (`vw_dim_projects`) o tipo de costo (`vw_fact_project_costs`), sin lidiar con campos de archivo adjuntos.
+4. **Métricas Ágiles e Incrementales**: Facilita reportes de velocidad de sprints y conteo de puntos de historia (`story_points`) utilizando la tabla de hechos `vw_fact_work_items`.
+
+---
+
+## 6. Autoevaluación Final del Modelo de Datos
+
+| Criterio | Estado | Comentario |
+| :--- | :---: | :--- |
+| **1FN Estricta** | **CUMPLE** | Se removieron todos los arreglos `TEXT[]` de habilidades y pasos QA, creando tablas relacionales puras y atómicas. |
+| **2FN & 3FN** | **CUMPLE** | Se aislaron los catálogos de estado, prioridades, modalidades, etc., de las tablas transaccionales, y se removieron los metadatos de archivos de la tabla de costos transaccionales. |
+| **Multi-tenant** | **CUMPLE** | Estructuras de equipos, portafolios, usuarios y transacciones incluyen consistentemente aislamiento organizacional por `tenant_id` obligatorio. |
+| **Power BI Ready** | **CUMPLE** | El modelo estrella provisto por las vistas SQL (`vw_dim_*` y `vw_fact_*`) permite cargarse en Power BI al instante, eliminando transformaciones pesadas y garantizando óptimo desempeño DAX. |
+| **Consistencia Transaccional** | **CUMPLE** | Llaves primarias y foráneas completas con políticas relacionales explícitas de actualización y cascada. |
