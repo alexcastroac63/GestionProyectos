@@ -1,7 +1,6 @@
 import React from 'react';
 import { useSystemStore, useProjectsStore, useScrumStore } from '../../AppProviders';
 import { getSegmentedProjects, getSegmentedUsers } from '../../selectors/tenantSelectors';
-import { QuickBacklogItemForm } from '../../../features/backlog/components/QuickBacklogItemForm';
 import ProductBacklogManager from '../../../features/backlog/ProductBacklogManager';
 
 export const BacklogTab: React.FC = () => {
@@ -29,12 +28,6 @@ export const BacklogTab: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn" id="tab-backlog">
-      <QuickBacklogItemForm
-        projectId={selectedProjectId}
-        workItems={workItems}
-        setWorkItems={setWorkItems}
-        addLog={addLog}
-      />
       <ProductBacklogManager
         selectedProjectId={selectedProjectId}
         setSelectedProjectId={setSelectedProjectId}

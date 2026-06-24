@@ -29,7 +29,7 @@ export const INITIAL_USERS: User[] = [
     id: 'u-sa',
     first_name: 'SA',
     last_name: 'Administración',
-    email: 'sa@campestre.com.sv',
+    email: 'proyectosticampestre@gmail.com',
     role: 'Sponsor / Directora',
     status: 'ACTIVE'
   },

@@ -19,7 +19,19 @@ export class LocalSystemRepository implements ISystemRepository {
 
   async loadUsers(): Promise<User[]> {
     const list = safeLoad<User[]>('gcp_users', INITIAL_USERS);
-    return list.map(u => ({ ...u, tenant_id: u.tenant_id || 'grupo-campestre' }));
+    let changed = false;
+    const patchedList = list.map(u => {
+      let email = u.email;
+      if (email.toLowerCase() === 'sa@campestre.com.sv') {
+        email = 'proyectosticampestre@gmail.com';
+        changed = true;
+      }
+      return { ...u, email, tenant_id: u.tenant_id || 'grupo-campestre' };
+    });
+    if (changed) {
+      safeSave('gcp_users', patchedList);
+    }
+    return patchedList;
   }
 
   async saveUsers(users: User[]): Promise<void> {
