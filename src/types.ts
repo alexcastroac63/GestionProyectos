@@ -75,7 +75,7 @@ export interface Project {
   sprint_size_days: number;
   budget_total: number;
   tenant_id?: string;
-  desarrollo?: 'Interno' | 'Mixto' | 'Externo' | 'Sin desarrollo';
+  desarrollo?: 'Desarrollo Interno' | 'Desarrollo Mixto' | 'Desarrollo Externo' | 'Sin Desarrollo' | 'Implementación';
   categoria?: 'Pequeño' | 'Mediano' | 'Grande' | 'Muy Grande';
 }
 

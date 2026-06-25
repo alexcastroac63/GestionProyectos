@@ -60,26 +60,26 @@ export function calculateScheduleCompliance(
 /**
  * Evalúa el indicador de riesgo de un proyecto según los 3 factores clave definidos por la PMO:
  * - % Cumplimiento Cronograma (Rojo si < 75%, Amarillo si 75-89%, Verde si >= 90%)
- * - % Variación Presupuesto (Rojo si > 10%, Amarillo si 5-10%, Verde si <= 5%)
+ * - % Consumo del Presupuesto (Rojo si > 100%, Amarillo si 80-100%, Verde si <= 80%)
  * - % Calidad (Rojo si < 75%, Amarillo si 75-89%, Verde si >= 90%)
  * 
  * @param scheduleCompliance % Cumplimiento de Cronograma
- * @param budgetVariation % Variación del Presupuesto
+ * @param budgetConsumption % Consumo del Presupuesto
  * @param qualityPercent % Calidad de Entregables
  * @returns 'Rojo' | 'Amarillo' | 'Verde'
  */
 export function evaluateProjectRiskStatus(
   scheduleCompliance: number,
-  budgetVariation: number,
+  budgetConsumption: number,
   qualityPercent: number
 ): 'Rojo' | 'Amarillo' | 'Verde' {
-  if (scheduleCompliance < 75 || budgetVariation > 10 || qualityPercent < 75) {
+  if (scheduleCompliance < 75 || budgetConsumption > 100 || qualityPercent < 75) {
     return 'Rojo';
   }
   
   if (
     (scheduleCompliance >= 75 && scheduleCompliance < 90) ||
-    (budgetVariation > 5 && budgetVariation <= 10) ||
+    (budgetConsumption > 80 && budgetConsumption <= 100) ||
     (qualityPercent >= 75 && qualityPercent < 90)
   ) {
     return 'Amarillo';

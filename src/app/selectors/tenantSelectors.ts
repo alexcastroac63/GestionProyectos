@@ -5,6 +5,7 @@ import { Project, User } from '../../types';
  * Falls back to 'grupo-campestre' if no user is logged in.
  */
 export function getSegmentedProjects(projects: Project[], loggedInUser: User | null): Project[] {
+  if (!projects) return [];
   return projects.filter(p => 
     !p.tenant_id || 
     p.tenant_id === loggedInUser?.tenant_id || 
@@ -17,6 +18,7 @@ export function getSegmentedProjects(projects: Project[], loggedInUser: User | n
  * Falls back to 'grupo-campestre' if no user is logged in.
  */
 export function getSegmentedUsers(users: User[], loggedInUser: User | null): User[] {
+  if (!users) return [];
   return users.filter(u => 
     !u.tenant_id || 
     u.tenant_id === loggedInUser?.tenant_id || 

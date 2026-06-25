@@ -5,11 +5,21 @@ import { INITIAL_PROJECTS, INITIAL_PROJECT_COSTS } from '../../../data';
 export const projectsRepository = {
   loadProjects(): Project[] {
     const list = safeLoad<Project[]>('gcp_projects', INITIAL_PROJECTS);
-    return list.map(p => ({
-      ...p,
-      tenant_id: p.tenant_id || 'grupo-campestre',
-      sprint_size_days: p.sprint_size_days !== undefined ? p.sprint_size_days : 10
-    }));
+    return list.map(p => {
+      let des = p.desarrollo;
+      if (des === 'Interno' as any) des = 'Desarrollo Interno';
+      else if (des === 'Mixto' as any) des = 'Desarrollo Mixto';
+      else if (des === 'Externo' as any) des = 'Desarrollo Externo';
+      else if (des === 'Sin desarrollo' as any) des = 'Sin Desarrollo';
+      else if (!des) des = 'Desarrollo Interno';
+
+      return {
+        ...p,
+        desarrollo: des,
+        tenant_id: p.tenant_id || 'grupo-campestre',
+        sprint_size_days: p.sprint_size_days !== undefined ? p.sprint_size_days : 10
+      };
+    });
   },
 
   saveProjects(projects: Project[]): void {

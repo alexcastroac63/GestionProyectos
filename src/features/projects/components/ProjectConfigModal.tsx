@@ -157,14 +157,15 @@ export const ProjectConfigModal: React.FC = () => {
             <div>
               <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Tipo de Desarrollo</label>
               <select
-                value={projectConfigModalTarget.desarrollo || 'Interno'}
+                value={projectConfigModalTarget.desarrollo || 'Desarrollo Interno'}
                 onChange={e => setProjectConfigModalTarget(prev => prev ? { ...prev, desarrollo: e.target.value as any } : null)}
                 className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer"
               >
-                <option value="Interno">⚙️ Interno</option>
-                <option value="Mixto">🔄 Mixto</option>
-                <option value="Externo">📦 Externo</option>
-                <option value="Sin desarrollo">🚫 Sin desarrollo</option>
+                <option value="Desarrollo Interno">⚙️ Desarrollo Interno</option>
+                <option value="Desarrollo Mixto">🔄 Desarrollo Mixto</option>
+                <option value="Desarrollo Externo">📦 Desarrollo Externo</option>
+                <option value="Sin Desarrollo">🚫 Sin Desarrollo</option>
+                <option value="Implementación">🚀 Implementación</option>
               </select>
             </div>
 

@@ -338,7 +338,7 @@ export const ProjectPortfolioView: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                                ⚙️ {proj.desarrollo || 'Interno'}
+                                ⚙️ {proj.desarrollo || 'Desarrollo Interno'}
                               </span>
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100/40">
                                 🏷️ {proj.categoria || 'Mediano'}
@@ -586,7 +586,7 @@ export const ProjectPortfolioView: React.FC = () => {
               <div className="overflow-hidden">
                 <span className="block text-[10px] uppercase font-bold text-slate-400">Desarrollo</span>
                 <span className="font-semibold text-slate-800 text-[11px] truncate block whitespace-nowrap">
-                  {activeProject.desarrollo || 'Interno'}
+                  {activeProject.desarrollo || 'Desarrollo Interno'}
                 </span>
               </div>
             </div>

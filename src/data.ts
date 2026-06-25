@@ -104,7 +104,7 @@ export const INITIAL_PROJECTS: Project[] = [
     sprint_size_weeks: 2,
     sprint_size_days: 10,
     budget_total: 150000,
-    desarrollo: 'Interno',
+    desarrollo: 'Desarrollo Interno',
     categoria: 'Mediano'
   }
 ];

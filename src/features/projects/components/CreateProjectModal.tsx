@@ -26,7 +26,7 @@ export const CreateProjectModal: React.FC = () => {
   const [newProjSponsor, setNewProjSponsor] = useState('');
   const [newProjSprintSizeDays, setNewProjSprintSizeDays] = useState(10);
   const [newProjBudget, setNewProjBudget] = useState(150000);
-  const [newProjDesarrollo, setNewProjDesarrollo] = useState<'Interno' | 'Mixto' | 'Externo' | 'Sin desarrollo'>('Interno');
+  const [newProjDesarrollo, setNewProjDesarrollo] = useState<'Desarrollo Interno' | 'Desarrollo Mixto' | 'Desarrollo Externo' | 'Sin Desarrollo' | 'Implementación'>('Desarrollo Interno');
   const [newProjCategoria, setNewProjCategoria] = useState<'Pequeño' | 'Mediano' | 'Grande' | 'Muy Grande'>('Mediano');
 
   if (!isCreateProjectModalOpen) return null;
@@ -77,7 +77,7 @@ export const CreateProjectModal: React.FC = () => {
     setNewProjClient('');
     setNewProjSponsor('');
     setNewProjSprintSizeDays(10);
-    setNewProjDesarrollo('Interno');
+    setNewProjDesarrollo('Desarrollo Interno');
     setNewProjCategoria('Mediano');
     setIsCreateProjectModalOpen(false);
 
@@ -173,10 +173,11 @@ export const CreateProjectModal: React.FC = () => {
                 onChange={e => setNewProjDesarrollo(e.target.value as any)}
                 className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold outline-none transition-all cursor-pointer font-sans"
               >
-                <option value="Interno">⚙️ Interno</option>
-                <option value="Mixto">🔄 Mixto</option>
-                <option value="Externo">📦 Externo</option>
-                <option value="Sin desarrollo">🚫 Sin desarrollo</option>
+                <option value="Desarrollo Interno">⚙️ Desarrollo Interno</option>
+                <option value="Desarrollo Mixto">🔄 Desarrollo Mixto</option>
+                <option value="Desarrollo Externo">📦 Desarrollo Externo</option>
+                <option value="Sin Desarrollo">🚫 Sin Desarrollo</option>
+                <option value="Implementación">🚀 Implementación</option>
               </select>
             </div>
 

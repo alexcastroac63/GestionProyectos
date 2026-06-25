@@ -4,52 +4,51 @@
  */
 
 /**
- * Servicio de Dominio para el cálculo y gestión de desviaciones presupuestarias.
+ * Servicio de Dominio para el cálculo y gestión de consumo de presupuestos.
  */
 
 /**
- * Calcula la variación porcentual de presupuesto según el estándar PMO.
- * Fórmula: ((Costo Real Acumulado - Presupuesto Planificado Acumulado) / Presupuesto Planificado Acumulado) * 100
+ * Calcula el porcentaje de consumo de presupuesto.
+ * Fórmula: (Costo Real Acumulado / Presupuesto Total Aprobado) * 100
  * 
  * @param realCost Costo real acumulado
- * @param plannedBudget Presupuesto planificado acumulado
- * @returns Variación porcentual (siempre >= 0 para evitar distorsiones negativas)
+ * @param approvedBudget Presupuesto total aprobado
+ * @returns Porcentaje de consumo
  */
-export function calculateBudgetVariation(realCost: number, plannedBudget: number): number {
-  if (plannedBudget <= 0) {
+export function calculateBudgetConsumption(realCost: number, approvedBudget: number): number {
+  if (approvedBudget <= 0) {
     return 0;
   }
-  const deviation = Math.round(((realCost - plannedBudget) / plannedBudget) * 100);
-  return deviation < 0 ? 0 : deviation;
+  return Math.round((realCost / approvedBudget) * 100);
 }
 
 /**
- * Determina las clases CSS para colorear los KPIs presupuestarios según rangos definidos.
- * - Verde (Emerald): <= 5%
- * - Amarillo (Amber): > 5% y <= 10%
- * - Rojo (Rose): > 10%
+ * Determina las clases CSS para colorear los KPIs presupuestarios según rangos definidos para consumo.
+ * - Verde (Emerald): <= 80%
+ * - Amarillo (Amber): > 80% y <= 100%
+ * - Rojo (Rose): > 100%
  * 
- * @param variation Variación porcentual de presupuesto
+ * @param consumption Porcentaje de consumo de presupuesto
  */
-export function getBudgetHealthClasses(variation: number): string {
-  if (variation <= 5) {
+export function getBudgetHealthClasses(consumption: number): string {
+  if (consumption <= 80) {
     return 'text-emerald-600 font-bold';
   }
-  if (variation <= 10) {
+  if (consumption <= 100) {
     return 'text-amber-600';
   }
   return 'text-rose-600 font-bold';
 }
 
 /**
- * Obtiene la categoría cualitativa de desvío presupuestario
- * @param variation Variación porcentual de presupuesto
+ * Obtiene la categoría cualitativa de salud del consumo presupuestario.
+ * @param consumption Porcentaje de consumo de presupuesto
  */
-export function getBudgetHealthStatus(variation: number): 'Verde' | 'Amarillo' | 'Rojo' {
-  if (variation <= 5) {
+export function getBudgetHealthStatus(consumption: number): 'Verde' | 'Amarillo' | 'Rojo' {
+  if (consumption <= 80) {
     return 'Verde';
   }
-  if (variation <= 10) {
+  if (consumption <= 100) {
     return 'Amarillo';
   }
   return 'Rojo';
