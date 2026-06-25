@@ -9,6 +9,7 @@ export interface ISmtpConfig {
   host: string;
   port: string;
   account: string;
+  password?: string;
 }
 
 export interface ISettingsRepositoryPort {
@@ -25,7 +26,8 @@ export class LocalSettingsRepository implements ISettingsRepositoryPort {
     return {
       host: localStorage.getItem('gcp_smtp_host') || 'smtp.gmail.com',
       port: localStorage.getItem('gcp_smtp_port') || '587',
-      account: localStorage.getItem('gcp_smtp_account') || ''
+      account: localStorage.getItem('gcp_smtp_account') || '',
+      password: localStorage.getItem('gcp_smtp_password') || ''
     };
   }
 
@@ -33,6 +35,9 @@ export class LocalSettingsRepository implements ISettingsRepositoryPort {
     localStorage.setItem('gcp_smtp_host', config.host);
     localStorage.setItem('gcp_smtp_port', config.port);
     localStorage.setItem('gcp_smtp_account', config.account);
+    if (config.password !== undefined) {
+      localStorage.setItem('gcp_smtp_password', config.password);
+    }
   }
 
   loadClients(): string[] {
@@ -63,7 +68,8 @@ export class ApiSettingsRepository implements ISettingsRepositoryPort {
     return {
       host: localStorage.getItem('gcp_smtp_host') || 'smtp.gmail.com',
       port: localStorage.getItem('gcp_smtp_port') || '587',
-      account: localStorage.getItem('gcp_smtp_account') || ''
+      account: localStorage.getItem('gcp_smtp_account') || '',
+      password: localStorage.getItem('gcp_smtp_password') || ''
     };
   }
 
@@ -71,6 +77,9 @@ export class ApiSettingsRepository implements ISettingsRepositoryPort {
     localStorage.setItem('gcp_smtp_host', config.host);
     localStorage.setItem('gcp_smtp_port', config.port);
     localStorage.setItem('gcp_smtp_account', config.account);
+    if (config.password !== undefined) {
+      localStorage.setItem('gcp_smtp_password', config.password);
+    }
     // Asynchronous API push simulation/trigger
     fetch('/api/settings/smtp', {
       method: 'POST',

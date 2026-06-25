@@ -17,6 +17,8 @@ export const TeamDirectoryView: React.FC = () => {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
   const [showResetEmailModal, setShowResetEmailModal] = useState(false);
+  const [activationUser, setActivationUser] = useState<any>(null);
+  const [showActivationModal, setShowActivationModal] = useState(false);
 
   // Load current SMTP configuration from the settingsRepository
   const smtpConfig = settingsRepository.loadSmtpConfig();
@@ -34,6 +36,8 @@ export const TeamDirectoryView: React.FC = () => {
           setShowEditUserModal={setShowEditUserModal}
           setPasswordResetUser={setPasswordResetUser}
           setShowResetEmailModal={setShowResetEmailModal}
+          setActivationUser={setActivationUser}
+          setShowActivationModal={setShowActivationModal}
         />
       </div>
 
@@ -48,6 +52,10 @@ export const TeamDirectoryView: React.FC = () => {
         setShowResetEmailModal={setShowResetEmailModal}
         passwordResetUser={passwordResetUser}
         setPasswordResetUser={setPasswordResetUser}
+        activationUser={activationUser}
+        setActivationUser={setActivationUser}
+        showActivationModal={showActivationModal}
+        setShowActivationModal={setShowActivationModal}
         users={users}
         setUsers={setUsers}
         addLog={addLog}

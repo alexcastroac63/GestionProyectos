@@ -19,6 +19,8 @@ export interface User {
   status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
   password?: string;
   tenant_id?: string;
+  mustChangePassword?: boolean;
+  tempPassword?: string;
 }
 
 export interface Tenant {

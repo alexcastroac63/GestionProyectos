@@ -72,54 +72,7 @@ export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
             </div>
           )}
 
-          {/* Local Simulation Option when SMTP doesn't exist */}
-          {(!smtpAccount.trim() || !smtpPassword.trim()) && (
-            <div className="bg-slate-950/60 border border-slate-850 p-3 rounded-xl space-y-1.5 animate-fadeIn">
-              <div className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1.5 leading-none">
-                <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce" />
-                Simulación Directa Local (Atajo Rápido)
-              </div>
-              <p className="text-[9.5px] text-slate-400 leading-normal">
-                ¿No cuenta con un servidor SMTP habilitado en este momento? Puede procesar la simulación de restablecimiento de contraseña de forma 100% local aquí mismo.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const emailToFind = forgotPasswordEmail.trim().toLowerCase();
-                  if (!emailToFind) {
-                    setForgotPasswordStatus({
-                      type: 'error',
-                      message: 'Por favor, ingrese un correo oficial registrado primero.',
-                    });
-                    return;
-                  }
-                  const targetUser = users.find((u) => u.email.toLowerCase() === emailToFind);
-                  if (!targetUser) {
-                    setForgotPasswordStatus({
-                      type: 'error',
-                      message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`,
-                    });
-                    return;
-                  }
-                  // Generate local code
-                  const localCode = 'CAMP-' + Math.floor(100000 + Math.random() * 900000);
-                  setForgotPasswordVerificationCode(localCode);
-                  setForgotPasswordStep('verify');
-                  setForgotPasswordStatus({
-                    type: 'success',
-                    message: `🧪 MODO DE SIMULACIÓN LOCAL ACTIVO\n\nSe ha generado un código de seguridad local: ${localCode}\n\nPor favor, cópielo e ingréselo a continuación para actualizar su clave.`,
-                  });
-                  addLog(
-                    'Simulación',
-                    `Se generó código de restablecimiento de contraseña local para ${emailToFind}: ${localCode}`
-                  );
-                }}
-                className="w-full bg-teal-950/50 hover:bg-teal-900/60 border border-teal-800/40 text-teal-300 font-bold py-1.5 rounded-lg text-[10.5px] transition cursor-pointer"
-              >
-                🧪 Generar Código y Simular Localmente
-              </button>
-            </div>
-          )}
+
 
           <div className="flex gap-2.5 pt-1">
             <button

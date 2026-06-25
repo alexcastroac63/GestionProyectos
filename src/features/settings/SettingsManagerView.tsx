@@ -162,20 +162,23 @@ export const SettingsManagerView: React.FC = () => {
             smtpHost={smtpHost}
             setSmtpHost={(h) => {
               setSmtpHost(h);
-              settingsRepository.saveSmtpConfig({ host: h, port: smtpPort, account: smtpAccount });
+              settingsRepository.saveSmtpConfig({ host: h, port: smtpPort, account: smtpAccount, password: smtpPassword });
             }}
             smtpPort={smtpPort}
             setSmtpPort={(p) => {
               setSmtpPort(p);
-              settingsRepository.saveSmtpConfig({ host: smtpHost, port: p, account: smtpAccount });
+              settingsRepository.saveSmtpConfig({ host: smtpHost, port: p, account: smtpAccount, password: smtpPassword });
             }}
             smtpAccount={smtpAccount}
             smtpAccountSet={(a) => {
               setSmtpAccount(a);
-              settingsRepository.saveSmtpConfig({ host: smtpHost, port: smtpPort, account: a });
+              settingsRepository.saveSmtpConfig({ host: smtpHost, port: smtpPort, account: a, password: smtpPassword });
             }}
             smtpPassword={smtpPassword}
-            setSmtpPassword={setSmtpPassword}
+            setSmtpPassword={(pw) => {
+              setSmtpPassword(pw);
+              settingsRepository.saveSmtpConfig({ host: smtpHost, port: smtpPort, account: smtpAccount, password: pw });
+            }}
           />
         )}
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users2, UserPlus, Search, Edit2, Mail, UserCheck, X } from 'lucide-react';
+import { Users2, UserPlus, Search, Edit2, Mail, UserCheck, X, Key } from 'lucide-react';
 import { User } from '../../../types';
 
 interface TeamDirectoryProps {
@@ -12,6 +12,8 @@ interface TeamDirectoryProps {
   setShowEditUserModal: (show: boolean) => void;
   setPasswordResetUser: (u: User | null) => void;
   setShowResetEmailModal: (show: boolean) => void;
+  setActivationUser: (u: User | null) => void;
+  setShowActivationModal: (show: boolean) => void;
 }
 
 export const TeamDirectory: React.FC<TeamDirectoryProps> = ({
@@ -24,6 +26,8 @@ export const TeamDirectory: React.FC<TeamDirectoryProps> = ({
   setShowEditUserModal,
   setPasswordResetUser,
   setShowResetEmailModal,
+  setActivationUser,
+  setShowActivationModal,
 }) => {
   const [teamSearch, setTeamSearch] = useState('');
   const [teamRoleFilter, setTeamRoleFilter] = useState('ALL');
@@ -394,6 +398,20 @@ export const TeamDirectory: React.FC<TeamDirectoryProps> = ({
                         >
                           <Mail className="w-3.5 h-3.5 text-indigo-500" />
                           Clave
+                        </button>
+
+                        {/* Activate with Temp Password */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivationUser(u);
+                            setShowActivationModal(true);
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-emerald-100 shadow-3xs font-semibold"
+                          title="Activar o reestablecer usuario con una clave temporal y forzar cambio al ingresar"
+                        >
+                          <Key className="w-3.5 h-3.5 text-emerald-600" />
+                          Activar
                         </button>
                       </div>
                     </div>

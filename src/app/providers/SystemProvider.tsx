@@ -120,8 +120,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [settingsSubTab, setSettingsSubTab] = useState<'smtp' | 'clients' | 'scrum_rules' | 'tenants' | 'note_types'>('smtp');
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
 
-  // SMTP password (transient)
-  const [smtpPassword, setSmtpPassword] = useState<string>('');
+  // SMTP password (persistent)
+  const [smtpPassword, setSmtpPassword] = useState<string>(() => {
+    return settingsRepository.loadSmtpConfig().password || '';
+  });
 
   // Clients & Sponsors Lists (bound to Settings Repository)
   const [clientsList, setClientsList] = useState<string[]>(() => {

@@ -42,6 +42,17 @@ export const AuthFlow: React.FC = () => {
   const [registrationSuccessMessage, setRegistrationSuccessMessage] = useState('');
   const [showLoginForgotPassword, setShowLoginForgotPassword] = useState(false);
 
+  // Forced Password Change states (First login activation)
+  const [showForcePasswordChange, setShowForcePasswordChange] = useState(false);
+  const [forceChangeUser, setForceChangeUser] = useState<User | null>(null);
+  const [forceChangeNewPassword, setForceChangeNewPassword] = useState('');
+  const [forceChangeConfirmPassword, setForceChangeConfirmPassword] = useState('');
+  const [forceChangeError, setForceChangeError] = useState('');
+  const [forceChangeSuccess, setForceChangeSuccess] = useState(false);
+  const [isSavingForcedPassword, setIsSavingForcedPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   // --- Handlers ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,6 +116,20 @@ export const AuthFlow: React.FC = () => {
         return;
       }
 
+      if (foundUser.mustChangePassword) {
+        setForceChangeUser(foundUser);
+        setForceChangeNewPassword('');
+        setForceChangeConfirmPassword('');
+        setForceChangeError('');
+        setForceChangeSuccess(false);
+        setShowForcePasswordChange(true);
+        setIsLoggingIn(false);
+        setLoginPassword('');
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+        return;
+      }
+
       // Proceed with authenticated secure session
       setLoggedInUser(foundUser);
       localStorage.setItem('gcp_logged_in_user', JSON.stringify({
@@ -119,6 +144,78 @@ export const AuthFlow: React.FC = () => {
     } catch (err: any) {
       setLoginError(`Error de comunicación con el Directorio de Autenticación: ${err.message || 'Error general de red.'}`);
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleSaveForcedPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForceChangeError('');
+
+    if (!forceChangeUser) return;
+
+    if (forceChangeNewPassword.length < 6) {
+      setForceChangeError('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    if (forceChangeNewPassword !== forceChangeConfirmPassword) {
+      setForceChangeError('Las contraseñas ingresadas no coinciden. Por favor confirma la clave correctamente.');
+      return;
+    }
+
+    setIsSavingForcedPassword(true);
+    try {
+      const res = await fetch('/api/update-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: forceChangeUser.email,
+          newPassword: forceChangeNewPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setForceChangeError(data.message || 'No se pudo guardar la nueva contraseña.');
+        setIsSavingForcedPassword(false);
+        return;
+      }
+
+      // Update user state locally: set mustChangePassword to false, clear tempPassword
+      const updatedUsers = users.map(u => {
+        if (u.email.toLowerCase() === forceChangeUser.email.toLowerCase()) {
+          return { ...u, mustChangePassword: false, tempPassword: undefined };
+        }
+        return u;
+      });
+      setUsers(updatedUsers);
+      localStorage.setItem('gcp_users', JSON.stringify(updatedUsers));
+
+      // Show success, wait, and sign them in
+      setForceChangeSuccess(true);
+      addLog(`${forceChangeUser.first_name} ${forceChangeUser.last_name} (${forceChangeUser.role})`, 'Estableció su contraseña definitiva en el primer ingreso obligatorio corporativo.');
+
+      setTimeout(() => {
+        const fullyActiveUser = { ...forceChangeUser, mustChangePassword: false, tempPassword: undefined };
+        setLoggedInUser(fullyActiveUser);
+        localStorage.setItem('gcp_logged_in_user', JSON.stringify({
+          user: fullyActiveUser,
+          token: 'FORCED_SESSION_ACTIVE'
+        }));
+        setIsSavingForcedPassword(false);
+        setShowForcePasswordChange(false);
+        setForceChangeUser(null);
+        setLoginEmail('');
+        setLoginPassword('');
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+      }, 1500);
+
+    } catch (err: any) {
+      setForceChangeError(`Error al guardar: ${err.message || 'Error general de red.'}`);
+      setIsSavingForcedPassword(false);
     }
   };
 
@@ -650,6 +747,102 @@ export const AuthFlow: React.FC = () => {
                   <span>{joinOrBrandOption === 'join' ? 'Unirse y Entrar' : 'Aprovisionar y Entrar'}</span>
                 </button>
               </div>
+            </div>
+          ) : showForcePasswordChange && forceChangeUser ? (
+            <div className="space-y-4 text-left animate-fadeIn">
+              <div className="text-center pb-2">
+                <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Key className="w-6 h-6 text-indigo-400" />
+                </div>
+                <h3 className="text-sm font-bold text-white">Cambio Obligatorio de Contraseña</h3>
+                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  Para asegurar el primer ingreso de tu cuenta, por favor establece una contraseña permanente y confiable.
+                </p>
+              </div>
+
+              {forceChangeError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs text-center font-semibold">
+                  ⚠️ {forceChangeError}
+                </div>
+              )}
+
+              {forceChangeSuccess ? (
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs text-center space-y-2">
+                    <span className="font-bold text-white block">¡Contraseña Configurada Exitosamente!</span>
+                    <span>Tu cuenta está lista y protegida. Procediendo a iniciar sesión de forma automática...</span>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveForcedPassword} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Nueva Contraseña</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        required
+                        placeholder="Mínimo 6 caracteres"
+                        value={forceChangeNewPassword}
+                        onChange={(e) => setForceChangeNewPassword(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder-slate-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-400 cursor-pointer"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Confirmar Contraseña</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        required
+                        placeholder="Repite la contraseña"
+                        value={forceChangeConfirmPassword}
+                        onChange={(e) => setForceChangeConfirmPassword(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder-slate-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-400 cursor-pointer"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForcePasswordChange(false);
+                        setForceChangeUser(null);
+                        setForceChangeNewPassword('');
+                        setForceChangeConfirmPassword('');
+                        setForceChangeError('');
+                        setShowNewPassword(false);
+                        setShowConfirmPassword(false);
+                      }}
+                      className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-400 font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 cursor-pointer text-center font-sans"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingForcedPassword}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-md cursor-pointer text-center font-sans"
+                    >
+                      {isSavingForcedPassword ? 'Guardando...' : 'Guardar y Entrar'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           ) : showLoginForgotPassword ? (
             <ForgotPasswordFlow

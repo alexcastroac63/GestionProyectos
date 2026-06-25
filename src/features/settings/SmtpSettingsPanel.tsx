@@ -27,6 +27,7 @@ export const SmtpSettingsPanel: React.FC<SmtpSettingsPanelProps> = ({
   const [smtpTestStatus, setSmtpTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [smtpTestMessage, setSmtpTestMessage] = useState<string>('');
   const [smtpTestDetails, setSmtpTestDetails] = useState<string>('');
+  const [testRecipient, setTestRecipient] = useState<string>('proyectosticampestre@gmail.com');
 
   return (
     <div className="max-w-2xl mx-auto border border-slate-150 rounded-2xl p-6 bg-slate-50/50 animate-fadeIn">
@@ -95,7 +96,7 @@ export const SmtpSettingsPanel: React.FC<SmtpSettingsPanelProps> = ({
             className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-xs text-slate-800 outline-none transition font-mono shadow-xs"
           />
           <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-            Por políticas de seguridad corporativas, la clave SMTP <span className="font-semibold text-rose-600">nunca se almacena en localStorage</span>. Se mantiene de forma transitoria en la memoria de la sesión activa, o se define de forma segura del lado del servidor como una variable de entorno.
+            La clave SMTP se almacena localmente de forma segura para conservar tus credenciales con cada cambio y evitar tener que reingresarla, o se define del lado del servidor como una variable de entorno.
           </p>
 
           <div className="mt-3.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed shadow-xs">
@@ -121,9 +122,22 @@ export const SmtpSettingsPanel: React.FC<SmtpSettingsPanelProps> = ({
             <span className="text-lg">✉️</span>
             <div className="flex-1">
               <span className="text-[11px] font-extrabold text-blue-800 uppercase block mb-1">Prueba Dinámica de Envío</span>
-              <p className="text-[11px] text-blue-700 leading-normal mb-3">
+              <p className="text-[11px] text-blue-700 leading-normal mb-3.5">
                 Verifique que la plataforma de correo alerte correctamente de desviaciones y métricas críticas de presupuesto de Lifecycle PM.
               </p>
+
+              <div className="mb-4 text-left">
+                <label className="block text-[10px] font-extrabold text-blue-800 uppercase mb-1.5 tracking-wider">Destinatario de Prueba</label>
+                <input
+                  type="email"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="ejemplo@campestre.com.sv"
+                  className="w-full max-w-md bg-white border border-blue-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 outline-none transition shadow-sm"
+                />
+                <p className="text-[10px] text-blue-600/80 mt-1">Escriba cualquier dirección de correo (como <strong>alex.castro@campestre.com.sv</strong>) para comprobar que su servidor SMTP puede entregar correos a ese dominio.</p>
+              </div>
+
               <button
                 type="button"
                 disabled={smtpTestStatus === 'loading'}
@@ -138,6 +152,12 @@ export const SmtpSettingsPanel: React.FC<SmtpSettingsPanelProps> = ({
                     setSmtpTestStatus('error');
                     setSmtpTestMessage('Por favor complete la Cuenta de Correo y la Contraseña de Alertas antes de probar.');
                     setSmtpTestDetails('Las credenciales de correo emisor no pueden estar vacías.');
+                    return;
+                  }
+                  if (!testRecipient.trim() || !testRecipient.includes('@')) {
+                    setSmtpTestStatus('error');
+                    setSmtpTestMessage('Por favor especifique un correo electrónico de destinatario válido.');
+                    setSmtpTestDetails('El destinatario de prueba no posee un formato correcto.');
                     return;
                   }
 
@@ -155,7 +175,8 @@ export const SmtpSettingsPanel: React.FC<SmtpSettingsPanelProps> = ({
                         host: smtpHost.trim(),
                         port: smtpPort.trim(),
                         username: smtpAccount.trim(),
-                        password: smtpPassword.trim()
+                        password: smtpPassword.trim(),
+                        recipient: testRecipient.trim()
                       })
                     });
 
