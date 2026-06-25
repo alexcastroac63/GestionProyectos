@@ -951,7 +951,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-violet-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>2. Consumo de Presupuesto</span>
+                    <span>Consumo de Presupuesto</span>
                     <DollarSign className="w-4 h-4 text-violet-500" />
                   </div>
                   <div className="my-3">
@@ -990,7 +990,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-cyan-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>1. Avance de Cronograma</span>
+                    <span>Avance de Cronograma</span>
                     <Calendar className="w-4 h-4 text-cyan-500" />
                   </div>
                   <div className="my-3">
@@ -1025,7 +1025,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-orange-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>3. Avance Físico Ponderado</span>
+                    <span>Avance Físico Ponderado</span>
                     <Layers className="w-4 h-4 text-orange-500" />
                   </div>
                   <div className="my-3">
@@ -1059,7 +1059,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-emerald-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>4. Velocidad de Equipos</span>
+                    <span>Velocidad de Equipos</span>
                     <Zap className="w-4 h-4 text-emerald-500" />
                   </div>
                   <div className="my-3">
@@ -1094,7 +1094,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-teal-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>5. Calidad de Entregables</span>
+                    <span>Calidad de Entregables</span>
                     <ShieldCheck className="w-4 h-4 text-teal-500" />
                   </div>
                   <div className="my-3">
@@ -1129,7 +1129,7 @@ export default function KPIDashboard({
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs relative flex flex-col justify-between">
                   <div className="absolute top-0 left-0 bg-rose-500 h-1 w-full" />
                   <div className="flex justify-between items-start text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>6. Desviación Base Promedio</span>
+                    <span>Desviación Base Promedio</span>
                     <Clock className="w-4 h-4 text-rose-500" />
                   </div>
                   <div className="my-3">
