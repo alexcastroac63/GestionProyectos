@@ -1,0 +1,66 @@
+[
+  {
+    "id": "u-sa",
+    "first_name": "SA",
+    "last_name": "Administración",
+    "email": "proyectosticampestre@gmail.com",
+    "role": "Sponsor / Directora",
+    "status": "ACTIVE",
+    "password": "Camp2026+Prub28",
+    "tenant_id": "grupo-campestre",
+    "avatar_url": "https://lh3.googleusercontent.com/a/ACg8ocIQ4r9QXGEUGMC0YHVb5UzioellRsw9-lOkV623xprMl8p8kQ=s96-c",
+    "mustChangePassword": true,
+    "tempPassword": "CAMP-TEMP-JUVF"
+  },
+  {
+    "id": "u-109903678",
+    "first_name": "WILLIAM ALEXANDER",
+    "last_name": "CASTRO RAMOS",
+    "email": "alex.castro@campestre.com.sv",
+    "role": "Project Manager",
+    "status": "ACTIVE",
+    "password": "Campestre2026+",
+    "tenant_id": "grupo-campestre",
+    "mustChangePassword": false
+  },
+  {
+    "id": "u-113944672",
+    "first_name": "ELMER JOSUE",
+    "last_name": "SEGOVIA TORRES",
+    "email": "elmer.segovia@campestre.com.sv",
+    "role": "Project Manager",
+    "status": "ACTIVE",
+    "password": "Camp2026+Prub28",
+    "tenant_id": "grupo-campestre"
+  },
+  {
+    "id": "u-121952036",
+    "first_name": "KEVIN ADIN",
+    "last_name": "FLORES PRIVADO",
+    "email": "kevin.flores@campestre.com.sv",
+    "role": "Project Manager",
+    "status": "ACTIVE",
+    "password": "Camp2026+Prub28",
+    "tenant_id": "grupo-campestre"
+  },
+  {
+    "id": "u-695768487",
+    "first_name": "SANDRA CECILIA",
+    "last_name": "RODRIGUEZ DE GUZMAN",
+    "email": "Cecilia.Rodriguez@campestre.com.sv",
+    "role": "Project Manager",
+    "status": "ACTIVE",
+    "password": "Camp2026+Prub28",
+    "tenant_id": "grupo-campestre"
+  },
+  {
+    "id": "u-121973398",
+    "first_name": "JOSE RODOLFO",
+    "last_name": "GALEAS ARIAS",
+    "email": "rodolfo.galeas@campestre.com.sv",
+    "role": "Project Manager",
+    "status": "ACTIVE",
+    "password": "Camp2026+Prub28",
+    "tenant_id": "grupo-campestre"
+  }
+]

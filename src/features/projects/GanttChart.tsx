@@ -618,7 +618,7 @@ export default function GanttChart({
                       ) : (
                         <Circle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       )}
-                      <span className="font-semibold text-slate-800 text-xs truncate max-w-[200px]" title={act.name}>
+                      <span className="font-semibold text-slate-800 text-xs truncate max-w-[200px] inline-block align-middle" title={act.name}>
                         {act.name}
                       </span>
                     </div>

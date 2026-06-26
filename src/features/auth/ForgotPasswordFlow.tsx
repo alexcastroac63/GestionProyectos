@@ -89,7 +89,7 @@ export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
             <button
               type="button"
               disabled={isSendingForgotPassword}
-              onClick={() => {
+              onClick={async () => {
                 const emailToFind = forgotPasswordEmail.trim().toLowerCase();
                 if (!emailToFind) {
                   setForgotPasswordStatus({
@@ -99,21 +99,36 @@ export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
                   return;
                 }
 
-                const targetUser = users.find((u) => u.email.toLowerCase() === emailToFind);
+                setIsSendingForgotPassword(true);
+                setForgotPasswordStatus(null);
+
+                let currentUsersList = users;
+                try {
+                  const usersRes = await fetch('/api/users');
+                  if (usersRes.ok) {
+                    const usersData = await usersRes.json();
+                    if (usersData.success && usersData.users && Array.isArray(usersData.users)) {
+                      setUsers(usersData.users);
+                      localStorage.setItem('gcp_users', JSON.stringify(usersData.users));
+                      currentUsersList = usersData.users;
+                    }
+                  }
+                } catch (err) {
+                  console.warn('Failed to fetch fresh users list during forgot password:', err);
+                }
+
+                const targetUser = currentUsersList.find((u) => u.email.trim().toLowerCase() === emailToFind);
                 if (!targetUser) {
                   setForgotPasswordStatus({
                     type: 'error',
                     message: `La dirección ${emailToFind} no se encuentra asociada a ningún usuario del Tenant actual.`,
                   });
+                  setIsSendingForgotPassword(false);
                   return;
                 }
 
-                setIsSendingForgotPassword(true);
-                setForgotPasswordStatus(null);
-
-                (async () => {
-                  try {
-                    if (!smtpAccount.trim() || !smtpPassword.trim()) {
+                try {
+                  if (!smtpAccount.trim() || !smtpPassword.trim()) {
                       setIsSendingForgotPassword(false);
                       setForgotPasswordStatus({
                         type: 'error',
@@ -173,7 +188,6 @@ export const ForgotPasswordFlow: React.FC<ForgotPasswordFlowProps> = ({
                       message: `⚠️ Error de comunicación con la plataforma: ${err.message || 'Fallo general de red.'}`,
                     });
                   }
-                })();
               }}
               className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
             >

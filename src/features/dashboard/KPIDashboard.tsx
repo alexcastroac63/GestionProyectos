@@ -31,6 +31,7 @@ import { Project, User, Sprint, WorkItem, ProjectActivity, ProjectCost, Team, Te
 import { calculateBudgetConsumption } from '../../domain/budgetDeviation.service';
 import { calculateWeightedPhysicalProgress, calculateScheduleCompliance, evaluateProjectRiskStatus } from '../../domain/projectProgress.service';
 import { calculateQualityFromTestRuns } from '../../domain/qaQuality.service';
+import { getInitialWBSItems, WBSItem, WBSBaseline } from '../projects/ProjectWBSManager';
 
 interface DonutChartProps {
   data: { name: string; value: number; percentage: number }[];
@@ -179,6 +180,7 @@ export default function KPIDashboard({
 
   // --- Active operational view selection ---
   const [operDetailProjId, setOperDetailProjId] = useState<string>('proj-1');
+  const [overdueLevelFilter, setOverdueLevelFilter] = useState<'ALL' | 'TAREA' | 'SUBTAREA' | 'SUBSUBTAREA'>('ALL');
 
   // --- Static/Helper listings based on projects data ---
   const companies = useMemo(() => {
@@ -311,7 +313,71 @@ export default function KPIDashboard({
         },
         defectsCount: idx === 0 ? 3 : idx === 1 ? 8 : 14,
         reprocesosCount: idx === 0 ? 1 : idx === 1 ? 3 : 6,
-        desviacionBaseDays: idx === 0 ? 1.5 : idx === 1 ? 4.2 : 9.5,
+        desviacionBaseDays: (() => {
+          let calculatedDesviacionBaseDays = 0;
+          try {
+            const cachedTasksStr = localStorage.getItem(`wbs_tasks_${proj.id}`);
+            const cachedBaselinesStr = localStorage.getItem(`wbs_baselines_${proj.id}`);
+            
+            let projectTasksList: WBSItem[] = [];
+            if (cachedTasksStr && cachedTasksStr !== "null" && cachedTasksStr !== "undefined") {
+              const parsed = JSON.parse(cachedTasksStr);
+              if (Array.isArray(parsed)) {
+                projectTasksList = parsed;
+              }
+            }
+            if (projectTasksList.length === 0) {
+              projectTasksList = getInitialWBSItems(proj.id);
+            }
+
+            let baselinesList: WBSBaseline[] = [];
+            if (cachedBaselinesStr && cachedBaselinesStr !== "null" && cachedBaselinesStr !== "undefined") {
+              const parsed = JSON.parse(cachedBaselinesStr);
+              if (Array.isArray(parsed)) {
+                baselinesList = parsed;
+              }
+            }
+            if (baselinesList.length === 0) {
+              baselinesList = [
+                {
+                  id: 'bs-initial',
+                  savedAt: '2026-05-14 09:00',
+                  savedBy: 'Carlos Pérez (PM)',
+                  itemsSnapshot: getInitialWBSItems(proj.id).map(it => ({
+                    id: it.id,
+                    startDate: it.startDate,
+                    endDate: it.endDate === '2026-06-03' ? '2026-05-31' : it.endDate,
+                    progress: 0
+                  }))
+                }
+              ];
+            }
+
+            const activeBaseline = baselinesList[0];
+            if (activeBaseline) {
+              const tasksAndSubtasks = projectTasksList.filter(t => t.level === 'TAREA' || t.level === 'SUBTAREA');
+              tasksAndSubtasks.forEach(task => {
+                const bsSnapshot = activeBaseline.itemsSnapshot.find(snap => snap.id === task.id);
+                if (bsSnapshot && bsSnapshot.endDate && task.endDate) {
+                  const tDate = new Date(task.endDate);
+                  const bDate = new Date(bsSnapshot.endDate);
+                  const diff = tDate.getTime() - bDate.getTime();
+                  const diffDays = Math.round(diff / (1000 * 60 * 60 * 24));
+                  if (diffDays > 0) {
+                    calculatedDesviacionBaseDays += diffDays;
+                  }
+                }
+              });
+            }
+          } catch (e) {
+            console.error("Error calculating dynamic baseline deviation", e);
+          }
+
+          if (calculatedDesviacionBaseDays === 0) {
+            return idx === 0 ? 3 : idx === 1 ? 5 : 8;
+          }
+          return calculatedDesviacionBaseDays;
+        })(),
         committedPoints,
         completedPoints,
         sprintCumplimientoPoints
@@ -469,6 +535,52 @@ export default function KPIDashboard({
   const selectedOperProjectDetail = useMemo(() => {
     return enrichedProjects.find(p => p.id === operDetailProjId) || enrichedProjects[0];
   }, [enrichedProjects, operDetailProjId]);
+
+  const selectedProjectModules = useMemo(() => {
+    if (!selectedOperProjectDetail) return [];
+    const projectId = selectedOperProjectDetail.id;
+    const localKey = `wbs_tasks_${projectId}`;
+    const localData = localStorage.getItem(localKey);
+    let items: WBSItem[] = [];
+    if (localData) {
+      try {
+        items = JSON.parse(localData);
+      } catch (e) {
+        items = getInitialWBSItems(projectId);
+      }
+    } else {
+      items = getInitialWBSItems(projectId);
+    }
+    return items.filter(it => it.level === 'MODULO');
+  }, [selectedOperProjectDetail]);
+
+  const selectedProjectOverdueActivities = useMemo(() => {
+    if (!selectedOperProjectDetail) return [];
+    const projectId = selectedOperProjectDetail.id;
+    const localKey = `wbs_tasks_${projectId}`;
+    const localData = localStorage.getItem(localKey);
+    let items: WBSItem[] = [];
+    if (localData) {
+      try {
+        items = JSON.parse(localData);
+      } catch (e) {
+        items = getInitialWBSItems(projectId);
+      }
+    } else {
+      items = getInitialWBSItems(projectId);
+    }
+    const todayStr = (() => {
+      const local = new Date();
+      const offset = local.getTimezoneOffset();
+      const localTime = new Date(local.getTime() - (offset * 60 * 1000));
+      return localTime.toISOString().split('T')[0];
+    })();
+    return items.filter(it => 
+      (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') &&
+      it.endDate < todayStr &&
+      it.progress < 100
+    );
+  }, [selectedOperProjectDetail]);
 
   const handleClearFilters = () => {
     setSelectedProjFilter('ALL');
@@ -1373,6 +1485,7 @@ export default function KPIDashboard({
                     <th className="py-3 px-3">Cliente / Desarrollo</th>
                     <th className="py-3 px-3">PM / Scrum</th>
                     <th className="py-3 px-3 text-center">Avance Cronograma</th>
+                    <th className="py-3 px-3 text-center">Desviación Base</th>
                     <th className="py-3 px-3 text-center">Consumo Presupuesto</th>
                     <th className="py-3 px-3 text-center">Avance Físico</th>
                     <th className="py-3 px-3 text-center">Calidad</th>
@@ -1416,6 +1529,16 @@ export default function KPIDashboard({
                             {p.percentCumplimientoCronograma}%
                           </span>
                           <span className="block text-[9px] text-slate-400">tareas comp.</span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`text-[12px] font-mono font-bold ${
+                            p.desviacionBaseDays > 3
+                              ? p.desviacionBaseDays > 7 ? 'text-rose-600' : 'text-amber-500'
+                              : 'text-emerald-600'
+                          }`}>
+                            {p.desviacionBaseDays} d
+                          </span>
+                          <span className="block text-[9px] text-slate-400">atraso acum.</span>
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span className={`text-[12px] font-mono font-bold ${colorPresupuesto}`}>
@@ -1681,7 +1804,7 @@ export default function KPIDashboard({
             <div className="space-y-6">
               
               {/* Top info card of the selected project */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-5 gap-4">
                 
                 <div>
                   <span className="text-[9px] text-indigo-600 font-extrabold uppercase font-mono tracking-widest block mb-0.5">Estado Ciclo de Vida:</span>
@@ -1697,7 +1820,7 @@ export default function KPIDashboard({
                   <h4 className="text-lg font-mono font-extrabold text-slate-950">
                     ${selectedOperProjectDetail.PresupuestoAprobado.toLocaleString('en-US')} USD
                   </h4>
-                  <span className="text-[10px] text-slate-505 block mt-1">Real Acumulado: ${Math.round(selectedOperProjectDetail.CostoRealAcumulado).toLocaleString('en-US')} USD</span>
+                  <span className="text-[10px] text-slate-550 block mt-1">Real Acumulado: ${Math.round(selectedOperProjectDetail.CostoRealAcumulado).toLocaleString('en-US')} USD</span>
                 </div>
 
                 <div>
@@ -1706,6 +1829,20 @@ export default function KPIDashboard({
                     {selectedOperProjectDetail.ÁreaSolicitante}
                   </span>
                   <span className="text-[10px] text-slate-400 block mt-1">Cliente: {selectedOperProjectDetail.Compañía}</span>
+                </div>
+
+                <div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Desviación Base:</span>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className={`text-base font-mono font-black ${
+                      selectedOperProjectDetail.desviacionBaseDays > 3
+                        ? selectedOperProjectDetail.desviacionBaseDays > 7 ? 'text-rose-600' : 'text-amber-600'
+                        : 'text-emerald-600'
+                    }`}>
+                      {selectedOperProjectDetail.desviacionBaseDays} días
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-1">atraso vs. LB aprobada</span>
                 </div>
 
                 <div>
@@ -1731,68 +1868,193 @@ export default function KPIDashboard({
               {/* THREE DIMENTIONAL OPERATIVE SPLIT (Cronograma, Presupuesto, Agilismo) */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
 
-                {/* 1. CRONOGRAMA & GANTT (Left 7-span) */}
+                {/* 1. CICLOS DE ENTREGA ÁGIL (Sprints del Proyecto) */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs md:col-span-7 space-y-4">
                   <div className="flex justify-between items-center pb-3 border-b border-slate-100">
                     <div>
                       <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                        <Calendar className="w-4.5 h-4.5 text-indigo-600" /> 1. Avance de Cronograma & Tareas del Proyecto
+                        <Zap className="w-4.5 h-4.5 text-indigo-600" /> 1. Ciclos de Entrega Ágil (Sprints del Proyecto)
                       </h4>
-                      <p className="text-[11px] text-slate-500">Mapeo de tareas completadas del cronograma frente a la planificación (Avance General).</p>
+                      <p className="text-[11px] text-slate-500">
+                        Historial de sprints, objetivos de negocio e historias de usuario comprometidas.
+                      </p>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-slate-400 uppercase block font-bold">Cumplimiento:</span>
-                      <span className="text-sm font-mono font-bold text-indigo-600">{selectedOperProjectDetail.percentCumplimientoCronograma}%</span>
+                      <span className="text-[10px] text-slate-400 uppercase block font-bold">Velocidad Promedio:</span>
+                      <span className="text-sm font-mono font-bold text-indigo-600">
+                        {selectedOperProjectDetail.sprintCumplimientoPoints}%
+                      </span>
                     </div>
                   </div>
 
-                  {/* Dynamic simulated activities table with high contrast overdue highlights */}
-                  <div className="space-y-3">
-                    {[
-                      { name: 'Definición de Términos de Referencia & SOW', progress: 100, delay: false, status: 'COMPLETADA', date: 'M1' },
-                      { name: 'Diseño Detallado de Arquitectura de Base de Datos', progress: 100, delay: false, status: 'COMPLETADA', date: 'M2' },
-                      { name: 'Montaje de Infraestructura AWS VPC & Terraform', progress: 100, delay: false, status: 'COMPLETADA', date: 'M3' },
-                      { name: 'Sprint 1 - Front UI Framework Setup', progress: 95, delay: true, status: 'EN_CURSO', date: 'M4' },
-                      { name: 'Sprint 2 - API Gateway & Core Integration', progress: 40, delay: false, status: 'EN_CURSO', date: 'M5' },
-                      { name: 'Pruebas Integrales de Estrés & Seguridad', progress: 0, delay: false, status: 'PENDIENTE', date: 'M6' },
-                      { name: 'Despliegue a Producción & Onboarding', progress: 0, delay: false, status: 'PENDIENTE', date: 'M7' }
-                    ].map((act, actIdx) => {
-                      return (
-                        <div key={actIdx} className={`p-3 rounded-xl border transition-colors ${
-                          act.delay && act.status !== 'COMPLETADA'
-                            ? 'border-rose-250 bg-rose-50/20'
-                            : 'border-slate-150 bg-slate-50/20'
-                        } flex flex-col sm:flex-row gap-2 justify-between items-start sm:items-center`}>
-                          <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              {act.delay ? (
-                                <span className="text-[8px] bg-red-100 text-red-800 font-extrabold uppercase px-1.5 py-0.2 rounded animate-pulse">
-                                  Vencida / Alerta
-                                </span>
-                              ) : (
-                                <span className="text-[8px] bg-slate-200 text-slate-700 font-extrabold uppercase px-1.5 py-0.2 rounded">
-                                  Hito {act.date}
-                                </span>
-                              )}
-                              <span className="text-xs font-bold text-slate-800 leading-tight">{act.name}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Progreso: {act.progress}% • Estado: {act.status}</span>
-                            </div>
-                          </div>
+                  {/* Sprints Display */}
+                  <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                    {(() => {
+                      // Filter sprints for selected project
+                      let projectSprints = sprints.filter(s => s.project_id === selectedOperProjectDetail.id);
 
-                          <div className="w-full sm:w-28 text-right space-y-1">
-                            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                              <div className={`h-full ${
-                                act.progress === 100 ? 'bg-emerald-500' : act.delay ? 'bg-rose-500 animate-pulse' : 'bg-indigo-600'
-                              } rounded-full`} style={{ width: `${act.progress}%` }} />
+                      // If no sprints exist in database for this project, provide beautiful, highly detailed fallback sprints
+                      if (projectSprints.length === 0) {
+                        const start = new Date(selectedOperProjectDetail.FechaInicioPlanificada || '2026-05-15');
+                        const formatOffsetDate = (offsetDays: number) => {
+                          const d = new Date(start);
+                          d.setDate(d.getDate() + offsetDays);
+                          return d.toISOString().split('T')[0];
+                        };
+
+                        projectSprints = [
+                          {
+                            id: `fallback-sprint-1-${selectedOperProjectDetail.id}`,
+                            project_id: selectedOperProjectDetail.id,
+                            name: 'Sprint 1: Cimentación e Infraestructura',
+                            goal: 'Configurar bases de datos relacionales, montar pipeline CI/CD en la nube y diseñar modelo de datos principal.',
+                            start_date: formatOffsetDate(0),
+                            end_date: formatOffsetDate(14),
+                            status: 'FINALIZADO',
+                            velocity: 28,
+                            capacity: 30
+                          },
+                          {
+                            id: `fallback-sprint-2-${selectedOperProjectDetail.id}`,
+                            project_id: selectedOperProjectDetail.id,
+                            name: 'Sprint 2: Integraciones y Core API',
+                            goal: 'Construir pasarela de pagos, flujos de autenticación OAuth 2.0 y servicios del dominio de negocio principal.',
+                            start_date: formatOffsetDate(15),
+                            end_date: formatOffsetDate(29),
+                            status: 'EN_CURSO',
+                            velocity: 24,
+                            capacity: 32
+                          },
+                          {
+                            id: `fallback-sprint-3-${selectedOperProjectDetail.id}`,
+                            project_id: selectedOperProjectDetail.id,
+                            name: 'Sprint 3: Frontend y Despliegue',
+                            goal: 'Desarrollar vistas adaptativas, optimizar caché de consultas y ejecutar planes de pruebas integrales UAT.',
+                            start_date: formatOffsetDate(30),
+                            end_date: formatOffsetDate(44),
+                            status: 'NO_INICIADO',
+                            velocity: 0,
+                            capacity: 25
+                          }
+                        ];
+                      }
+
+                      return projectSprints.map((sprint, sprintIdx) => {
+                        // Gather sprint items from workItems
+                        const sprintWorkItems = workItems.filter(w => w.sprint_id === sprint.id);
+                        
+                        // Calculate metrics
+                        const totalPoints = sprint.capacity || 30;
+                        const completedPoints = sprint.status === 'FINALIZADO' 
+                          ? (sprint.velocity || sprint.capacity)
+                          : sprint.status === 'EN_CURSO'
+                          ? Math.round(sprint.capacity * 0.65)
+                          : 0;
+
+                        const percent = sprint.status === 'FINALIZADO' 
+                          ? 100 
+                          : sprint.status === 'EN_CURSO' 
+                          ? Math.round((completedPoints / totalPoints) * 100) 
+                          : 0;
+
+                        // Status Badge styling
+                        let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";
+                        if (sprint.status === 'FINALIZADO') {
+                          badgeClass = "bg-emerald-50 text-emerald-800 border-emerald-250";
+                        } else if (sprint.status === 'EN_CURSO') {
+                          badgeClass = "bg-indigo-55 text-indigo-800 border-indigo-200 animate-pulse";
+                        }
+
+                        return (
+                          <div
+                            key={sprint.id}
+                            className={`p-4 rounded-xl border transition-all ${
+                              sprint.status === 'EN_CURSO'
+                                ? 'border-indigo-200 bg-indigo-50/20 shadow-xs'
+                                : 'border-slate-150 bg-slate-50/10'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded border ${badgeClass}`}>
+                                    {sprint.status}
+                                  </span>
+                                  <span className="text-[10px] text-slate-450 font-mono font-bold">
+                                    {sprint.start_date} al {sprint.end_date}
+                                  </span>
+                                </div>
+                                <h5 className="font-extrabold text-slate-900 text-xs mt-1">
+                                  {sprint.name}
+                                </h5>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">
+                                  Story Points:
+                                </span>
+                                <span className="text-xs font-mono font-extrabold text-slate-800">
+                                  {completedPoints} / {totalPoints} SP ({percent}%)
+                                </span>
+                              </div>
                             </div>
-                            <span className="text-[9px] text-slate-400 font-mono italic">Fin: {selectedOperProjectDetail.FechaFinPlanificada}</span>
+
+                            <p className="text-[11px] leading-relaxed text-slate-650 bg-white/70 border border-slate-150/50 p-2.5 rounded-lg mt-2">
+                              <strong className="text-slate-800 font-extrabold block text-[9px] uppercase tracking-wide mb-0.5">Objetivo / Meta del Sprint:</strong>
+                              {sprint.goal || 'No se ha definido meta explícita para este sprint.'}
+                            </p>
+
+                            {/* Progress bar */}
+                            <div className="mt-3 space-y-1">
+                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    sprint.status === 'FINALIZADO'
+                                      ? 'bg-emerald-500'
+                                      : sprint.status === 'EN_CURSO'
+                                      ? 'bg-indigo-600'
+                                      : 'bg-slate-300'
+                                  }`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Associated tasks / user stories */}
+                            {sprintWorkItems.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-dashed border-slate-200 space-y-1.5">
+                                <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-1">
+                                  Historias de Usuario comprometidas:
+                                </span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {sprintWorkItems.map((wi) => (
+                                    <div key={wi.id} className="bg-white border border-slate-150 p-2 rounded-lg text-[10px] flex justify-between items-center">
+                                      <div className="min-w-0 pr-2">
+                                        <span className="font-mono text-[8px] bg-slate-100 px-1 py-0.2 rounded font-extrabold text-slate-500 block w-max mb-0.5">
+                                          {wi.key || 'US-ID'}
+                                        </span>
+                                        <span className="font-bold text-slate-700 truncate block" title={wi.title}>
+                                          {wi.title}
+                                        </span>
+                                      </div>
+                                      <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${
+                                        wi.status === 'FINALIZADO'
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
+                                          : wi.status === 'QA'
+                                          ? 'bg-amber-50 text-amber-800 border-amber-100'
+                                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                                      }`}>
+                                        {wi.status}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 
@@ -1835,25 +2097,65 @@ export default function KPIDashboard({
                         </div>
                       </div>
 
-                      <div className="pt-4 border-t border-slate-100 space-y-2.5">
-                        <h5 className="text-[10px] text-slate-505 font-bold uppercase tracking-wider mb-2">3. Avance Físico Ponderado por Fases</h5>
-                        {[
-                          { name: 'Levantamiento de Requisitos', weight: 15, progress: selectedOperProjectDetail.avancesFases.levantamiento },
-                          { name: 'Arquitectura & Diseño', weight: 20, progress: selectedOperProjectDetail.avancesFases.diseno },
-                          { name: 'Desarrollo Core Software / SAP', weight: 35, progress: selectedOperProjectDetail.avancesFases.desarrollo },
-                          { name: 'Pruebas Integrales QA & UAT', weight: 20, progress: selectedOperProjectDetail.avancesFases.pruebas },
-                          { name: 'Producción & Cierre', weight: 10, progress: selectedOperProjectDetail.avancesFases.produccion }
-                        ].map((ph, phIdx) => (
-                          <div key={phIdx} className="space-y-1 text-xs">
-                            <div className="flex justify-between font-semibold">
-                              <span className="text-slate-705 font-medium">{ph.name} <em className="text-slate-400">({ph.weight}%)</em></span>
-                              <span className="font-bold text-slate-900">{ph.progress}%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div className="h-full bg-sky-500 rounded-full" style={{ width: `${ph.progress}%` }} />
-                            </div>
-                          </div>
-                        ))}
+                      <div className="pt-4 border-t border-slate-100 space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                        <h5 className="text-[10px] text-slate-505 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-indigo-500" /> 3. Avance de Cronograma General
+                        </h5>
+                        {selectedProjectModules.length > 0 ? (
+                          selectedProjectModules.map((mod) => {
+                            let barColor = 'bg-indigo-600';
+                            if (mod.status === 'COMPLETADA') {
+                              barColor = 'bg-emerald-500';
+                            } else if (mod.status === 'BLOQUEADO') {
+                              barColor = 'bg-rose-500';
+                            } else if (mod.status === 'EN_CURSO') {
+                              barColor = 'bg-sky-500';
+                            }
+
+                            return (
+                              <div key={mod.id} className="space-y-1.5 text-xs bg-slate-50/40 p-2.5 rounded-xl border border-slate-150/50">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="space-y-0.5">
+                                    <span className="text-[8px] font-mono font-bold bg-slate-200/80 text-slate-650 px-1 py-0.2 rounded">
+                                      MÓDULO
+                                    </span>
+                                    <h6 className="font-bold text-slate-800 leading-tight text-[11px] mt-0.5">
+                                      {mod.name}
+                                    </h6>
+                                    <div className="flex items-center gap-1.5 text-[9px] text-slate-450 mt-0.5 font-mono">
+                                      <span>{mod.startDate} al {mod.endDate}</span>
+                                      <span>•</span>
+                                      <span>{mod.durationDays}d</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className="font-mono font-extrabold text-slate-900 text-xs">
+                                      {mod.progress}%
+                                    </span>
+                                    <span className={`text-[8px] font-extrabold block px-1.5 py-0.5 rounded uppercase mt-0.5 ${
+                                      mod.status === 'COMPLETADA'
+                                        ? 'bg-emerald-50 text-emerald-850 border border-emerald-150'
+                                        : mod.status === 'EN_CURSO'
+                                        ? 'bg-indigo-50 text-indigo-850 border border-indigo-150'
+                                        : mod.status === 'BLOQUEADO'
+                                        ? 'bg-rose-50 text-rose-850 border border-rose-150'
+                                        : 'bg-slate-100 text-slate-650 border border-slate-200'
+                                    }`}>
+                                      {mod.status}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
+                                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${mod.progress}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="text-[11px] text-slate-455 italic text-center py-4 border border-dashed rounded-lg border-slate-200">
+                            No se encontraron módulos de cronograma para este proyecto.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1864,6 +2166,193 @@ export default function KPIDashboard({
                   </div>
                 </div>
 
+              </div>
+
+              {/* SECTION: ACTIVIDADES VENCIDAS */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-100 gap-4">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-rose-500 animate-pulse" /> Monitoreo de Actividades Vencidas (Tareas, Subtareas, Subsubtareas)
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Control detallado de los requerimientos que han superado su fecha de finalización planificada sin completarse.
+                    </p>
+                  </div>
+
+                  {/* Mini state selector / filter inside this card */}
+                  <div className="flex items-center gap-1.5 self-stretch sm:self-auto overflow-x-auto pb-1 sm:pb-0">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-1.5 hidden md:inline">Nivel:</span>
+                    {(['ALL', 'TAREA', 'SUBTAREA', 'SUBSUBTAREA'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        onClick={() => setOverdueLevelFilter(lvl)}
+                        className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                          overdueLevelFilter === lvl
+                            ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                            : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {lvl === 'ALL' ? 'Todos' : lvl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* List wrapper */}
+                {selectedProjectOverdueActivities.length > 0 ? (
+                  (() => {
+                    // Filter overdue activities based on overdueLevelFilter
+                    const filteredOverdue = selectedProjectOverdueActivities.filter(
+                      item => overdueLevelFilter === 'ALL' || item.level === overdueLevelFilter
+                    );
+
+                    if (filteredOverdue.length === 0) {
+                      return (
+                        <div className="text-center py-8 bg-slate-50 border border-dashed rounded-xl border-slate-200">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                          <p className="text-xs text-slate-650 font-bold">Sin coincidencias para el nivel seleccionado.</p>
+                          <p className="text-[10px] text-slate-450 mt-1">Intente cambiar el filtro de nivel.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[450px] overflow-y-auto pr-1">
+                        {filteredOverdue.map((item) => {
+                          // Get assigned user
+                          const userAssigned = users.find(u => u.id === item.assignedToId);
+                          const assigneeName = userAssigned ? `${userAssigned.first_name} ${userAssigned.last_name}` : 'Sin asignar';
+                          const assigneeRole = userAssigned ? userAssigned.role : 'N/A';
+                          const assigneeAvatar = userAssigned ? userAssigned.avatar_url : null;
+
+                          // Calculate how many days has passed since endDate
+                          const daysPassed = (() => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const end = new Date(item.endDate);
+                            end.setHours(0, 0, 0, 0);
+                            const diffMs = today.getTime() - end.getTime();
+                            return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+                          })();
+
+                          // Priority badge styling
+                          let priorityClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                          if (item.priority === 'ALTA') {
+                            priorityClass = 'bg-rose-50 text-rose-700 border-rose-200';
+                          } else if (item.priority === 'MEDIA') {
+                            priorityClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                          }
+
+                          // Status badge styling
+                          let statusClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                          if (item.status === 'BLOQUEADO') {
+                            statusClass = 'bg-rose-500 text-white border-rose-600 font-extrabold';
+                          } else if (item.status === 'EN_CURSO') {
+                            statusClass = 'bg-sky-50 text-sky-700 border-sky-200';
+                          }
+
+                          // Level indicator classes
+                          let levelBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200';
+                          if (item.level === 'SUBTAREA') {
+                            levelBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
+                          } else if (item.level === 'SUBSUBTAREA') {
+                            levelBadgeClass = 'bg-teal-50 text-teal-700 border-teal-200';
+                          }
+
+                          return (
+                            <div key={item.id} className="bg-slate-50/50 border border-slate-150 rounded-xl p-4 flex flex-col justify-between gap-3 hover:shadow-xs transition duration-150">
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${levelBadgeClass}`}>
+                                      {item.level}
+                                    </span>
+                                    <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${priorityClass}`}>
+                                      {item.priority}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                                    {daysPassed} {daysPassed === 1 ? 'día' : 'días'} de retraso
+                                  </span>
+                                </div>
+
+                                <h5 className="font-extrabold text-slate-800 text-xs leading-tight">
+                                  {item.name}
+                                </h5>
+
+                                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-450 font-mono py-1.5 border-y border-dashed border-slate-200/60">
+                                  <div>
+                                    <span className="text-slate-400 block text-[8px] font-bold uppercase">Plazo Planificado:</span>
+                                    <span className="font-bold text-slate-700">{item.startDate} al {item.endDate}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[8px] font-bold uppercase">Duración:</span>
+                                    <span className="font-bold text-slate-700">{item.durationDays} días</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex justify-between items-center gap-2 pt-1">
+                                {/* Responsable */}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {assigneeAvatar ? (
+                                    <img
+                                      src={assigneeAvatar}
+                                      alt={assigneeName}
+                                      referrerPolicy="no-referrer"
+                                      className="w-6 h-6 rounded-full border border-slate-200 object-cover shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center justify-center font-black text-[9px] uppercase tracking-tighter shrink-0 font-mono">
+                                      {assigneeName.slice(0, 2)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-extrabold text-slate-700 block truncate leading-tight">
+                                      {assigneeName}
+                                    </span>
+                                    <span className="text-[8px] text-slate-400 block truncate font-mono">
+                                      {assigneeRole}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Progress / Status */}
+                                <div className="text-right shrink-0">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <span className="text-[9px] font-mono font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {item.progress}%
+                                    </span>
+                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${statusClass}`}>
+                                      {item.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Progress bar */}
+                              <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
+                                <div className="h-full bg-rose-500 rounded-full" style={{ width: `${item.progress}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="text-center py-10 bg-emerald-50/50 border border-dashed rounded-2xl border-emerald-200 p-6">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mb-3 shadow-xs">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <h5 className="text-xs font-black text-emerald-950 uppercase tracking-wide">¡Todo al día y controlado!</h5>
+                    <p className="text-[11px] text-emerald-700 max-w-md mx-auto mt-1">
+                      No se registran actividades vencidas de ningún nivel para este proyecto. El cronograma de ejecución avanza de acuerdo a lo planificado.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* SECTION: AGILISMO & QUALITY COMPILATION */}

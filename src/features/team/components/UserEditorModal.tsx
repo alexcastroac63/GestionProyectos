@@ -269,13 +269,23 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
     setUsers((prev) =>
       prev.map((u) =>
         u.id === editingUser.id
-          ? { ...editingUser, tenant_id: editingUser.tenant_id || u.tenant_id || 'grupo-campestre' }
+          ? { ...editingUser, email: editingUser.email.trim(), tenant_id: editingUser.tenant_id || u.tenant_id || 'grupo-campestre' }
           : u
       )
     );
     addLog('Director/Sponsor', `Modificó información y perfil corporativo de ${editingUser.first_name} ${editingUser.last_name}`);
     setEditingUser(null);
     setShowEditUserModal(false);
+  };
+
+  const handleDeleteUser = () => {
+    if (!editingUser) return;
+    if (window.confirm(`¿Está seguro de que desea eliminar permanentemente la cuenta de ${editingUser.first_name} ${editingUser.last_name} (${editingUser.email})?`)) {
+      setUsers((prev) => prev.filter((u) => u.id !== editingUser.id));
+      addLog('Director/Sponsor', `Eliminó la cuenta de ${editingUser.first_name} ${editingUser.last_name} (${editingUser.email}) del directorio`);
+      setEditingUser(null);
+      setShowEditUserModal(false);
+    }
   };
 
   const handleExecuteSimulatedChangePassword = (e: React.FormEvent) => {
@@ -396,23 +406,32 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
                 </select>
               </div>
 
-              <div className="flex gap-2 justify-end border-t border-slate-100 pt-4 mt-2">
+              <div className="flex gap-2 justify-between border-t border-slate-100 pt-4 mt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingUser(null);
-                    setShowEditUserModal(false);
-                  }}
-                  className="px-4 py-2 hover:bg-slate-100 text-slate-500 rounded-xl transition font-bold text-xs cursor-pointer"
+                  onClick={handleDeleteUser}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition font-bold text-xs cursor-pointer"
                 >
-                  Cancelar
+                  Eliminar Cuenta
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition font-bold text-xs shadow cursor-pointer"
-                >
-                  Guardar Cambios
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingUser(null);
+                      setShowEditUserModal(false);
+                    }}
+                    className="px-4 py-2 hover:bg-slate-100 text-slate-500 rounded-xl transition font-bold text-xs cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition font-bold text-xs shadow cursor-pointer"
+                  >
+                    Guardar Cambios
+                  </button>
+                </div>
               </div>
             </form>
           </div>

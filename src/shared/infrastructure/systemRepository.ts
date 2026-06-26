@@ -30,6 +30,15 @@ export const systemRepository = {
 
   saveUsers(users: User[]): void {
     safeSave('gcp_users', users);
+    fetch('/api/users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ users })
+    }).catch(err => {
+      console.error('Failed to sync users with server:', err);
+    });
   },
 
   loadNoteTypes(initialNoteTypes: NoteType[]): NoteType[] {

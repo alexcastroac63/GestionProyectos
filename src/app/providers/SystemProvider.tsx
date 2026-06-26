@@ -133,13 +133,50 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return settingsRepository.loadSponsors();
   });
 
+  const hasSynced = React.useRef(false);
+
+  // Fetch users from centralized server database on startup to synchronize across all clients/browsers
+  useEffect(() => {
+    const syncUsersFromServer = async () => {
+      try {
+        const res = await fetch('/api/users');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.users && Array.isArray(data.users) && data.users.length > 0) {
+            setUsers(data.users);
+            localStorage.setItem('gcp_users', JSON.stringify(data.users));
+          } else {
+            // Server has no users list yet, populate it with current local users
+            const localUsers = systemRepository.loadUsers();
+            if (localUsers && localUsers.length > 0) {
+              await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ users: localUsers })
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync users from server on mount:', err);
+      } finally {
+        setTimeout(() => {
+          hasSynced.current = true;
+        }, 800);
+      }
+    };
+    syncUsersFromServer();
+  }, []);
+
   // Sync state with repository on changes
   useEffect(() => {
     systemRepository.saveTenants(tenants);
   }, [tenants]);
 
   useEffect(() => {
-    systemRepository.saveUsers(users);
+    if (hasSynced.current) {
+      systemRepository.saveUsers(users);
+    }
   }, [users]);
 
   useEffect(() => {

@@ -28,6 +28,7 @@ if (!JWT_SECRET) {
 
 // Secure credentials database file path
 const CREDENTIALS_FILE = path.join(process.cwd(), "credentials_db.json");
+const USERS_FILE = path.join(process.cwd(), "users_db.json");
 
 // Secure PBKDF2 Password Hashing Utility conforming to OWASP specifications
 function hashPasswordSecure(password: string, userSalt: string): string {
@@ -314,6 +315,33 @@ async function startServer() {
     });
   });
 
+  // Fetch or update the central list of users to keep all clients in sync
+  app.get("/api/users", (req, res) => {
+    try {
+      if (fs.existsSync(USERS_FILE)) {
+        const raw = fs.readFileSync(USERS_FILE, "utf-8");
+        return res.json({ success: true, users: JSON.parse(raw) });
+      }
+    } catch (err) {
+      console.error("Failed to read users_db.json:", err);
+    }
+    return res.json({ success: true, users: null });
+  });
+
+  app.post("/api/users", (req, res) => {
+    const { users: newUsers } = req.body;
+    if (!newUsers || !Array.isArray(newUsers)) {
+      return res.status(400).json({ success: false, message: "La lista de usuarios es requerida." });
+    }
+    try {
+      fs.writeFileSync(USERS_FILE, JSON.stringify(newUsers, null, 2), "utf-8");
+      return res.json({ success: true, message: "Directorio de usuarios actualizado en el servidor." });
+    } catch (err) {
+      console.error("Failed to write users_db.json:", err);
+      return res.status(500).json({ success: false, message: "Error interno del servidor al guardar usuarios." });
+    }
+  });
+
   // Finding 2: Server-Side Authentication API with secure DB lookup
   app.post("/api/login", (req, res) => {
     const { email, password } = req.body;
@@ -451,6 +479,21 @@ async function startServer() {
 
     const numericPort = parseInt(port, 10);
 
+    const origin = req.get("origin") || "";
+    const referer = req.get("referer") || "";
+    let appUrl = origin || referer;
+    if (appUrl) {
+      try {
+        const parsedUrl = new URL(appUrl);
+        appUrl = parsedUrl.origin;
+      } catch (e) {
+        // use as is
+      }
+    }
+    if (!appUrl) {
+      appUrl = "https://ais-dev-6ivjhd2qq3arlts2bd2alr-346524552669.us-west1.run.app";
+    }
+
     try {
       const tempToken = crypto.randomBytes(4).toString("hex").toUpperCase();
 
@@ -463,7 +506,7 @@ async function startServer() {
         fromName: "Seguridad Lifecycle PM",
         to: normalizedRecoveryEmail,
         subject: "Codigo de Verificacion para Recuperacion de Contrasena - Lifecycle PM",
-        text: `Hola,\n\nHemos recibido una solicitud de restablecimiento de contraseña para tu cuenta de Lifecycle PM.\n\nPara completar la autenticación, ingresa el siguiente código de seguridad en la ventana del navegador:\n\nCódigo: ${tempToken}\n\nEste código vencerá en 1 hora.\n\nSi no has solicitado este cambio, por favor ignora este correo y tus credenciales continuarán protegidas de forma segura.\n\nSaludos,\nEl equipo de Seguridad Lifecycle PM.`,
+        text: `Hola,\n\nHemos recibido una solicitud de restablecimiento de contraseña para tu cuenta de Lifecycle PM.\n\nPara completar la autenticación, ingresa el siguiente código de seguridad en la ventana del navegador:\n\nCódigo: ${tempToken}\n\nEnlace de la aplicación: ${appUrl}\n\nEste código vencerá en 1 hora.\n\nSi no has solicitado este cambio, por favor ignora este correo y tus credenciales continuarán protegidas de forma segura.\n\nSaludos,\nEl equipo de Seguridad Lifecycle PM.`,
         html: `
           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
             <div style="background-color: #1e293b; padding: 18px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
@@ -480,6 +523,11 @@ async function startServer() {
               </div>
               
               <p style="font-size: 13px;">Ingrese este código en el formulario para establecer una nueva contraseña de acceso segura.</p>
+              
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="${appUrl}" target="_blank" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">Acceder a la Aplicación</a>
+              </div>
+
               <p style="font-size: 12px; color: #94a3b8;">Por motivos de auditoría de seguridad, este código expira automáticamente en 1 hora de forma autónoma.</p>
               <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
               <p style="font-size: 11px; color: #94a3b8; text-align: center;">Si tú no has solicitado este proceso, haz caso omiso. Tus credenciales continuarán a salvo.</p>
@@ -659,6 +707,21 @@ async function startServer() {
 
     const numericPort = parseInt(port, 10);
 
+    const origin = req.get("origin") || "";
+    const referer = req.get("referer") || "";
+    let appUrl = origin || referer;
+    if (appUrl) {
+      try {
+        const parsedUrl = new URL(appUrl);
+        appUrl = parsedUrl.origin;
+      } catch (e) {
+        // use as is
+      }
+    }
+    if (!appUrl) {
+      appUrl = "https://ais-dev-6ivjhd2qq3arlts2bd2alr-346524552669.us-west1.run.app";
+    }
+
     try {
       await sendEmailWithFallback({
         host,
@@ -668,7 +731,7 @@ async function startServer() {
         fromName: "Grupo Campestre Enterprise",
         to: email,
         subject: "Activacion de cuenta y clave temporal de acceso - Grupo Campestre Enterprise",
-        text: `Hola ${name || ""},\n\nTu cuenta en el Directorio de Equipos ha sido activada por el administrador corporativo. Tu perfil ha sido asignado como ${role || "Integrante"}.\n\nTu clave temporal de acceso es: ${tempPassword}\n\nPor motivos de seguridad, se requerirá cambiar esta contraseña al ingresar por primera vez.\n\nSaludos,\nSeguridad de Cuentas - Grupo Campestre Enterprise`,
+        text: `Hola ${name || ""},\n\nTu cuenta en el Directorio de Equipos ha sido activada por el administrador corporativo. Tu perfil ha sido asignado como ${role || "Integrante"}.\n\nTu clave temporal de acceso es: ${tempPassword}\n\nPor motivos de seguridad, se requerirá cambiar esta contraseña al ingresar por primera vez.\n\nEnlace de la aplicación: ${appUrl}\n\nSaludos,\nSeguridad de Cuentas - Grupo Campestre Enterprise`,
         html: `
           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
             <div style="background-color: #10b981; padding: 18px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
@@ -686,6 +749,11 @@ async function startServer() {
               </div>
               
               <p style="font-size: 13px;">Puedes ingresar a la plataforma utilizando tu correo electrónico y la clave temporal anterior.</p>
+              
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="${appUrl}" target="_blank" style="background-color: #10b981; color: #ffffff; padding: 12px 24px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);">Acceder a la Aplicación</a>
+              </div>
+
               <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
               <p style="font-size: 10px; color: #94a3b8; text-align: center; font-family: monospace;">Seguridad de Cuentas • Grupo Campestre Enterprise</p>
             </div>

@@ -69,10 +69,28 @@ export const AuthFlow: React.FC = () => {
       return;
     }
 
+    setIsLoggingIn(true);
+
+    let currentUsersList = users;
+    try {
+      const usersRes = await fetch('/api/users');
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        if (usersData.success && usersData.users && Array.isArray(usersData.users)) {
+          setUsers(usersData.users);
+          localStorage.setItem('gcp_users', JSON.stringify(usersData.users));
+          currentUsersList = usersData.users;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch fresh users list during login:', err);
+    }
+
     // Search inside current users list
-    const foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+    const foundUser = currentUsersList.find(u => u.email.trim().toLowerCase() === emailToFind);
     if (!foundUser) {
       setLoginError('El correo ingresado no pertenece a ningún integrante activo de este Tenant.');
+      setIsLoggingIn(false);
       return;
     }
 
@@ -80,6 +98,7 @@ export const AuthFlow: React.FC = () => {
     const userTenant = foundUser.tenant_id || 'grupo-campestre';
     if (userTenant !== loginTenant) {
       setLoginError('Esta cuenta no está autorizada para acceder a la suscripción (Tenant) seleccionada.');
+      setIsLoggingIn(false);
       return;
     }
 
@@ -87,15 +106,16 @@ export const AuthFlow: React.FC = () => {
       const tenantObj = tenants.find(t => t.id === foundUser?.tenant_id);
       const tenantName = tenantObj ? tenantObj.name : (foundUser?.tenant_id || '');
       setLoginError(`Su solicitud para unirse al Tenant "${tenantName}" está pendiente de aprobación por el Administrador. El Administrador debe aprobar su ingreso e incluirlo con un perfil corporativo activo antes de que pueda iniciar sesión.`);
+      setIsLoggingIn(false);
       return;
     }
 
     if (foundUser.status === 'INACTIVE') {
       setLoginError('Esta cuenta se encuentra desactivada temporalmente en el panel administrativo.');
+      setIsLoggingIn(false);
       return;
     }
 
-    setIsLoggingIn(true);
     try {
       // Secure password matching validation for live implementation via server check
       const res = await fetch('/api/login', {
@@ -223,6 +243,21 @@ export const AuthFlow: React.FC = () => {
     setLoginError('');
     setIsLoggingIn(true);
     try {
+      let currentUsersList = users;
+      try {
+        const usersRes = await fetch('/api/users');
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          if (usersData.success && usersData.users && Array.isArray(usersData.users)) {
+            setUsers(usersData.users);
+            localStorage.setItem('gcp_users', JSON.stringify(usersData.users));
+            currentUsersList = usersData.users;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch fresh users list during Google login:', err);
+      }
+
       const gUser = await googleSignIn();
       if (!gUser) {
         setLoginError('No se pudo completar el inicio de sesión con Google.');
@@ -236,8 +271,8 @@ export const AuthFlow: React.FC = () => {
         return;
       }
 
-      const emailToFind = gUser.email.toLowerCase();
-      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+      const emailToFind = gUser.email.trim().toLowerCase();
+      let foundUser = currentUsersList.find(u => u.email.trim().toLowerCase() === emailToFind);
 
       if (!foundUser) {
         const displayName = gUser.displayName || 'Usuario Google';
@@ -306,6 +341,21 @@ export const AuthFlow: React.FC = () => {
     setMsOperationNotAllowed(false);
     setIsLoggingIn(true);
     try {
+      let currentUsersList = users;
+      try {
+        const usersRes = await fetch('/api/users');
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          if (usersData.success && usersData.users && Array.isArray(usersData.users)) {
+            setUsers(usersData.users);
+            localStorage.setItem('gcp_users', JSON.stringify(usersData.users));
+            currentUsersList = usersData.users;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch fresh users list during Microsoft login:', err);
+      }
+
       const mUser = await microsoftSignIn();
       if (!mUser) {
         setLoginError('No se pudo completar el inicio de sesión con Microsoft.');
@@ -319,8 +369,8 @@ export const AuthFlow: React.FC = () => {
         return;
       }
 
-      const emailToFind = mUser.email.toLowerCase();
-      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+      const emailToFind = mUser.email.trim().toLowerCase();
+      let foundUser = currentUsersList.find(u => u.email.trim().toLowerCase() === emailToFind);
 
       if (!foundUser) {
         const displayName = mUser.displayName || 'Usuario Microsoft';
@@ -387,13 +437,28 @@ export const AuthFlow: React.FC = () => {
     }
   };
 
-  const handleDemoMicrosoftLogin = () => {
+  const handleDemoMicrosoftLogin = async () => {
     setLoginError('');
     setIsLoggingIn(true);
+
+    let currentUsersList = users;
+    try {
+      const usersRes = await fetch('/api/users');
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        if (usersData.success && usersData.users && Array.isArray(usersData.users)) {
+          setUsers(usersData.users);
+          localStorage.setItem('gcp_users', JSON.stringify(usersData.users));
+          currentUsersList = usersData.users;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch fresh users list during demo login:', err);
+    }
     
     setTimeout(() => {
       const emailToFind = `microsoft.demo@${loginTenant}.com`;
-      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+      let foundUser = currentUsersList.find(u => u.email.trim().toLowerCase() === emailToFind.trim().toLowerCase());
 
       if (!foundUser) {
         setPendingNewUser({
@@ -445,8 +510,8 @@ export const AuthFlow: React.FC = () => {
         return;
       }
 
-      const emailToFind = pendingNewUser.email.toLowerCase();
-      let foundUser = users.find(u => u.email.toLowerCase() === emailToFind);
+      const emailToFind = pendingNewUser.email.trim().toLowerCase();
+      let foundUser = users.find(u => u.email.trim().toLowerCase() === emailToFind);
 
       if (!foundUser) {
         foundUser = {

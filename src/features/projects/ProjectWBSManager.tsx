@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User } from '../../types';
 import {
   ChevronRight,
@@ -42,7 +42,7 @@ export interface WBSItem {
   id: string;
   projectId: string;
   parentId?: string; // Reference to Phase or Module or Task parent
-  level: 'FASE' | 'MODULO' | 'TAREA' | 'SUBTAREA';
+  level: 'MODULO' | 'TAREA' | 'SUBTAREA' | 'SUBSUBTAREA';
   name: string;
   assignedToId?: string; // References User
   startDate: string;
@@ -96,14 +96,14 @@ interface ProjectWBSManagerProps {
 }
 
 // --- Dynamic Dummy Data Builder ---
-const getInitialWBSItems = (projectId: string): WBSItem[] => {
+export const getInitialWBSItems = (projectId: string): WBSItem[] => {
   return [
-    // FASE 1
+    // MODULO 1 (anterior FASE I)
     {
       id: 'item-f1',
       projectId,
-      level: 'FASE',
-      name: 'Fase I: Requerimientos, Análisis y Base de Datos',
+      level: 'MODULO',
+      name: 'Módulo I: Requerimientos, Análisis y Base de Datos',
       startDate: '2026-05-15',
       endDate: '2026-05-24',
       durationDays: 10,
@@ -117,8 +117,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m1',
       projectId,
       parentId: 'item-f1',
-      level: 'MODULO',
-      name: 'Módulo: Arquitectura de Persistencia PostgreSQL',
+      level: 'TAREA',
+      name: 'Tarea: Arquitectura de Persistencia PostgreSQL',
       startDate: '2026-05-15',
       endDate: '2026-05-19',
       durationDays: 5,
@@ -132,7 +132,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m1-t1',
       projectId,
       parentId: 'item-f1-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Diseño del Modelo Entidad-Relación y Schemas en Drizzle',
       assignedToId: 'u-2', // Carlos Pérez
       startDate: '2026-05-15',
@@ -166,7 +166,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m1-t1-s1',
       projectId,
       parentId: 'item-f1-m1-t1',
-      level: 'SUBTAREA',
+      level: 'SUBSUBTAREA',
       name: 'Definir llaves foráneas y constraints de integridad',
       assignedToId: 'u-2',
       startDate: '2026-05-15',
@@ -182,7 +182,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m1-t1-s2',
       projectId,
       parentId: 'item-f1-m1-t1',
-      level: 'SUBTAREA',
+      level: 'SUBSUBTAREA',
       name: 'Guardar scripts SQL en repositorio para control de cambios',
       assignedToId: 'u-2',
       startDate: '2026-05-16',
@@ -198,8 +198,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m2',
       projectId,
       parentId: 'item-f1',
-      level: 'MODULO',
-      name: 'Módulo: Definición de Casos de Uso y Backlog',
+      level: 'TAREA',
+      name: 'Tarea: Definición de Casos de Uso y Backlog',
       startDate: '2026-05-20',
       endDate: '2026-05-24',
       durationDays: 5,
@@ -213,7 +213,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f1-m2-t1',
       projectId,
       parentId: 'item-f1-m2',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Reunión de alineación con el cliente para aprobación de Historias',
       assignedToId: 'u-4', // Mateo Herrera PO
       startDate: '2026-05-20',
@@ -234,12 +234,12 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       ]
     },
 
-    // FASE 2
+    // MODULO 2 (anterior FASE II)
     {
       id: 'item-f2',
       projectId,
-      level: 'FASE',
-      name: 'Fase II: Diseño Visual, UI y Mockups Interactivos',
+      level: 'MODULO',
+      name: 'Módulo II: Diseño Visual, UI y Mockups Interactivos',
       startDate: '2026-05-25',
       endDate: '2026-06-03',
       durationDays: 10,
@@ -253,8 +253,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f2-m1',
       projectId,
       parentId: 'item-f2',
-      level: 'MODULO',
-      name: 'Módulo: Prototipado y Definición Visual en Lienzo',
+      level: 'TAREA',
+      name: 'Tarea: Prototipado y Definición Visual en Lienzo',
       startDate: '2026-05-25',
       endDate: '2026-06-03',
       durationDays: 10,
@@ -268,7 +268,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f2-m1-t1',
       projectId,
       parentId: 'item-f2-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Diseñar el Mockup interactivo y flujos del Kanban Scrum',
       assignedToId: 'u-3', // Sofía Ramírez PO / UX
       startDate: '2026-05-25',
@@ -284,7 +284,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       id: 'item-f2-m1-t2',
       projectId,
       parentId: 'item-f2-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Diseño del Módulo de Cronograma y Pantallas de Reportes en Figma',
       assignedToId: 'u-3',
       startDate: '2026-05-31',
@@ -307,12 +307,12 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       evidenceFiles: []
     },
 
-    // FASE 3
+    // MODULO 3 (anterior FASE III)
     {
       id: 'item-f3',
       projectId,
-      level: 'FASE',
-      name: 'Fase III: Desarrollo de API REST, Kanban y Cuadrícula',
+      level: 'MODULO',
+      name: 'Módulo III: Desarrollo de API REST, Kanban y Cuadrícula',
       startDate: '2026-06-04',
       endDate: '2026-06-18',
       durationDays: 15,
@@ -325,8 +325,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m1',
       projectId, parentId: 'item-f3',
-      level: 'MODULO',
-      name: 'Módulo: Lógica de Negocio y Endpoints del Servidor',
+      level: 'TAREA',
+      name: 'Tarea: Lógica de Negocio y Endpoints del Servidor',
       startDate: '2026-06-04',
       endDate: '2026-06-12',
       durationDays: 9,
@@ -339,7 +339,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m1-t1',
       projectId, parentId: 'item-f3-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Escribir Controladores Express para persistir Fases, Tareas y Subtareas',
       assignedToId: 'u-2', // Carlos Pérez
       startDate: '2026-06-04',
@@ -354,7 +354,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m1-t2',
       projectId, parentId: 'item-f3-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Implementar cálculo automático de hitos, desviaciones y línea base',
       assignedToId: 'u-6', // Andrés Mendoza
       startDate: '2026-06-09',
@@ -370,8 +370,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m2',
       projectId, parentId: 'item-f3',
-      level: 'MODULO',
-      name: 'Módulo: UI Cuadrícula Editable y Gantt SVG',
+      level: 'TAREA',
+      name: 'Tarea: UI Cuadrícula Editable y Gantt SVG',
       startDate: '2026-06-10',
       endDate: '2026-06-18',
       durationDays: 9,
@@ -384,7 +384,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m2-t1',
       projectId, parentId: 'item-f3-m2',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Implementar controles interactivos en la cuadrícula y panel de detalle',
       assignedToId: 'u-6',
       startDate: '2026-06-10',
@@ -399,7 +399,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f3-m2-t2',
       projectId, parentId: 'item-f3-m2',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Visualización doble de cronograma (Línea Base vs Real)',
       assignedToId: 'u-6',
       startDate: '2026-06-15',
@@ -413,12 +413,12 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       evidenceFiles: []
     },
 
-    // FASE 4
+    // MODULO 4 (anterior FASE IV)
     {
       id: 'item-f4',
       projectId,
-      level: 'FASE',
-      name: 'Fase IV: Aseguramiento de Calidad y Suite QA / Pruebas',
+      level: 'MODULO',
+      name: 'Módulo IV: Aseguramiento de Calidad y Suite QA / Pruebas',
       startDate: '2026-06-19',
       endDate: '2026-06-25',
       durationDays: 7,
@@ -429,12 +429,12 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
       evidenceFiles: []
     },
 
-    // FASE 5
+    // MODULO 5 (anterior FASE V)
     {
       id: 'item-f5',
       projectId,
-      level: 'FASE',
-      name: 'Fase V: DevOps, Telemetría y Despliegue en Producción',
+      level: 'MODULO',
+      name: 'Módulo V: DevOps, Telemetría y Despliegue en Producción',
       startDate: '2026-06-26',
       endDate: '2026-07-05',
       durationDays: 10,
@@ -447,8 +447,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m1',
       projectId, parentId: 'item-f5',
-      level: 'MODULO',
-      name: 'Módulo: Canalización Automatizada de Despliegue',
+      level: 'TAREA',
+      name: 'Tarea: Canalización Automatizada de Despliegue',
       startDate: '2026-06-26',
       endDate: '2026-06-30',
       durationDays: 5,
@@ -461,7 +461,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m1-t1',
       projectId, parentId: 'item-f5-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Simulador intermitente de ejecución de pipeline (Build, Unit Testing, Docker)',
       assignedToId: 'u-1', // Carlos Pérez
       startDate: '2026-06-26',
@@ -476,7 +476,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m1-t2',
       projectId, parentId: 'item-f5-m1',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Alineación de puerto único y orquestador local en docker-compose',
       assignedToId: 'u-4', // Alex Castro (DevOps)
       startDate: '2026-06-29',
@@ -491,8 +491,8 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m2',
       projectId, parentId: 'item-f5',
-      level: 'MODULO',
-      name: 'Módulo: Telemetría y Almacenamiento Seguro Cloud',
+      level: 'TAREA',
+      name: 'Tarea: Telemetría y Almacenamiento Seguro Cloud',
       startDate: '2026-07-01',
       endDate: '2026-07-05',
       durationDays: 5,
@@ -505,7 +505,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m2-t1',
       projectId, parentId: 'item-f5-m2',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Consolidación de métricas deterministas de contenedores',
       assignedToId: 'u-4', // Alex Castro
       startDate: '2026-07-01',
@@ -520,7 +520,7 @@ const getInitialWBSItems = (projectId: string): WBSItem[] => {
     {
       id: 'item-f5-m2-t2',
       projectId, parentId: 'item-f5-m2',
-      level: 'TAREA',
+      level: 'SUBTAREA',
       name: 'Simulación del Bucket local utilizando ETag criptográfico',
       assignedToId: 'u-4', // Alex Castro
       startDate: '2026-07-04',
@@ -642,6 +642,52 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
   const [draftSubtask, setDraftSubtask] = useState<WBSItem | null>(null);
 
+  // --- Calculate WBS Codes (hierarchical outline numbers / correlativos) ---
+  const wbsNumbers: Record<string, string> = useMemo(() => {
+    const result: Record<string, string> = {};
+    
+    // Roots are items with no parentId OR parentId that does not exist in items list
+    const roots = items.filter(it => !it.parentId || !items.some(p => p.id === it.parentId));
+    
+    // Group children by parentId
+    const childrenMap: Record<string, WBSItem[]> = {};
+    items.forEach(it => {
+      if (it.parentId) {
+        if (!childrenMap[it.parentId]) {
+          childrenMap[it.parentId] = [];
+        }
+        childrenMap[it.parentId].push(it);
+      }
+    });
+
+    // We sort children based on their original index in the flat items array to preserve visual/dragged order
+    const orderMap = new Map<string, number>();
+    items.forEach((it, idx) => {
+      orderMap.set(it.id, idx);
+    });
+
+    const sortChildrenByOrder = (list: WBSItem[]) => {
+      return [...list].sort((a, b) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
+    };
+
+    const sortedRoots = sortChildrenByOrder(roots);
+
+    const traverse = (node: WBSItem, prefix: string) => {
+      result[node.id] = prefix;
+      const children = childrenMap[node.id] || [];
+      const sortedChildren = sortChildrenByOrder(children);
+      sortedChildren.forEach((child, idx) => {
+        traverse(child, `${prefix}.${idx + 1}`);
+      });
+    };
+
+    sortedRoots.forEach((root, idx) => {
+      traverse(root, `${idx + 1}`);
+    });
+
+    return result;
+  }, [items]);
+
   const handleUpdateDraftField = (field: keyof WBSItem, value: any) => {
     if (!draftSubtask) return;
     setDraftSubtask(prev => {
@@ -757,12 +803,12 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       if (position === 'inside') {
         // Drop inside
         draggedItem.parentId = targetItem.id;
-        if (targetItem.level === 'FASE') {
-          draggedItem.level = 'MODULO';
-        } else if (targetItem.level === 'MODULO') {
+        if (targetItem.level === 'MODULO') {
           draggedItem.level = 'TAREA';
-        } else if (targetItem.level === 'TAREA' || targetItem.level === 'SUBTAREA') {
+        } else if (targetItem.level === 'TAREA') {
           draggedItem.level = 'SUBTAREA';
+        } else if (targetItem.level === 'SUBTAREA' || targetItem.level === 'SUBSUBTAREA') {
+          draggedItem.level = 'SUBSUBTAREA';
         }
         // Insert right after target
         list.splice(targetIdx + 1, 0, draggedItem);
@@ -808,7 +854,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   };
 
   // Convert level
-  const handleConvertLevel = (id: string, newLevel: 'FASE' | 'MODULO' | 'TAREA' | 'SUBTAREA') => {
+  const handleConvertLevel = (id: string, newLevel: 'MODULO' | 'TAREA' | 'SUBTAREA' | 'SUBSUBTAREA') => {
     if (isDevRole) {
       alert('Modificación de WBS bloqueada en base a privilegios de Desarrollo.');
       return;
@@ -817,7 +863,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       const list = prev.map(it => {
         if (it.id === id) {
           let parentId = it.parentId;
-          if (newLevel === 'FASE') {
+          if (newLevel === 'MODULO') {
             parentId = undefined;
           }
           return {
@@ -851,9 +897,9 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           const prevItem = list[idx - 1];
           if (prevItem.id !== item.id && !isDescendant(item.id, prevItem.id)) {
             item.parentId = prevItem.id;
-            if (prevItem.level === 'FASE') item.level = 'MODULO';
-            else if (prevItem.level === 'MODULO') item.level = 'TAREA';
-            else if (prevItem.level === 'TAREA' || prevItem.level === 'SUBTAREA') item.level = 'SUBTAREA';
+            if (prevItem.level === 'MODULO') item.level = 'TAREA';
+            else if (prevItem.level === 'TAREA') item.level = 'SUBTAREA';
+            else if (prevItem.level === 'SUBTAREA' || prevItem.level === 'SUBSUBTAREA') item.level = 'SUBSUBTAREA';
             list[idx] = item;
             setExpandedItemIds(ex => ({ ...ex, [prevItem.id]: true }));
           }
@@ -863,15 +909,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           const parent = list.find(it => it.id === item.parentId);
           if (parent) {
             item.parentId = parent.parentId;
-            if (parent.level === 'FASE') {
-              item.level = 'FASE';
-              item.parentId = undefined;
-            } else if (parent.level === 'MODULO') {
+            if (parent.level === 'MODULO') {
               item.level = 'MODULO';
+              item.parentId = undefined;
             } else if (parent.level === 'TAREA') {
               item.level = 'TAREA';
+            } else if (parent.level === 'SUBTAREA') {
+              item.level = 'SUBTAREA';
             } else {
-              item.level = 'TAREA';
+              item.level = 'SUBTAREA';
             }
             list[idx] = item;
           }
@@ -982,7 +1028,33 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return `${y}-${m}-${day}`;
     };
 
-    // Step A: Rollup dates for TAREAs if they have SUBTAREAs
+    // Step A: Rollup dates for SUBTAREAs if they have SUBSUBTAREAs
+    updated.forEach(sub => {
+      if (sub.level === 'SUBTAREA') {
+        const subsubtasks = updated.filter(subsub => subsub.parentId === sub.id && subsub.level === 'SUBSUBTAREA');
+        if (subsubtasks.length > 0) {
+          const validSubsub = subsubtasks.filter(subsub => {
+            if (!subsub.startDate || !subsub.endDate) return false;
+            const sTime = parseDateString(subsub.startDate).getTime();
+            const eTime = parseDateString(subsub.endDate).getTime();
+            return !isNaN(sTime) && !isNaN(eTime);
+          });
+
+          if (validSubsub.length > 0) {
+            const startTimes = validSubsub.map(subsub => parseDateString(subsub.startDate).getTime());
+            const endTimes = validSubsub.map(subsub => parseDateString(subsub.endDate).getTime());
+            
+            const minStart = new Date(Math.min(...startTimes));
+            const maxEnd = new Date(Math.max(...endTimes));
+
+            sub.startDate = formatDateLocal(minStart);
+            sub.endDate = formatDateLocal(maxEnd);
+          }
+        }
+      }
+    });
+
+    // Step B: Rollup dates for TAREAs if they have SUBTAREAs
     updated.forEach(task => {
       if (task.level === 'TAREA') {
         const subtasks = updated.filter(sub => sub.parentId === task.id && sub.level === 'SUBTAREA');
@@ -1008,7 +1080,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
     });
 
-    // Step B: Rollup dates for MODULOs if they have TAREAs
+    // Step C: Rollup dates for MODULOs if they have TAREAs
     updated.forEach(mod => {
       if (mod.level === 'MODULO') {
         const tasks = updated.filter(t => t.parentId === mod.id && t.level === 'TAREA');
@@ -1034,32 +1106,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
     });
 
-    // Step C: Rollup dates for FASEs if they have MODULOs
-    updated.forEach(phase => {
-      if (phase.level === 'FASE') {
-        const children = updated.filter(child => child.parentId === phase.id && child.level === 'MODULO');
-        if (children.length > 0) {
-          const validChildren = children.filter(c => {
-            if (!c.startDate || !c.endDate) return false;
-            const sTime = parseDateString(c.startDate).getTime();
-            const eTime = parseDateString(c.endDate).getTime();
-            return !isNaN(sTime) && !isNaN(eTime);
-          });
-
-          if (validChildren.length > 0) {
-            const startTimes = validChildren.map(c => parseDateString(c.startDate).getTime());
-            const endTimes = validChildren.map(c => parseDateString(c.endDate).getTime());
-            
-            const minStart = new Date(Math.min(...startTimes));
-            const maxEnd = new Date(Math.max(...endTimes));
-
-            phase.startDate = formatDateLocal(minStart);
-            phase.endDate = formatDateLocal(maxEnd);
-          }
-        }
-      }
-    });
-
     // Recalculate duration automatically for each single item
     updated.forEach(it => {
       if (it.startDate && it.endDate) {
@@ -1070,7 +1116,18 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
     });
 
-    // Step 1: Recalculate task progress based on subtasks
+    // Step 1: Recalculate subtask progress based on subsubtasks
+    updated.forEach(sub => {
+      if (sub.level === 'SUBTAREA') {
+        const subsubtasks = updated.filter(subsub => subsub.parentId === sub.id && subsub.level === 'SUBSUBTAREA');
+        if (subsubtasks.length > 0) {
+          const sumProg = subsubtasks.reduce((sum, current) => sum + current.progress, 0);
+          sub.progress = Math.round(sumProg / subsubtasks.length);
+        }
+      }
+    });
+
+    // Step 2: Recalculate task progress based on subtasks
     updated.forEach(task => {
       if (task.level === 'TAREA') {
         const subtasks = updated.filter(sub => sub.parentId === task.id && sub.level === 'SUBTAREA');
@@ -1081,24 +1138,13 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
     });
 
-    // Step 2: Recalculate module progress based on tasks
+    // Step 3: Recalculate module progress based on tasks
     updated.forEach(mod => {
       if (mod.level === 'MODULO') {
         const tasks = updated.filter(t => t.parentId === mod.id && t.level === 'TAREA');
         if (tasks.length > 0) {
           const sumProg = tasks.reduce((sum, current) => sum + current.progress, 0);
           mod.progress = Math.round(sumProg / tasks.length);
-        }
-      }
-    });
-
-    // Step 3: Recalculate phase progress based on modules/tasks directly nested
-    updated.forEach(phase => {
-      if (phase.level === 'FASE') {
-        const children = updated.filter(child => child.parentId === phase.id && child.level === 'MODULO');
-        if (children.length > 0) {
-          const sumProg = children.reduce((sum, current) => sum + current.progress, 0);
-          phase.progress = Math.round(sumProg / children.length);
         }
       }
     });
@@ -1114,7 +1160,48 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
     });
 
-    return updated;
+    // Step 5: Hierarchical Sorting to ensure parents are always followed by their children recursively
+    const hierarchicalSort = (flatList: WBSItem[]): WBSItem[] => {
+      const result: WBSItem[] = [];
+      const roots = flatList.filter(it => !it.parentId || !flatList.some(p => p.id === it.parentId));
+      const childrenMap: Record<string, WBSItem[]> = {};
+      flatList.forEach(it => {
+        if (it.parentId) {
+          if (!childrenMap[it.parentId]) {
+            childrenMap[it.parentId] = [];
+          }
+          childrenMap[it.parentId].push(it);
+        }
+      });
+
+      const orderMap = new Map<string, number>();
+      flatList.forEach((it, idx) => {
+        orderMap.set(it.id, idx);
+      });
+
+      const sortChildrenByOrder = (arr: WBSItem[]) => {
+        return [...arr].sort((a, b) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
+      };
+
+      const sortedRoots = sortChildrenByOrder(roots);
+
+      const traverse = (node: WBSItem) => {
+        result.push(node);
+        const children = childrenMap[node.id] || [];
+        const sortedChildren = sortChildrenByOrder(children);
+        sortedChildren.forEach(child => {
+          traverse(child);
+        });
+      };
+
+      sortedRoots.forEach(root => {
+        traverse(root);
+      });
+
+      return result;
+    };
+
+    return hierarchicalSort(updated);
   };
 
   // Trigger recalculation on state changes
@@ -1211,7 +1298,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   };
 
   // Add elements
-  const handleAddItem = (level: 'FASE' | 'MODULO' | 'TAREA' | 'SUBTAREA', parentId?: string) => {
+  const handleAddItem = (level: 'MODULO' | 'TAREA' | 'SUBTAREA' | 'SUBSUBTAREA', parentId?: string) => {
     if (isDevRole) {
       alert('Creación de elementos de WBS bloqueada en base a privilegios de Desarrollo.');
       return;
@@ -1219,10 +1306,10 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     const today = new Date().toISOString().split('T')[0];
     const defaultEnd = new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0]; // +5 days
 
-    let prefix = 'Fase';
-    if (level === 'MODULO') prefix = 'Nuevo Módulo';
+    let prefix = 'Nuevo Módulo';
     if (level === 'TAREA') prefix = 'Nueva Tarea';
     if (level === 'SUBTAREA') prefix = 'Nueva Subtarea';
+    if (level === 'SUBSUBTAREA') prefix = 'Nueva Subsubtarea';
 
     const parentItem = parentId ? items.find(it => it.id === parentId) : null;
     const initialAssignedToId = parentItem?.assignedToId;
@@ -1394,27 +1481,35 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   // Metrics
   const projectTasks = items.filter(it => it.level === 'TAREA');
   const projectSubtasks = items.filter(it => it.level === 'SUBTAREA');
+  const projectSubsubtasks = items.filter(it => it.level === 'SUBSUBTAREA');
   
   // Total overall progress (weighted calculation by level)
-  const phases = items.filter(it => it.level === 'FASE');
-  const overallProgress = phases.length > 0 
-    ? Math.round(phases.reduce((sum, p) => sum + p.progress, 0) / phases.length)
+  const modules = items.filter(it => it.level === 'MODULO');
+  const overallProgress = modules.length > 0 
+    ? Math.round(modules.reduce((sum, m) => sum + m.progress, 0) / modules.length)
     : 0;
 
   // Identify overdue tasks (endDate < today and progress < 100)
-  const todayStr = '2026-06-05'; // fixed current simulation date from system metadata
-  const overdueTasksCount = projectTasks.filter(t => t.endDate < todayStr && t.progress < 100).length;
+  const todayStr = (() => {
+    const local = new Date();
+    const offset = local.getTimezoneOffset();
+    const localTime = new Date(local.getTime() - (offset * 60 * 1000));
+    return localTime.toISOString().split('T')[0];
+  })();
+  const delayTasks = items.filter(it => it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA');
+  const overdueTasksCount = delayTasks.filter(t => t.endDate < todayStr && t.progress < 100).length;
+  const dueTodayTasksCount = delayTasks.filter(t => t.endDate === todayStr && t.progress < 100).length;
 
   // Compliance % (completed items vs total items within planning deadline)
-  const completedTasksCount = projectTasks.filter(t => t.progress === 100).length;
-  const complianceRate = projectTasks.length > 0
-    ? Math.round((completedTasksCount / projectTasks.length) * 100)
+  const completedTasksCount = delayTasks.filter(t => t.progress === 100).length;
+  const complianceRate = delayTasks.length > 0
+    ? Math.round((completedTasksCount / delayTasks.length) * 100)
     : 100;
 
   // Baseline deviation calculation: calculate tasks that finished later or differ from baseline end dates
   let baselineDeviationDays = 0;
   if (activeBaseline) {
-    projectTasks.forEach(task => {
+    delayTasks.forEach(task => {
       const bsSnapshot = activeBaseline.itemsSnapshot.find(snap => snap.id === task.id);
       if (bsSnapshot && bsSnapshot.endDate && task.endDate) {
         const tDate = new Date(task.endDate);
@@ -1432,6 +1527,9 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const activeAlarms: string[] = [];
   if (overdueTasksCount > 0) {
     activeAlarms.push(`¡Hay ${overdueTasksCount} tareas críticas con fecha de entrega vencida!`);
+  }
+  if (dueTodayTasksCount > 0) {
+    activeAlarms.push(`¡Hay ${dueTodayTasksCount} tareas planificadas para finalizar hoy!`);
   }
   if (baselineDeviationDays > 0) {
     activeAlarms.push(`Desviación de ${baselineDeviationDays} días acumulados respecto a la Línea Base.`);
@@ -1458,8 +1556,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return matchesSearch && matchesPriority && matchesStatus && matchesResp;
     };
 
-    // Filter leaves (Tareas & Subtareas)
-    const matchingLeafs = items.filter(it => (it.level === 'TAREA' || it.level === 'SUBTAREA') && matchesFilters(it));
+    // Filter leaves (Tareas, Subtareas & Subsubtareas)
+    const matchingLeafs = items.filter(it => (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && matchesFilters(it));
 
     // If search & filters are empty, return all items preserving order
     if (searchTerm === '' && filterPriority === 'ALL' && filterStatus === 'ALL' && filterResponsible === 'ALL') {
@@ -1729,7 +1827,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   // --- Export Actions ---
   const handleExportCSV = () => {
     const columns = [
-      'Nivel',
+      'Correlativo',
       'Elemento / Nombre',
       'Responsable ID',
       'Responsable Nombre',
@@ -1750,7 +1848,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       const cleanStr = (strString: string) => `"${(strString || '').replace(/"/g, '""')}"`;
       
       const row = [
-        it.level,
+        wbsNumbers[it.id] || '',
         cleanStr(it.name),
         it.assignedToId || '',
         cleanStr(assignedName),
@@ -1796,7 +1894,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         <table>
           <thead>
             <tr>
-              <th>Jerarquía</th>
+              <th>Correlativo</th>
               <th>Tareas y Subtareas</th>
               <th>Inicio</th>
               <th>Fin</th>
@@ -1811,15 +1909,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
     items.forEach(it => {
       let cssClass = 'lvl-t';
-      if (it.level === 'FASE') cssClass = 'lvl-f';
-      if (it.level === 'MODULO') cssClass = 'lvl-m';
-      if (it.level === 'SUBTAREA') cssClass = 'lvl-s';
+      if (it.level === 'MODULO') cssClass = 'lvl-f';
+      if (it.level === 'TAREA') cssClass = 'lvl-m';
+      if (it.level === 'SUBSUBTAREA') cssClass = 'lvl-s';
 
-      const paddingText = it.level === 'MODULO' ? '  ' : it.level === 'TAREA' ? '    ' : it.level === 'SUBTAREA' ? '      ' : '';
+      const paddingText = it.level === 'TAREA' ? '  ' : it.level === 'SUBTAREA' ? '    ' : it.level === 'SUBSUBTAREA' ? '      ' : '';
 
       tableHtml += `
         <tr class="${cssClass}">
-          <td>${it.level}</td>
+          <td>${wbsNumbers[it.id] || ''}</td>
           <td>${paddingText}${it.name}</td>
           <td>${it.startDate}</td>
           <td>${it.endDate}</td>
@@ -2097,10 +2195,65 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
               }
             });
           } catch (e) {}
+
+          // Inject custom print styles for the Gantt Chart to prevent text truncation/cut-off at the bottom
+          const printStyle = clonedDoc.createElement('style');
+          printStyle.innerHTML = `
+            .gantt-task-row {
+              display: flex !important;
+              align-items: center !important;
+              height: auto !important;
+              min-height: 44px !important;
+              padding-top: 6px !important;
+              padding-bottom: 6px !important;
+              box-sizing: border-box !important;
+            }
+            .gantt-task-meta {
+              display: flex !important;
+              align-items: center !important;
+              height: auto !important;
+            }
+            .gantt-task-name-container {
+              display: flex !important;
+              align-items: center !important;
+              gap: 8px !important;
+              overflow: visible !important;
+              white-space: nowrap !important;
+            }
+            .gantt-task-badge {
+              display: inline-flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              font-family: sans-serif !important;
+              font-size: 8px !important;
+              font-weight: 900 !important;
+              height: 16px !important;
+              line-height: 1 !important;
+              padding: 0 5px !important;
+              margin: 0 !important;
+              box-sizing: border-box !important;
+              border-radius: 4px !important;
+              vertical-align: middle !important;
+            }
+            .gantt-task-name {
+              display: inline-block !important;
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: nowrap !important;
+              line-height: 1.5 !important;
+              padding-bottom: 2px !important;
+              margin: 0 !important;
+              height: auto !important;
+              box-sizing: content-box !important;
+              vertical-align: middle !important;
+            }
+          `;
+          clonedDoc.head.appendChild(printStyle);
         }
       });
 
       const imgData = canvas.toDataURL('image/png');
+
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
@@ -2161,7 +2314,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       pdf.save(`Cronograma Gantt.pdf`);
       addLog('Carlos Pérez (PM)', 'Se completó la exportación del Diagrama Gantt de forma exitosa.');
     } catch (error) {
-      console.error('Error generating PDF:', error);
+      console.error('Error exporting PDF:', error);
       addLog('Carlos Pérez (PM)', 'Falló la exportación del Diagrama Gantt a PDF.');
     } finally {
       window.getComputedStyle = originalGetComputedStyle;
@@ -2352,16 +2505,22 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
         {/* Overdue Tasks KPI Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${overdueTasksCount > 0 ? 'bg-rose-50 text-rose-600 animate-bounce' : 'bg-slate-50 text-slate-600'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${overdueTasksCount > 0 ? 'bg-rose-50 text-rose-600 animate-bounce' : dueTodayTasksCount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-600'}`}>
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">Tareas Vencidas</span>
-            <div className="flex items-baseline gap-1">
-              <span className={`text-xl font-black ${overdueTasksCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{overdueTasksCount}</span>
-              <span className="text-[9px] text-slate-400 font-bold">vencimiento</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">Alertas de Cronograma</span>
+            <div className="flex items-center gap-3 mt-0.5">
+              <div className="flex items-baseline gap-0.5">
+                <span className={`text-lg font-black ${overdueTasksCount > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{overdueTasksCount}</span>
+                <span className="text-[9px] text-rose-500 font-bold uppercase tracking-tight">Vencidas</span>
+              </div>
+              <div className="flex items-baseline gap-0.5 border-l border-slate-250 pl-3">
+                <span className={`text-lg font-black ${dueTodayTasksCount > 0 ? 'text-amber-600' : 'text-slate-800'}`}>{dueTodayTasksCount}</span>
+                <span className="text-[9px] text-amber-600 font-bold uppercase tracking-tight">Hoy</span>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Fecha límite superada</p>
+            <p className="text-[10px] text-slate-500 font-medium mt-1">Vencimientos vs Fecha actual</p>
           </div>
         </div>
 
@@ -2586,15 +2745,20 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
               <tbody className="divide-y divide-slate-150 font-medium">
                 {filteredItems.filter(isItemVisible).map(it => {
                   const paddingClass = 
-                    it.level === 'MODULO' ? 'pl-6' : 
-                    it.level === 'TAREA' ? 'pl-11' : 
-                    it.level === 'SUBTAREA' ? 'pl-16' : 'pl-2';
+                    it.level === 'TAREA' ? 'pl-6' : 
+                    it.level === 'SUBTAREA' ? 'pl-11' : 
+                    it.level === 'SUBSUBTAREA' ? 'pl-16' : 'pl-2';
+
+                  const isOverdue = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate < todayStr && it.progress < 100;
+                  const isDueToday = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate === todayStr && it.progress < 100;
 
                   const bannerColor =
-                    it.level === 'FASE' ? 'bg-blue-50/70 border-l-[3.5px] border-l-blue-600 text-blue-900 font-black text-xs' :
-                    it.level === 'MODULO' ? 'bg-slate-50 border-l-[3.1px] border-l-slate-400 text-slate-800 font-bold' :
-                    it.level === 'TAREA' ? 'bg-white hover:bg-slate-50/50 text-slate-850' : 
-                    'bg-slate-50/20 text-slate-600 italic';
+                    isOverdue ? 'bg-rose-50/10 text-rose-950 hover:bg-rose-50/30' :
+                    isDueToday ? 'bg-amber-50/10 text-amber-950 hover:bg-amber-50/30' :
+                    it.level === 'MODULO' ? 'bg-blue-50/70 border-l-[3.5px] border-l-blue-600 text-blue-900 font-black text-xs' :
+                    it.level === 'TAREA' ? 'bg-slate-50 border-l-[3.1px] border-l-slate-400 text-slate-800 font-bold hover:bg-slate-50' :
+                    it.level === 'SUBTAREA' ? 'bg-white hover:bg-slate-50/50 text-slate-850' : 
+                    'bg-slate-50/20 text-slate-600 italic hover:bg-slate-50/40';
 
                   const hasChildren = items.some(child => child.parentId === it.id);
                   const isExpanded = expandedItemIds[it.id] !== false;
@@ -2616,7 +2780,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                       className={`group cursor-pointer hover:bg-slate-50 transition-all ${bannerColor} ${activeItemId === it.id ? 'bg-blue-100/40' : ''} ${draggedItemId === it.id ? 'opacity-40' : ''}${dragOverStyles}`}
                       onClick={() => setActiveItemId(it.id)}
                       onDoubleClick={() => {
-                        if (it.level === 'SUBTAREA') {
+                        if (it.level !== 'MODULO') {
                           setEditingSubtaskId(it.id);
                           setDraftSubtask({ ...it });
                         }
@@ -2665,16 +2829,27 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                       </td>
 
                       {/* Name / Title column (Editable inline) */}
-                      <td className="p-2.5">
+                      <td className={`p-2.5 transition-all ${
+                        isOverdue ? 'bg-rose-50/60 border-l-[3.5px] border-l-rose-500' :
+                        isDueToday ? 'bg-amber-50/60 border-l-[3.5px] border-l-amber-400' : ''
+                      }`}>
                         <div className={`flex items-center gap-2 ${paddingClass}`}>
-                          {/* Level badge */}
-                          <span className={`text-[8.5px] font-extrabold px-1.5 py-0.2 rounded select-none shrink-0 border ${
-                            it.level === 'FASE' ? 'bg-blue-105 border-blue-200 text-blue-800' :
-                            it.level === 'MODULO' ? 'bg-slate-100 border-slate-200 text-slate-650' :
-                            it.level === 'TAREA' ? 'bg-indigo-50 border-indigo-100 text-indigo-750' :
-                            'bg-violet-50/50 border-violet-100/50 text-violet-700'
-                          }`}>
-                            {it.level}
+                          {isOverdue && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-100 border border-rose-200 text-rose-700 text-[8.5px] font-black uppercase font-mono tracking-tight shrink-0 select-none animate-pulse">
+                              <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                              <span>Vencida</span>
+                            </span>
+                          )}
+
+                          {isDueToday && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-150 border border-amber-300 text-amber-800 text-[8.5px] font-black uppercase font-mono tracking-tight shrink-0 select-none">
+                              <Clock className="w-2.5 h-2.5 text-amber-600 animate-spin" style={{ animationDuration: '4s' }} />
+                              <span>Vence Hoy</span>
+                            </span>
+                          )}
+
+                          <span className="text-[10px] font-extrabold text-slate-500 font-mono select-none shrink-0" title={`WBS: ${wbsNumbers[it.id]}`}>
+                            {wbsNumbers[it.id]}
                           </span>
 
                           <input
@@ -2682,7 +2857,10 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                             value={it.name}
                             onChange={(e) => handleUpdateItemField(it.id, 'name', e.target.value)}
                             onClick={(e) => e.stopPropagation()}
-                            className="bg-transparent border-b border-transparent group-hover:border-slate-250 focus:border-blue-500 outline-none w-full px-1 py-0.5 text-xs"
+                            className={`bg-transparent border-b border-transparent group-hover:border-slate-250 focus:border-blue-500 outline-none w-full px-1 py-0.5 text-xs ${
+                              isOverdue ? 'text-rose-950 font-black' :
+                              isDueToday ? 'text-amber-950 font-black' : 'text-slate-800'
+                            }`}
                             title="Haga clic para editar nombre del requerimiento"
                           />
 
@@ -2717,7 +2895,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
                       {/* Assigned User selector */}
                       <td className="p-1.5" onClick={(e) => e.stopPropagation()}>
-                        {it.level !== 'FASE' && it.level !== 'MODULO' ? (
+                        {it.level !== 'MODULO' && it.level !== 'TAREA' ? (
                           <select
                             value={it.assignedToId || ''}
                             onChange={(e) => handleUpdateItemField(it.id, 'assignedToId', e.target.value || undefined)}
@@ -2759,7 +2937,13 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                           title={hasChildren ? "Calculado automáticamente de elementos secundarios" : undefined}
                           className={`bg-transparent font-semibold font-mono text-[11px] p-1 rounded outline-none w-full ${
                             hasChildren ? 'text-slate-400 bg-slate-50/20 cursor-not-allowed selection:bg-transparent' : 'text-slate-700 cursor-pointer hover:bg-slate-100 focus:bg-white'
-                          } ${!hasChildren && it.endDate < todayStr && it.progress < 100 ? 'text-rose-600 bg-rose-50/50' : ''}`}
+                          } ${
+                            !hasChildren && it.endDate < todayStr && it.progress < 100
+                              ? 'text-rose-700 bg-rose-100/60 font-extrabold border border-rose-200/80'
+                              : !hasChildren && it.endDate === todayStr && it.progress < 100
+                              ? 'text-amber-850 bg-amber-100/60 font-extrabold border border-amber-250/80'
+                              : ''
+                          }`}
                         />
                       </td>
 
@@ -2822,12 +3006,12 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                       <td className="p-2 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           {/* Add structural sub-element inside */}
-                          {it.level !== 'SUBTAREA' && (
+                          {it.level !== 'SUBSUBTAREA' && (
                             <button
                               onClick={() => {
                                 const nextLvl = 
-                                  it.level === 'FASE' ? 'MODULO' :
-                                  it.level === 'MODULO' ? 'TAREA' : 'SUBTAREA';
+                                  it.level === 'MODULO' ? 'TAREA' :
+                                  it.level === 'TAREA' ? 'SUBTAREA' : 'SUBSUBTAREA';
                                 handleAddItem(nextLvl, it.id);
                               }}
                               className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-1 rounded-md"
@@ -2851,16 +3035,16 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                   );
                 })}
 
-                {/* Add Phase base row */}
+                {/* Add Module base row */}
                 <tr>
                   <td colSpan={10} className="p-4 bg-slate-50 text-center">
                     <button
-                      onClick={() => handleAddItem('FASE')}
+                      onClick={() => handleAddItem('MODULO')}
                       type="button"
                       className="bg-white border border-slate-250 hover:bg-slate-100 text-slate-700 font-extrabold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer inline-flex items-center gap-2 shadow-3xs"
                     >
                       <Plus className="w-4 h-4 text-blue-600" />
-                      <span>Agregar Nueva Fase al Plan de Trabajo</span>
+                      <span>Agregar Nuevo Módulo al Plan de Trabajo</span>
                     </button>
                   </td>
                 </tr>
@@ -2875,10 +3059,34 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs p-6 animate-fadeIn">
           <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4 pb-3 border-b border-slate-100">
             <div>
-              <h4 className="font-bold text-slate-900 text-sm">Cronograma Gantt Comparativo de Línea Base</h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                La barra <span className="inline-block w-4 h-2 rounded bg-blue-600"></span> superior de color representa la planificación real de ejecución actual.
-                La barra <span className="inline-block w-4 h-2 rounded bg-slate-200 border border-slate-350"></span> inferior y con bordes representa las fechas proyectadas en la línea base guardada.
+              <h4 className="font-bold text-slate-900 text-sm flex flex-wrap items-center gap-2">
+                <span>Cronograma Gantt Comparativo de Línea Base</span>
+                {overdueTasksCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>{overdueTasksCount} {overdueTasksCount === 1 ? 'Vencida' : 'Vencidas'}</span>
+                  </span>
+                )}
+                {dueTodayTasksCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black animate-pulse">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{dueTodayTasksCount} Para Hoy</span>
+                  </span>
+                )}
+              </h4>
+              <p className="text-xs text-slate-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span>
+                  La barra <span className="inline-block w-3.5 h-2 rounded bg-blue-600 align-middle"></span> superior representa la planificación real actual.
+                </span>
+                <span>
+                  La barra <span className="inline-block w-3.5 h-2 rounded bg-slate-200 border border-slate-350 align-middle"></span> inferior representa la línea base guardada.
+                </span>
+                <span className="text-rose-600 font-semibold flex items-center gap-1">
+                  Las tareas <span className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-200 text-rose-700 text-[9px] px-1 py-0.5 rounded font-black font-mono"><AlertTriangle className="w-2.5 h-2.5" /> VENCIDAS</span> se destacan en rojo <span className="inline-block w-3.5 h-2 rounded bg-rose-500 align-middle"></span>.
+                </span>
+                <span className="text-amber-600 font-semibold flex items-center gap-1">
+                  Las tareas de <span className="inline-flex items-center gap-0.5 bg-amber-50 border border-amber-200 text-amber-800 text-[9px] px-1 py-0.5 rounded font-black font-mono"><Clock className="w-2.5 h-2.5" /> HOY</span> se destacan en amarillo <span className="inline-block w-3.5 h-2 rounded bg-amber-400 align-middle"></span>.
+                </span>
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -2955,35 +3163,48 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                   const realPos = getBarPosition(it.startDate, it.endDate);
 
                   const indentClass = 
-                  it.level === 'MODULO' ? 'pl-4' : 
-                  it.level === 'TAREA' ? 'pl-8' : 
-                  it.level === 'SUBTAREA' ? 'pl-12' : '';
+                  it.level === 'TAREA' ? 'pl-4' : 
+                  it.level === 'SUBTAREA' ? 'pl-8' : 
+                  it.level === 'SUBSUBTAREA' ? 'pl-12' : '';
+
+                  const isOverdue = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate < todayStr && it.progress < 100;
+                  const isDueToday = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate === todayStr && it.progress < 100;
 
                   const barBgColor = 
-                    it.level === 'FASE' ? 'bg-blue-600' :
-                    it.level === 'MODULO' ? 'bg-indigo-500' :
-                    it.level === 'TAREA' ? 'bg-violet-500' : 'bg-slate-400';
+                    isOverdue ? 'bg-rose-500 border border-rose-600 shadow-sm shadow-rose-100 text-white' :
+                    isDueToday ? 'bg-amber-400 border border-amber-500 shadow-sm shadow-amber-100 text-amber-950' :
+                    it.level === 'MODULO' ? 'bg-blue-600 text-white' :
+                    it.level === 'TAREA' ? 'bg-indigo-500 text-white' :
+                    it.level === 'SUBTAREA' ? 'bg-violet-500 text-white' : 'bg-slate-400 text-white';
 
-                  return (
-                    <div key={it.id} className="flex items-center py-1 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition duration-150">
+                   return (
+                    <div key={it.id} className={`gantt-task-row flex items-center py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition duration-150 ${isOverdue ? 'bg-rose-50/20' : isDueToday ? 'bg-amber-50/20' : ''}`}>
                       {/* Meta left info */}
-                      <div className="w-2/5 pr-4 flex items-center select-none py-0">
+                      <div className="gantt-task-meta w-2/5 pr-4 flex items-center select-none py-0">
                         {/* Column 1: Task structure & name */}
-                        <div className={`flex items-center ${indentClass} min-w-0 flex-1`} style={{ flex: '1 1 auto', minWidth: 0 }}>
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${
-                            it.level === 'FASE' ? 'bg-blue-105 border-blue-200 text-blue-800' :
-                            it.level === 'MODULO' ? 'bg-slate-100 border-slate-200 text-slate-650' :
-                            'bg-indigo-50 border-indigo-150 text-indigo-700'
-                          }`} style={{ marginRight: '8px', flexShrink: 0 }}>
-                            {it.level}
+                        <div className={`gantt-task-name-container ${indentClass} flex items-center gap-2 min-w-0 flex-1`} style={{ flex: '1 1 auto', minWidth: 0 }}>
+                          <span className="text-[10px] font-extrabold text-slate-500 font-mono select-none shrink-0" title={`WBS: ${wbsNumbers[it.id]}`}>
+                            {wbsNumbers[it.id]}
                           </span>
-                          <span className="font-bold text-slate-800 text-[11px] truncate" title={it.name} style={{ flexShrink: 1, minWidth: 0 }}>
-                            {it.name}
+                          <span className="gantt-task-name font-bold text-slate-800 text-[11px] truncate flex flex-wrap items-center gap-1.5" title={it.name} style={{ flexShrink: 1, minWidth: 0, maxWidth: 'calc(100% - 70px)' }}>
+                            <span className="truncate">{it.name}</span>
+                            {isOverdue && (
+                              <span className="gantt-task-overdue-badge inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-rose-100 border border-rose-200 text-rose-700 text-[8px] font-black uppercase select-none shrink-0 font-mono tracking-tight leading-none">
+                                <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                                <span>Vencida</span>
+                              </span>
+                            )}
+                            {isDueToday && (
+                              <span className="gantt-task-today-badge inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-100 border border-amber-200 text-amber-800 text-[8px] font-black uppercase select-none shrink-0 font-mono tracking-tight leading-none">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                <span>Hoy</span>
+                              </span>
+                            )}
                           </span>
                         </div>
                         {/* Column 2: Date & duration (single line) */}
                         <div className="text-[9px] text-slate-500 font-mono font-bold text-right whitespace-nowrap" style={{ flexShrink: 0, marginLeft: '12px' }}>
-                          <span>{it.startDate} al {it.endDate} ({it.durationDays}d)</span>
+                          <span className={isOverdue ? 'text-rose-600 font-black' : isDueToday ? 'text-amber-600 font-black' : ''}>{it.startDate} al {it.endDate} ({it.durationDays}d)</span>
                         </div>
                       </div>
 
@@ -2992,11 +3213,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                         {/* 1. Real Current progress bar */}
                         <div className="h-4 relative w-full">
                           <div
-                            className={`absolute top-0 h-full rounded-full ${barBgColor} flex items-center justify-center text-white text-[8px] font-extrabold font-mono select-none overflow-hidden whitespace-nowrap`}
+                            className={`absolute top-0 h-full rounded-full ${barBgColor} flex items-center justify-center text-[8px] font-extrabold font-mono select-none overflow-hidden whitespace-nowrap`}
                             style={{ left: realPos.left, width: realPos.width }}
-                            title={`Real: ${it.startDate} a ${it.endDate} (${it.progress}% completado)`}
+                            title={`Real: ${it.startDate} a ${it.endDate} (${it.progress}% completado) ${isOverdue ? '¡VENCIDA!' : isDueToday ? '¡ENTREGA HOY!' : ''}`}
                           >
-                            <span className="px-1 select-none leading-none">{it.progress}%</span>
+                            <span className="px-1 select-none leading-none flex items-center gap-0.5">
+                              {isOverdue && <AlertTriangle className="w-2.5 h-2.5 text-white shrink-0" />}
+                              {isDueToday && <Clock className="w-2.5 h-2.5 text-amber-950 shrink-0" />}
+                              <span>{it.progress}%</span>
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -3102,7 +3327,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                 </div>
               </div>
 
-              {selectedItem.level !== 'FASE' && selectedItem.level !== 'MODULO' && (
+              {selectedItem.level !== 'MODULO' && selectedItem.level !== 'TAREA' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Asignado A</label>
@@ -3133,7 +3358,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                 </div>
               )}
 
-              {selectedItem.level !== 'FASE' && selectedItem.level !== 'MODULO' && projectSprints.length > 0 && (
+              {selectedItem.level !== 'MODULO' && selectedItem.level !== 'TAREA' && projectSprints.length > 0 && (
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Sprint Relacionado</label>
                   <select
@@ -3161,10 +3386,10 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                 >
                   <option value="">Ninguno (Tarea independiente)</option>
                   {items
-                    .filter(it => it.id !== selectedItem.id && it.level === 'TAREA')
+                    .filter(it => it.id !== selectedItem.id && it.level !== 'MODULO')
                     .map(it => (
                       <option key={it.id} value={it.id}>
-                        [{it.level}] {it.name}
+                        [{wbsNumbers[it.id] || ''}] {it.name}
                       </option>
                     ))}
                 </select>
@@ -3351,25 +3576,14 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           
           <button
             onClick={() => {
-              handleConvertLevel(contextMenu.itemId, 'FASE');
-              setContextMenu(null);
-            }}
-            type="button"
-            className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition text-slate-700 font-medium"
-          >
-            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-            Convertir a <strong className="font-semibold text-blue-900">FASE</strong>
-          </button>
-          <button
-            onClick={() => {
               handleConvertLevel(contextMenu.itemId, 'MODULO');
               setContextMenu(null);
             }}
             type="button"
             className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition text-slate-700 font-medium"
           >
-            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-            Convertir a <strong className="font-semibold text-slate-900">MÓDULO</strong>
+            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+            Convertir a <strong className="font-semibold text-blue-900">MÓDULO</strong>
           </button>
           <button
             onClick={() => {
@@ -3379,8 +3593,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             type="button"
             className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition text-slate-700 font-medium"
           >
-            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-            Convertir a <strong className="font-semibold text-indigo-900">TAREA</strong>
+            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+            Convertir a <strong className="font-semibold text-slate-900">TAREA</strong>
           </button>
           <button
             onClick={() => {
@@ -3390,8 +3604,19 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             type="button"
             className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition text-slate-700 font-medium"
           >
+            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+            Convertir a <strong className="font-semibold text-indigo-900">SUBTAREA</strong>
+          </button>
+          <button
+            onClick={() => {
+              handleConvertLevel(contextMenu.itemId, 'SUBSUBTAREA');
+              setContextMenu(null);
+            }}
+            type="button"
+            className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition text-slate-700 font-medium"
+          >
             <span className="w-2 h-2 rounded-full bg-violet-600"></span>
-            Convertir a <strong className="font-semibold text-violet-900">SUBTAREA</strong>
+            Convertir a <strong className="font-semibold text-violet-900">SUBSUBTAREA</strong>
           </button>
           
           <div className="border-t border-slate-100 my-1"></div>
@@ -3707,6 +3932,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           </div>
         </div>
       )}
+
+
 
     </div>
   );
