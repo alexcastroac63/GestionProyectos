@@ -207,6 +207,40 @@ interface DevOpsPipelineProps {
 
 export default function DevOpsPipeline({ selectedProjectId, projects = [] }: DevOpsPipelineProps) {
   const [running, setRunning] = useState(false);
+
+  const saveCustomFilesToLocalStorage = (files: any[]) => {
+    try {
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(files));
+      return;
+    } catch (e) {
+      if (files.length > 1) {
+        const pruned = files.map((item, index) => {
+          if (index === files.length - 1) {
+            return item;
+          }
+          return { ...item, raw_base64: undefined };
+        });
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(pruned));
+          return;
+        } catch (inner) {}
+      }
+
+      const allPruned = files.map(item => ({ ...item, raw_base64: undefined }));
+      try {
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned));
+        return;
+      } catch (inner) {}
+
+      if (allPruned.length > 5) {
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned.slice(-5)));
+          return;
+        } catch (inner) {}
+      }
+    }
+  };
+
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
   const [activeTab, setActiveTab] = useState<'repos' | 'installation' | 'docker' | 'storage'>('repos');
 
@@ -968,17 +1002,7 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
       }
     }
     const updated = [...custom, newObj];
-    try {
-      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(updated));
-    } catch (err) {
-      console.error("Failed to save gcp_storage_custom_files due to quota limits, retrying without base64 content:", err);
-      const reduced = updated.map(item => ({ ...item, raw_base64: undefined }));
-      try {
-        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(reduced));
-      } catch (inner) {
-        console.error("Failed to save even reduced storage files:", inner);
-      }
-    }
+    saveCustomFilesToLocalStorage(updated);
 
     setStorageUploadName('');
     showToast(`✓ Archivo '${cleanName}' subido al Repositorio (soporte-pmo-storage)`);
@@ -1007,11 +1031,7 @@ export default function DevOpsPipeline({ selectedProjectId, projects = [] }: Dev
         message: `¿Está seguro de que desea eliminar el archivo '${name}' del Repositorio de Almacenamiento de forma permanente?`,
         onConfirm: () => {
           custom = custom.filter((o: any) => o.id !== id);
-          try {
-            localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
-          } catch (err) {
-            console.error("Failed to update gcp_storage_custom_files after deletion:", err);
-          }
+          saveCustomFilesToLocalStorage(custom);
           showToast(`✗ Archivo '${name}' eliminado del Repositorio de Almacenamiento`);
           loadStorageObjects();
           if (selectedObject?.id === id) {

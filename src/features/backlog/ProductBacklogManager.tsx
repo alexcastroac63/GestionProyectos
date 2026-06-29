@@ -31,6 +31,7 @@ import {
   Edit2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { useSystemStore } from '../../app/AppProviders';
 
 import { Project, User, Sprint, WorkItem } from '../../types';
 import { 
@@ -48,6 +49,16 @@ import {
 } from './domain/backlog.types';
 import { DEFAULT_DOR_ITEMS, DEFAULT_DOD_ITEMS } from './domain/backlog.constants';
 import { syncStoriesWithWorkItems } from './domain/backlogToScrum.mapper';
+
+// Module-level in-memory cache to bypass localStorage quota limits during active session
+const backlogFileInMemoryCache = new Map<string, string>();
+
+export const getEffectiveBacklogFileUrl = (att: StoryAttachment) => {
+  if (att.rawBase64) return att.rawBase64;
+  const cached = backlogFileInMemoryCache.get(att.id) || backlogFileInMemoryCache.get(att.fileName);
+  if (cached) return cached;
+  return att.fileUrl || '#';
+};
 
 interface ProductBacklogManagerProps {
   selectedProjectId: string;
@@ -74,6 +85,55 @@ export default function ProductBacklogManager({
   setWorkItems
 }: ProductBacklogManagerProps) {
   
+  const { loggedInUser } = useSystemStore();
+
+  const activeUser = loggedInUser 
+    ? `${loggedInUser.first_name} ${loggedInUser.last_name}` 
+    : 'Carlos Pérez';
+
+  const currentUserDisplayName = loggedInUser 
+    ? `${loggedInUser.first_name} ${loggedInUser.last_name} (${loggedInUser.role})` 
+    : 'Carlos Pérez (PM)';
+
+  const getTransactionDateTime = () => {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  };
+
+  const saveCustomFilesToLocalStorage = (files: any[]) => {
+    try {
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(files));
+      return;
+    } catch (e) {
+      if (files.length > 1) {
+        const pruned = files.map((item, index) => {
+          if (index === files.length - 1) {
+            return item;
+          }
+          return { ...item, raw_base64: undefined };
+        });
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(pruned));
+          return;
+        } catch (inner) {}
+      }
+
+      const allPruned = files.map(item => ({ ...item, raw_base64: undefined }));
+      try {
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned));
+        return;
+      } catch (inner) {}
+
+      if (allPruned.length > 5) {
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned.slice(-5)));
+          return;
+        } catch (inner) {}
+      }
+    }
+  };
+
   // --- Simulating Roles ---
   const [currentRole, setCurrentRole] = useState<BacklogRole>('ADMIN_PMO');
   
@@ -222,9 +282,49 @@ export default function ProductBacklogManager({
   const [editCritType, setEditCritType] = useState<AcceptanceCriterion['type']>('Funcional');
   const [editCritExpected, setEditCritExpected] = useState('');
 
-  // Save states to local storage
+  // Hydrate files from simulated storage into in-memory cache
   useEffect(() => {
-    localStorage.setItem('backlog_stories_advanced', JSON.stringify(stories));
+    try {
+      const customLocal = localStorage.getItem('gcp_storage_custom_files');
+      if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+        const custom = JSON.parse(customLocal);
+        if (Array.isArray(custom)) {
+          custom.forEach(f => {
+            if (f.raw_base64) {
+              backlogFileInMemoryCache.set(f.name, f.raw_base64);
+              if (f.id) {
+                backlogFileInMemoryCache.set(f.id, f.raw_base64);
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to hydrate backlog in-memory file cache", e);
+    }
+  }, []);
+
+  // Save states to local storage (pruning rawBase64 and large base64 URLs to stay under quota limits)
+  useEffect(() => {
+    try {
+      const prunedStories = stories.map(s => {
+        if (!s.attachments || s.attachments.length === 0) return s;
+        return {
+          ...s,
+          attachments: s.attachments.map(att => {
+            const isBase64 = att.fileUrl && att.fileUrl.startsWith('data:');
+            return {
+              ...att,
+              fileUrl: isBase64 ? '#' : att.fileUrl, // keep URLs but drop large inline base64
+              rawBase64: undefined
+            };
+          })
+        };
+      });
+      localStorage.setItem('backlog_stories_advanced', JSON.stringify(prunedStories));
+    } catch (err) {
+      console.error("Failed to save pruned stories:", err);
+    }
   }, [stories]);
 
   // Synchronize backlog stories to the Scrum Board workItems
@@ -676,8 +776,6 @@ export default function ProductBacklogManager({
       return;
     }
 
-    const activeUser = 'Carlos Pérez';
-
     const rawHU = (storyForm.huUnified || '').trim();
     let parsedRole = '';
     let parsedWant = rawHU;
@@ -916,6 +1014,121 @@ export default function ProductBacklogManager({
     addLog('Gestor Adjuntos', `Simuló la subida exitosa del archivo ${picked.name}`);
   };
 
+  const handleDownloadStoryAttachment = (att: StoryAttachment) => {
+    const isLink = att.fileUrl && (att.fileUrl.startsWith('http://') || att.fileUrl.startsWith('https://'));
+    if (isLink) {
+      window.open(att.fileUrl, '_blank');
+      addLog('Gestor Adjuntos', `Abrió enlace externo de evidencia: ${att.fileName}`);
+      return;
+    }
+
+    const downloadName = att.fileName;
+
+    const triggerDownload = (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addLog('Gestor Adjuntos', `Descargó el archivo adjunto: ${downloadName}`);
+    };
+
+    // 1. Check in-memory cache first
+    const cachedBase64 = att.rawBase64 || backlogFileInMemoryCache.get(att.id) || backlogFileInMemoryCache.get(att.fileName);
+    if (cachedBase64) {
+      try {
+        const parts = cachedBase64.split(';base64,');
+        const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+        const base64Str = parts.length > 1 ? parts[1] : parts[0];
+        const raw = window.atob(base64Str);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const exactBlob = new Blob([uInt8Array], { type: contentType });
+        triggerDownload(exactBlob);
+        return;
+      } catch (err) {
+        console.error("Failed decoding cached base64 file", err);
+      }
+    }
+
+    // 2. Try to find the file in simulated Docker storage (localstorage 'gcp_storage_custom_files')
+    try {
+      const customLocal = localStorage.getItem('gcp_storage_custom_files');
+      if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+        const custom = JSON.parse(customLocal);
+        if (Array.isArray(custom)) {
+          const found = custom.find(f => f.name === att.fileName || (f.key && f.key.endsWith(att.fileName)));
+          if (found && found.raw_base64) {
+            const parts = found.raw_base64.split(';base64,');
+            const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+            const base64Str = parts.length > 1 ? parts[1] : parts[0];
+            const raw = window.atob(base64Str);
+            const rawLength = raw.length;
+            const uInt8Array = new Uint8Array(rawLength);
+            for (let i = 0; i < rawLength; ++i) {
+              uInt8Array[i] = raw.charCodeAt(i);
+            }
+            const exactBlob = new Blob([uInt8Array], { type: contentType });
+            triggerDownload(exactBlob);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error reading from simulated Docker storage", err);
+    }
+
+    // 3. Fallback if not found or if pruned (produces clean compatible formats instead of plain text that triggers corruption)
+    let fallbackContent: any = `SOPORTE PMO VIRTUAL\n\nNombre del Archivo: ${att.fileName}\nFecha de Carga: ${att.uploadedAt}\nSubido Por: ${att.uploadedBy}\n\nDescarga exitosa desde el almacenamiento seguro de Backlog en Docker.`;
+    let fallbackMime = 'text/plain';
+
+    const lowerName = att.fileName.toLowerCase();
+    if (lowerName.endsWith('.sql')) {
+      fallbackContent = `-- ESQUEMA DE BASE DE DATOS POSTGRESQL (SOPORTE PMO)\n-- Archivo: ${att.fileName}\n-- Cargado el: ${att.uploadedAt} por ${att.uploadedBy}\n\nCREATE TABLE IF NOT EXISTS backlog_items (\n  id SERIAL PRIMARY KEY,\n  code VARCHAR(50) UNIQUE NOT NULL,\n  title VARCHAR(255) NOT NULL\n);`;
+      fallbackMime = 'text/plain';
+    } else if (lowerName.endsWith('.pdf')) {
+      fallbackContent = `%PDF-1.4\n% MOCK PDF FILE GENERATED BY PMO WORKSPACE\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << >> /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 100 >>\nstream\nBT\n/F1 12 Tf\n72 712 Td\n(APROBACION DE REQUERIMIENTOS BACKLOG: ${att.fileName}) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f\ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n310\n%%EOF`;
+      fallbackMime = 'application/pdf';
+    } else if (lowerName.endsWith('.docx')) {
+      fallbackContent = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Soporte Backlog PMO</title></head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+  <h2 style="color: #1e3a8a;">SOPORTE PMO VIRTUAL - REQUERIMIENTOS BACKLOG</h2>
+  <hr/>
+  <p><b>Archivo de Evidencia:</b> ${att.fileName}</p>
+  <p><b>Fecha de Carga:</b> ${att.uploadedAt}</p>
+  <p><b>Subido Por:</b> ${att.uploadedBy}</p>
+  <br/>
+  <p style="color: #475569;">Este documento de Backlog ha sido generado y recuperado de manera segura desde el simulador de almacenamiento del proyecto.</p>
+</body>
+</html>`;
+      fallbackMime = 'application/msword';
+    } else if (lowerName.endsWith('.xlsx')) {
+      fallbackContent = `sep=,\n"SOPORTE PMO VIRTUAL","EVIDENCIA BACKLOG"\n"Archivo:","${att.fileName}"\n"Fecha:","${att.uploadedAt}"\n"Subido Por:","${att.uploadedBy}"\n\n"Estado","Simulación segura de almacenamiento Docker exitosa"`;
+      fallbackMime = 'text/csv';
+    } else if (lowerName.endsWith('.pptx')) {
+      fallbackContent = `SOPORTE PMO VIRTUAL - PRESENTACION DE HISTORIA DE USUARIO\n\nArchivo: ${att.fileName}\nCargado por: ${att.uploadedBy}\n\nEste archivo es una simulación de PowerPoint generada localmente.`;
+      fallbackMime = 'text/plain';
+    } else if (['png', 'jpg', 'jpeg', 'gif', 'svg'].some(ext => lowerName.endsWith(ext))) {
+      fallbackContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
+  <rect width="100%" height="100%" fill="#f1f5f9"/>
+  <text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#1e3a8a" font-weight="bold">Documento Adjunto Backlog</text>
+  <text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#64748b">${att.fileName}</text>
+  <text x="50%" y="75%" dominant-baseline="middle" text-anchor="mono" font-size="10" fill="#94a3b8">${att.uploadedBy}</text>
+</svg>`;
+      fallbackMime = 'image/svg+xml';
+    }
+
+    const fallbackBlob = new Blob([fallbackContent], { type: fallbackMime });
+    triggerDownload(fallbackBlob);
+  };
+
   // Dedicated real file drag-and-drop / selector handler
   const handleFileDropOrSelect = (e: React.DragEvent<HTMLDivElement> | React.ChangeEvent<HTMLInputElement>, isCreationForm = false) => {
     if ('preventDefault' in e) e.preventDefault();
@@ -934,13 +1147,21 @@ export default function ProductBacklogManager({
     Array.from(files).forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
+        const attachmentId = `att-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        const base64Data = reader.result as string;
+
+        // Cache the file content to bypass localStorage quota limits and avoid file corruption
+        backlogFileInMemoryCache.set(attachmentId, base64Data);
+        backlogFileInMemoryCache.set(file.name, base64Data);
+
         const newAttachment: StoryAttachment = {
-          id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: attachmentId,
           fileName: file.name,
           fileType: file.type || 'application/octet-stream',
-          fileUrl: reader.result as string, // Base64 DataURL
-          uploadedBy: 'Carlos Pérez',
-          uploadedAt: new Date().toISOString().slice(0, 10)
+          fileUrl: base64Data, // Base64 DataURL
+          rawBase64: base64Data,
+          uploadedBy: activeUser,
+          uploadedAt: getTransactionDateTime()
         };
 
         // Synchronize with simulated Docker storage (S3 bucket: soporte-pmo-storage: pmo-storage-simulator)
@@ -967,19 +1188,22 @@ export default function ProductBacklogManager({
           const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
           let mime = file.type || 'application/octet-stream';
 
+          const newObjId = `sim-backlog-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          backlogFileInMemoryCache.set(newObjId, base64Data);
+
           const newObject = {
-            id: `sim-backlog-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            id: newObjId,
             key: cleanKey,
             name: file.name,
             size: sizeStr,
             url: `http://localhost:9000/soporte-pmo-storage/${cleanKey}`,
             uploadedAt: new Date().toISOString().substring(0, 10),
             type: mime,
-            raw_base64: reader.result as string
+            raw_base64: base64Data
           };
 
           custom.push(newObject);
-          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+          saveCustomFilesToLocalStorage(custom);
         } catch (err) {
           console.error("Error syncing story file with simulated storage bucket", err);
         }
@@ -1023,8 +1247,8 @@ export default function ProductBacklogManager({
       fileName: namePart,
       fileType: isImage ? 'image/png' : 'application/octet-stream',
       fileUrl: urlStr,
-      uploadedBy: 'Carlos Pérez',
-      uploadedAt: new Date().toISOString().slice(0, 10)
+      uploadedBy: activeUser,
+      uploadedAt: getTransactionDateTime()
     };
 
     if (isCreationForm) {
@@ -1077,7 +1301,7 @@ export default function ProductBacklogManager({
       };
 
       custom.push(newObject);
-      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+      saveCustomFilesToLocalStorage(custom);
     } catch (err) {
       console.error("Error writing backlog file to simulated storage", err);
     }
@@ -1161,7 +1385,7 @@ export default function ProductBacklogManager({
   // --- Toggle acceptance criterion status ---
   const toggleCritStatus = (critId: string, status: AcceptanceCriterion['status']) => {
     if (currentRole === 'CONSULTA') return;
-    const author = 'Carlos Pérez';
+    const author = activeUser;
 
     setStories(prev => prev.map(s => {
       if (s.id === selectedStoryId) {
@@ -1217,7 +1441,7 @@ export default function ProductBacklogManager({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    addLog('Carlos Pérez (PM)', 'Exportó archivo de Backlog consolidado para Excel.');
+    addLog(currentUserDisplayName, 'Exportó archivo de Backlog consolidado para Excel.');
   };
 
   const exportFichaPDF = (story: UserStory) => {
@@ -1257,7 +1481,7 @@ export default function ProductBacklogManager({
     });
 
     doc.save(`Ficha_Backlog_${story.code}.pdf`);
-    addLog('Carlos Pérez (PM)', `Exportó la ficha técnica en PDF de la historia ${story.code}`);
+    addLog(currentUserDisplayName, `Exportó la ficha técnica en PDF de la historia ${story.code}`);
   };
 
   // --- Filtering process ---
@@ -2955,8 +3179,8 @@ export default function ProductBacklogManager({
                       title="Haga clic para previsualizar o descargar"
                     >
                       <div className="flex items-center gap-3 truncate flex-1">
-                        {att.fileUrl && (att.fileUrl.startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
-                          <img src={att.fileUrl} className="w-9 h-9 object-cover rounded border shrink-0 bg-white group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
+                        {getEffectiveBacklogFileUrl(att) !== '#' && (getEffectiveBacklogFileUrl(att).startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
+                          <img src={getEffectiveBacklogFileUrl(att)} className="w-9 h-9 object-cover rounded border shrink-0 bg-white group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
                         ) : (
                           <div className="w-9 h-9 bg-teal-500/10 text-teal-600 rounded flex items-center justify-center shrink-0 border border-teal-500/10 group-hover:bg-teal-500/20 transition">
                             <Eye className="w-4 h-4 hidden group-hover:block text-teal-700 animate-pulse" />
@@ -3138,7 +3362,7 @@ export default function ProductBacklogManager({
                           onChange={(e) => {
                             const val = e.target.value as StoryType;
                             setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, type: val } : s));
-                            addLog('Carlos Pérez', `Cambió Tipo de ${selectedStory.code} a ${val}`);
+                            addLog(activeUser, `Cambió Tipo de ${selectedStory.code} a ${val}`);
                           }}
                           className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none"
                         >
@@ -3156,7 +3380,7 @@ export default function ProductBacklogManager({
                           onChange={(e) => {
                             const val = e.target.value as StoryPriority;
                             setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, priority: val } : s));
-                            addLog('Carlos Pérez', `Cambió Prioridad de ${selectedStory.code} a ${val}`);
+                            addLog(activeUser, `Cambió Prioridad de ${selectedStory.code} a ${val}`);
                           }}
                           className="bg-transparent border-none text-xs font-extrabold text-red-700 focus:outline-none cursor-pointer p-0 select-none outline-none"
                         >
@@ -3174,7 +3398,7 @@ export default function ProductBacklogManager({
                           onChange={(e) => {
                             const val = Number(e.target.value);
                             setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, storyPoints: val } : s));
-                            addLog('Carlos Pérez', `Cambió Story Points de ${selectedStory.code} a ${val} pts`);
+                            addLog(activeUser, `Cambió Story Points de ${selectedStory.code} a ${val} pts`);
                           }}
                           className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none font-mono"
                         >
@@ -3198,7 +3422,7 @@ export default function ProductBacklogManager({
                           onChange={(e) => {
                             const val = e.target.value as any;
                             setStories(prev => prev.map(s => s.id === selectedStory.id ? { ...s, moscow: val } : s));
-                            addLog('Carlos Pérez', `Cambió MoSCoW de ${selectedStory.code} a ${val}`);
+                            addLog(activeUser, `Cambió MoSCoW de ${selectedStory.code} a ${val}`);
                           }}
                           className="bg-transparent border-none text-xs text-slate-800 font-extrabold focus:outline-none cursor-pointer p-0 select-none outline-none"
                         >
@@ -3404,8 +3628,8 @@ export default function ProductBacklogManager({
                           title="Haga clic para previsualizar o descargar"
                         >
                           <div className="flex items-center gap-3 truncate flex-1">
-                            {att.fileUrl && (att.fileUrl.startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
-                              <img src={att.fileUrl} className="w-10 h-10 object-cover rounded border shrink-0 bg-slate-100 group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
+                            {getEffectiveBacklogFileUrl(att) !== '#' && (getEffectiveBacklogFileUrl(att).startsWith('data:image/') || att.fileType.startsWith('image/')) ? (
+                              <img src={getEffectiveBacklogFileUrl(att)} className="w-10 h-10 object-cover rounded border shrink-0 bg-slate-100 group-hover:scale-105 transition" referrerPolicy="no-referrer" alt={att.fileName} />
                             ) : (
                               <div className="w-10 h-10 bg-teal-500/10 text-teal-600 rounded flex items-center justify-center shrink-0 border border-teal-500/15 group-hover:bg-teal-500/20 transition">
                                 <Eye className="w-5 h-5 hidden group-hover:block text-teal-700 animate-pulse" />
@@ -3871,10 +4095,10 @@ export default function ProductBacklogManager({
 
             {/* Container */}
             <div className="p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center min-h-[300px] bg-slate-50/50">
-              {previewAttachment.fileUrl && (previewAttachment.fileUrl.startsWith('data:image/') || previewAttachment.fileType.startsWith('image/')) ? (
+              {getEffectiveBacklogFileUrl(previewAttachment) !== '#' && (getEffectiveBacklogFileUrl(previewAttachment).startsWith('data:image/') || previewAttachment.fileType.startsWith('image/')) ? (
                 <div className="relative group max-w-full">
                   <img
-                    src={previewAttachment.fileUrl}
+                    src={getEffectiveBacklogFileUrl(previewAttachment)}
                     className="max-h-[50vh] max-w-full object-contain rounded-2xl mx-auto shadow-md border border-slate-200/60 bg-white"
                     referrerPolicy="no-referrer"
                     alt={previewAttachment.fileName}
@@ -3894,7 +4118,7 @@ export default function ProductBacklogManager({
                   </div>
                   <div className="bg-white rounded-xl p-3.5 border text-left text-[11px] space-y-1.5 font-mono text-slate-600">
                     <div><span className="text-slate-400">Tipo Mime:</span> {previewAttachment.fileType}</div>
-                    <div><span className="text-slate-400">Subido por:</span> {previewAttachment.uploadedBy || 'Carlos Pérez'}</div>
+                    <div><span className="text-slate-400">Subido por:</span> {previewAttachment.uploadedBy || activeUser}</div>
                     <div><span className="text-slate-400">Fecha:</span> {previewAttachment.uploadedAt}</div>
                   </div>
                 </div>
@@ -3916,20 +4140,12 @@ export default function ProductBacklogManager({
                   >
                     Abrir Enlace Web ↗
                   </a>
-                ) : previewAttachment.fileUrl && previewAttachment.fileUrl !== '#' ? (
-                  <a
-                    href={previewAttachment.fileUrl}
-                    download={previewAttachment.fileName}
+                ) : (
+                  <button
+                    onClick={() => handleDownloadStoryAttachment(previewAttachment)}
                     className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-2xs cursor-pointer"
                   >
                     <Download className="w-4 h-4" /> Guardar en Mi Dispositivo
-                  </a>
-                ) : (
-                  <button
-                    onClick={() => alert('Este archivo es un marcador de demostración y no contiene datos adjuntos reales. Suba su propio archivo real en memoria mediante arrastrar y soltar.')}
-                    className="bg-slate-400 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 cursor-not-allowed"
-                  >
-                    <Download className="w-4 h-4" /> Descarga de demostración cerrada
                   </button>
                 )}
                 <button

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useSystemStore } from '../../app/AppProviders';
 import { Project } from '../../types';
 import { 
   Plus, 
@@ -159,6 +160,40 @@ export default function MockupCanvas({
   selectedProjectId,
   setSelectedProjectId
 }: MockupCanvasProps) {
+  const { loggedInUser } = useSystemStore();
+
+  const saveCustomFilesToLocalStorage = (files: any[]) => {
+    try {
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(files));
+      return;
+    } catch (e) {
+      if (files.length > 1) {
+        const pruned = files.map((item, index) => {
+          if (index === files.length - 1) {
+            return item;
+          }
+          return { ...item, raw_base64: undefined };
+        });
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(pruned));
+          return;
+        } catch (inner) {}
+      }
+
+      const allPruned = files.map(item => ({ ...item, raw_base64: undefined }));
+      try {
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned));
+        return;
+      } catch (inner) {}
+
+      if (allPruned.length > 5) {
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned.slice(-5)));
+          return;
+        } catch (inner) {}
+      }
+    }
+  };
   
   // Standard selected project data
   const currentProject = projects.find(p => p.id === selectedProjectId) || projects[0];
@@ -247,7 +282,19 @@ export default function MockupCanvas({
   // New mockup image form inputs
   const [newMockUrl, setNewMockUrl] = useState('');
   const [newMockNotes, setNewMockNotes] = useState('');
-  const [customAuthor, setCustomAuthor] = useState('Mateo Herrera (PO)');
+  const [customAuthor, setCustomAuthor] = useState(() => {
+    if (loggedInUser) {
+      return `${loggedInUser.first_name} ${loggedInUser.last_name} (${loggedInUser.role})`;
+    }
+    return 'Mateo Herrera (PO)';
+  });
+
+  useEffect(() => {
+    if (loggedInUser) {
+      setCustomAuthor(`${loggedInUser.first_name} ${loggedInUser.last_name} (${loggedInUser.role})`);
+    }
+  }, [loggedInUser]);
+
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'err'; text: string } | null>(null);
 
   // Drag & Canvas zoom states
@@ -553,7 +600,7 @@ export default function MockupCanvas({
         };
 
         custom.push(newObject);
-        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+        saveCustomFilesToLocalStorage(custom);
       } catch (err) {
         console.error("Error syncing mockup file build with storage bucket", err);
       }

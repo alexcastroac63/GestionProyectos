@@ -7,11 +7,14 @@ import React, { useState } from 'react';
 import { useSystemStore } from '../../app/providers/SystemProvider';
 import { TeamDirectory } from './components/TeamDirectory';
 import { UserEditorModal } from './components/UserEditorModal';
+import { ProfilePermissionsManager } from './components/ProfilePermissionsManager';
 import { settingsRepository } from '../settings/infrastructure/settingsRepository';
+import { Users2, ShieldCheck } from 'lucide-react';
 
 export const TeamDirectoryView: React.FC = () => {
   const { users, setUsers, loggedInUser, addLog, smtpPassword } = useSystemStore();
 
+  const [subTab, setSubTab] = useState<'directory' | 'permissions'>('directory');
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
@@ -25,21 +28,55 @@ export const TeamDirectoryView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn" id="tab-teams-view">
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-        <TeamDirectory
-          users={users}
-          setUsers={setUsers}
-          loggedInUser={loggedInUser}
-          addLog={addLog}
-          setIsAddUserModalOpen={setIsAddUserModalOpen}
-          setEditingUser={setEditingUser}
-          setShowEditUserModal={setShowEditUserModal}
-          setPasswordResetUser={setPasswordResetUser}
-          setShowResetEmailModal={setShowResetEmailModal}
-          setActivationUser={setActivationUser}
-          setShowActivationModal={setShowActivationModal}
-        />
+      {/* Tab Switcher Bar */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setSubTab('directory')}
+          className={`flex items-center gap-1.5 px-5 py-3 text-xs font-bold border-b-2 -mb-[2px] transition ${
+            subTab === 'directory'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Users2 className="w-4 h-4" />
+          <span>Directorio de Personal</span>
+        </button>
+        <button
+          onClick={() => setSubTab('permissions')}
+          className={`flex items-center gap-1.5 px-5 py-3 text-xs font-bold border-b-2 -mb-[2px] transition ${
+            subTab === 'permissions'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Perfiles y Accesos de Seguridad</span>
+        </button>
       </div>
+
+      {subTab === 'directory' ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+          <TeamDirectory
+            users={users}
+            setUsers={setUsers}
+            loggedInUser={loggedInUser}
+            addLog={addLog}
+            setIsAddUserModalOpen={setIsAddUserModalOpen}
+            setEditingUser={setEditingUser}
+            setShowEditUserModal={setShowEditUserModal}
+            setPasswordResetUser={setPasswordResetUser}
+            setShowResetEmailModal={setShowResetEmailModal}
+            setActivationUser={setActivationUser}
+            setShowActivationModal={setShowActivationModal}
+          />
+        </div>
+      ) : (
+        <ProfilePermissionsManager
+          users={users}
+          addLog={addLog}
+          loggedInUser={loggedInUser}
+        />
+      )}
 
       <UserEditorModal
         isAddUserModalOpen={isAddUserModalOpen}

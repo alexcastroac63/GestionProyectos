@@ -24,8 +24,22 @@ export const ProjectBudgetView: React.FC = () => {
 
   const {
     addLog,
-    setDeleteConfirmState
+    setDeleteConfirmState,
+    loggedInUser
   } = useSystemStore();
+
+  const currentUserDisplayName = React.useMemo(() => {
+    if (loggedInUser) {
+      return `${loggedInUser.first_name} ${loggedInUser.last_name} (${loggedInUser.role})`;
+    }
+    return 'Carlos Pérez (PM)';
+  }, [loggedInUser]);
+
+  const getTransactionDateTime = () => {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  };
 
   // Find active project
   const activeProject = projects.find(p => p.id === selectedProjectId);
@@ -97,7 +111,7 @@ export const ProjectBudgetView: React.FC = () => {
       };
     });
     setNewBudgetBaselineName('');
-    addLog('Carlos Pérez (PM)', `Capturó la Línea Base de presupuesto ($ USD): "${name}" para el proyecto [${activeProject.code}]`);
+    addLog(currentUserDisplayName, `Capturó la Línea Base de presupuesto ($ USD): "${name}" para el proyecto [${activeProject.code}]`);
   };
 
   const handleSetActiveBaseline = (id: string) => {
@@ -113,7 +127,7 @@ export const ProjectBudgetView: React.FC = () => {
     });
     const selectedBl = projBaselineData.list.find(b => b.id === id);
     if (selectedBl) {
-      addLog('Carlos Pérez (PM)', `Activó la Línea Base de presupuesto "${selectedBl.name}" para el proyecto [${activeProject.code}]`);
+      addLog(currentUserDisplayName, `Activó la Línea Base de presupuesto "${selectedBl.name}" para el proyecto [${activeProject.code}]`);
     }
   };
 
@@ -128,7 +142,7 @@ export const ProjectBudgetView: React.FC = () => {
         }
       };
     });
-    addLog('Carlos Pérez (PM)', `Desactivó la Línea Base de presupuesto activa para el proyecto [${activeProject.code}]`);
+    addLog(currentUserDisplayName, `Desactivó la Línea Base de presupuesto activa para el proyecto [${activeProject.code}]`);
   };
 
   const handleDeleteBaseline = (id: string) => {
@@ -149,7 +163,7 @@ export const ProjectBudgetView: React.FC = () => {
       };
     });
     if (baselineToDelete) {
-      addLog('Carlos Pérez (PM)', `Eliminó la Línea Base de presupuesto "${baselineToDelete.name}" de la historia del proyecto [${activeProject.code}]`);
+      addLog(currentUserDisplayName, `Eliminó la Línea Base de presupuesto "${baselineToDelete.name}" de la historia del proyecto [${activeProject.code}]`);
     }
   };
 
@@ -199,7 +213,7 @@ export const ProjectBudgetView: React.FC = () => {
       storage_url: cloudFileExternalUrl ? cloudFileExternalUrl : (cloudFileUploadedName ? `http://localhost:9000/soporte-pmo-storage/uploads/${docNum}_${cloudFileUploadedName}` : undefined),
       file_name: cloudFileUploadedName || undefined,
       file_size: cloudFileUploadedSize || undefined,
-      uploaded_at: cloudFileUploadedName ? new Date().toISOString().replace('T', ' ').substring(0, 16) : undefined,
+      uploaded_at: cloudFileUploadedName ? getTransactionDateTime() : undefined,
       raw_base64: cloudFileBase64 || undefined
     };
     
@@ -218,7 +232,7 @@ export const ProjectBudgetView: React.FC = () => {
     setCostAttachmentMode('file');
     setIsRegisterCostModalOpen(false);
     
-    addLog('Carlos Pérez (PM)', `Registró documento ${docNum} (${newCostType}): "${newCostDesc}" por $${Number(newCostAmount)} USD (Comprobante cargado con éxito en el almacenamiento seguro)`);
+    addLog(currentUserDisplayName, `Registró documento ${docNum} (${newCostType}): "${newCostDesc}" por $${Number(newCostAmount)} USD (Comprobante cargado con éxito en el almacenamiento seguro)`);
   };
 
   const handleDeleteCost = (id: string) => {

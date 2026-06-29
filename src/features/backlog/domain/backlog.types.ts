@@ -82,6 +82,7 @@ export interface StoryAttachment {
   uploadedBy: string;
   uploadedAt: string;
   criterionId?: string;
+  rawBase64?: string;
 }
 
 export interface UserStoryHistoryEntry {

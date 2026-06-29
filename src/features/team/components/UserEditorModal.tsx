@@ -2,6 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { X, Key, Mail, UserPlus, Edit2, Check, AlertTriangle } from 'lucide-react';
 import { User } from '../../../types';
 import { useSystemStore } from '../../../app/providers/SystemProvider';
+import { settingsRepository } from '../../settings/infrastructure/settingsRepository';
+
+const getProfileNames = (): { id: string; name: string }[] => {
+  const saved = localStorage.getItem('gcp_profile_permissions');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((p: any) => ({ id: p.id, name: p.name }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return [
+    { id: 'Administrador', name: 'Administrador' },
+    { id: 'Director', name: 'Director / Ejecutiva' },
+    { id: 'Project Manager', name: 'Project Manager' },
+    { id: 'Scrum Master', name: 'Scrum Master' },
+    { id: 'Product Owner', name: 'Product Owner' },
+    { id: 'Líder Técnico', name: 'Líder Técnico' },
+    { id: 'Ingeniero de Software', name: 'Ingeniero de Software' },
+    { id: 'QA Lead', name: 'QA Lead' },
+    { id: 'Consultor', name: 'Consultor / Auditor' },
+    { id: 'Sponsor / Directora', name: 'Sponsor / Directora' },
+    { id: 'Desarrollador Backend', name: 'Desarrollador Backend' },
+    { id: 'Desarrollador Frontend', name: 'Desarrollador Frontend' },
+    { id: 'DBA / Arquitecto de Datos', name: 'DBA / Arquitecto de Datos' },
+    { id: 'DevOps / Infraestructura Cloud', name: 'DevOps / Infraestructura Cloud' },
+    { id: 'UI/UX Designer', name: 'UI/UX Designer' },
+  ];
+};
+
 
 interface UserEditorModalProps {
   isAddUserModalOpen: boolean;
@@ -56,7 +89,7 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState('Scrum Master');
+  const [newRole, setNewRole] = useState('Administrador');
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
   // Reset email simulated modal states
@@ -127,51 +160,59 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
         `Activó al usuario ${activationUser.first_name} ${activationUser.last_name} (${activationUser.email}) con clave temporal y cambio obligatorio programado.`
       );
 
-      // 4. Send real SMTP email if configured
-      if (smtpHost.trim() && smtpPort.trim() && smtpAccount.trim() && smtpPassword.trim()) {
-        try {
-          const mailRes = await fetch('/api/send-activation', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              host: smtpHost.trim(),
-              port: smtpPort.trim(),
-              username: smtpAccount.trim(),
-              password: smtpPassword.trim(),
-              email: activationUser.email,
-              name: `${activationUser.first_name} ${activationUser.last_name || ''}`.trim(),
-              role: activationUser.role,
-              tempPassword: activationTempPassword,
-            }),
-          });
+      // 4. Send real SMTP email if configured or try server fallback
+      const freshSmtp = settingsRepository.loadSmtpConfig();
+      const currentHost = (freshSmtp.host || '').trim();
+      const currentPort = (freshSmtp.port || '').trim();
+      const currentAccount = (freshSmtp.account || '').trim();
+      const currentPassword = (freshSmtp.password || smtpPassword || '').trim();
 
-          const mailData = await mailRes.json();
-          if (!mailRes.ok) {
+      try {
+        const mailRes = await fetch('/api/send-activation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            host: currentHost,
+            port: currentPort,
+            username: currentAccount,
+            password: currentPassword,
+            email: activationUser.email,
+            name: `${activationUser.first_name} ${activationUser.last_name || ''}`.trim(),
+            role: activationUser.role,
+            tempPassword: activationTempPassword,
+          }),
+        });
+
+        const mailData = await mailRes.json();
+        if (mailRes.ok && mailData.success) {
+          addLog(
+            'Sistema Autenticación',
+            `Se envió un correo de activación real con clave temporal a ${activationUser.email} desde ${currentAccount || 'Servidor SMTP por Defecto'}`
+          );
+        } else {
+          // If SMTP is not configured on the server, treat it as simulation mode fallback.
+          const notConfigured = mailData.message && mailData.message.includes('no se halla configurado');
+          if (notConfigured) {
+            addLog(
+              'Sistema Autenticación',
+              `Se activó la cuenta de ${activationUser.email} (modo simulación, sin servidor SMTP configurado)`
+            );
+          } else {
             console.warn('Real SMTP activation send failed:', mailData.message);
             addLog(
               'Fallo de Envío SMTP',
               `Se intentó enviar el correo real de activación a ${activationUser.email} pero falló: ${mailData.message}`
             );
             alert(`La cuenta se activó localmente, pero el envío de correo falló: ${mailData.message}. Deberá comunicarle la clave temporal manualmente.`);
-          } else {
-            addLog(
-              'Sistema Autenticación',
-              `Se envió un correo de activación real con clave temporal a ${activationUser.email} desde ${smtpAccount}`
-            );
           }
-        } catch (mailErr: any) {
-          console.warn('Real SMTP activation send failed with exception:', mailErr.message);
-          addLog(
-            'Fallo de Envío SMTP',
-            `Error de conexión al enviar el correo real de activación a ${activationUser.email}: ${mailErr.message}`
-          );
         }
-      } else {
+      } catch (mailErr: any) {
+        console.warn('Real SMTP activation send failed with exception:', mailErr.message);
         addLog(
-          'Sistema Autenticación',
-          `Se activó la cuenta de ${activationUser.email} (modo simulación, sin servidor SMTP configurado)`
+          'Fallo de Envío SMTP',
+          `Error de conexión al enviar el correo real de activación a ${activationUser.email}: ${mailErr.message}`
         );
       }
 
@@ -191,29 +232,39 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
       setIsResetSuccess(false);
       setSimulatedMailSendSuccess(false);
 
-      if (smtpHost.trim() && smtpPort.trim() && smtpAccount.trim() && smtpPassword.trim()) {
-        (async () => {
-          try {
-            const res = await fetch('/api/send-recovery', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                host: smtpHost.trim(),
-                port: smtpPort.trim(),
-                username: smtpAccount.trim(),
-                password: smtpPassword.trim(),
-                emailToFind: passwordResetUser.email,
-              }),
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
+      const freshSmtp = settingsRepository.loadSmtpConfig();
+      const currentHost = (freshSmtp.host || '').trim();
+      const currentPort = (freshSmtp.port || '').trim();
+      const currentAccount = (freshSmtp.account || '').trim();
+      const currentPassword = (freshSmtp.password || smtpPassword || '').trim();
+
+      (async () => {
+        try {
+          const res = await fetch('/api/send-recovery', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              host: currentHost,
+              port: currentPort,
+              username: currentAccount,
+              password: currentPassword,
+              emailToFind: passwordResetUser.email,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setSimulatedMailSendSuccess(true);
+            addLog(
+              'Sistema Autenticación',
+              `Se envió un correo de recuperación real de contraseña a ${passwordResetUser.email} desde ${currentAccount || 'Servidor SMTP por Defecto'}`
+            );
+          } else {
+            const notConfigured = data.message && data.message.includes('no se halla configurado');
+            if (notConfigured) {
               setSimulatedMailSendSuccess(true);
-              addLog(
-                'Sistema Autenticación',
-                `Se envió un correo de recuperación real de contraseña a ${passwordResetUser.email} desde ${smtpAccount}`
-              );
+              addLog('Sistema Autenticación', `Se disparó email simulado de restablecimiento de contraseña a ${passwordResetUser.email}`);
             } else {
               setSimulatedMailSendSuccess(true); // show simulator anyway
               console.warn('Real SMTP recovery send failed', data.message);
@@ -222,19 +273,12 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
                 `Se intentó enviar el correo real a ${passwordResetUser.email} pero falló: ${data.message}`
               );
             }
-          } catch (err: any) {
-            setSimulatedMailSendSuccess(true);
-            console.warn('Real SMTP recovery send failed with exception', err.message);
           }
-        })();
-      } else {
-        // Simulate immediate sending indicator
-        const timer = setTimeout(() => {
+        } catch (err: any) {
           setSimulatedMailSendSuccess(true);
-          addLog('Sistema Autenticación', `Se disparó email simulado de restablecimiento de contraseña a ${passwordResetUser.email}`);
-        }, 1000);
-        return () => clearTimeout(timer);
-      }
+          console.warn('Real SMTP recovery send failed with exception', err.message);
+        }
+      })();
     }
   }, [showResetEmailModal, passwordResetUser]);
 
@@ -257,7 +301,7 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
     setNewFirstName('');
     setNewLastName('');
     setNewEmail('');
-    setNewRole('Scrum Master');
+    setNewRole('Administrador');
     setNewStatus('ACTIVE');
     setIsAddUserModalOpen(false);
     addLog('Director/Sponsor', `Agregó al usuario ${u.first_name} ${u.last_name} (${u.role}) al directorio corporativo`);
@@ -379,17 +423,9 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
                   onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none cursor-pointer"
                 >
-                  <option value="Sponsor / Directora">Sponsor / Directora</option>
-                  <option value="Project Manager">Project Manager</option>
-                  <option value="Scrum Master">Scrum Master</option>
-                  <option value="Product Owner">Product Owner</option>
-                  <option value="QA Lead">QA Lead</option>
-                  <option value="Desarrollador Backend">Desarrollador Backend</option>
-                  <option value="Desarrollador Frontend">Desarrollador Frontend</option>
-                  <option value="DBA / Arquitecto de Datos">DBA / Arquitecto de Datos</option>
-                  <option value="DevOps / Infraestructura Cloud">DevOps / Infraestructura Cloud</option>
-                  <option value="UI/UX Designer">UI/UX Designer</option>
-                  <option value="Ingeniero de Software">Ingeniero de Software</option>
+                  {getProfileNames().map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               </div>
 
@@ -501,17 +537,9 @@ export const UserEditorModal: React.FC<UserEditorModalProps> = ({
                   onChange={(e) => setNewRole(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg text-xs font-semibold p-2.5 focus:border-indigo-500 focus:bg-white outline-none cursor-pointer"
                 >
-                  <option value="Sponsor / Directora">Sponsor / Directora</option>
-                  <option value="Project Manager">Project Manager</option>
-                  <option value="Scrum Master">Scrum Master</option>
-                  <option value="Product Owner">Product Owner</option>
-                  <option value="QA Lead">QA Lead</option>
-                  <option value="Desarrollador Backend">Desarrollador Backend</option>
-                  <option value="Desarrollador Frontend">Desarrollador Frontend</option>
-                  <option value="DBA / Arquitecto de Datos">DBA / Arquitecto de Datos</option>
-                  <option value="DevOps / Infraestructura Cloud">DevOps / Infraestructura Cloud</option>
-                  <option value="UI/UX Designer">UI/UX Designer</option>
-                  <option value="Ingeniero de Software">Ingeniero de Software</option>
+                  {getProfileNames().map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               </div>
 

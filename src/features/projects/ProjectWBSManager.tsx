@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { useSystemStore } from '../../app/AppProviders';
 
 // --- Types ---
 export interface WBSItem {
@@ -52,6 +53,7 @@ export interface WBSItem {
   priority: 'ALTA' | 'MEDIA' | 'BAJA';
   status: 'PENDIENTE' | 'EN_CURSO' | 'COMPLETADA' | 'BLOQUEADO';
   dependsOnId?: string; // Dependency task ID
+  dependsOnIds?: string[]; // Multiple dependency task IDs
   comments: WBSComment[];
   evidenceFiles: WBSEvidence[];
   sprintId?: string; // Associated Sprint
@@ -73,7 +75,12 @@ export interface WBSEvidence {
   uploadedAt: string;
   uploadedBy: string;
   externalUrl?: string;
+  rawBase64?: string;
 }
+
+// Module-level in-memory cache to bypass localStorage quota limits during active session
+const wbsFileInMemoryCache = new Map<string, string>();
+
 
 export interface WBSBaseline {
   id: string;
@@ -536,6 +543,54 @@ export const getInitialWBSItems = (projectId: string): WBSItem[] => {
 };
 
 export default function ProjectWBSManager({ projectId, users, addLog, isDevRole = false, sprints = [] }: ProjectWBSManagerProps) {
+  const { loggedInUser } = useSystemStore();
+
+  const currentUserDisplayName = useMemo(() => {
+    if (loggedInUser) {
+      return `${loggedInUser.first_name} ${loggedInUser.last_name} (${loggedInUser.role})`;
+    }
+    return 'Carlos Pérez (PM)';
+  }, [loggedInUser]);
+
+  const getTransactionDateTime = () => {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  };
+
+  const saveCustomFilesToLocalStorage = (files: any[]) => {
+    try {
+      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(files));
+      return;
+    } catch (e) {
+      if (files.length > 1) {
+        const pruned = files.map((item, index) => {
+          if (index === files.length - 1) {
+            return item;
+          }
+          return { ...item, raw_base64: undefined };
+        });
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(pruned));
+          return;
+        } catch (inner) {}
+      }
+
+      const allPruned = files.map(item => ({ ...item, raw_base64: undefined }));
+      try {
+        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned));
+        return;
+      } catch (inner) {}
+
+      if (allPruned.length > 5) {
+        try {
+          localStorage.setItem('gcp_storage_custom_files', JSON.stringify(allPruned.slice(-5)));
+          return;
+        } catch (inner) {}
+      }
+    }
+  };
+
   // --- States ---
   const [items, setItems] = useState<WBSItem[]>(() => {
     const key = `wbs_tasks_${projectId}`;
@@ -642,6 +697,9 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
   const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
   const [draftSubtask, setDraftSubtask] = useState<WBSItem | null>(null);
 
+  const [sidebarDepSearch, setSidebarDepSearch] = useState('');
+  const [modalDepSearch, setModalDepSearch] = useState('');
+
   // --- Calculate WBS Codes (hierarchical outline numbers / correlativos) ---
   const wbsNumbers: Record<string, string> = useMemo(() => {
     const result: Record<string, string> = {};
@@ -692,10 +750,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     if (!draftSubtask) return;
     setDraftSubtask(prev => {
       if (!prev) return null;
-      return {
+      const updated = {
         ...prev,
         [field]: value
       };
+      if (field === 'dependsOnIds') {
+        const arr = Array.isArray(value) ? value : [];
+        updated.dependsOnId = arr.length > 0 ? arr[0] : undefined;
+      }
+      return updated;
     });
   };
 
@@ -750,7 +813,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     });
 
     if (addLog) {
-      addLog('Carlos Pérez (PM)', `Modificó subtarea en Ventana Emergente: ${draftSubtask.name}`);
+      addLog(currentUserDisplayName, `Modificó subtarea en Ventana Emergente: ${draftSubtask.name}`);
     }
 
     // Close the modal
@@ -823,7 +886,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return handleRecalculateProgress(list);
     });
 
-    addLog('Carlos Pérez (PM)', `Reordenó y colocó el requerimiento por arrastre.`);
+    addLog(currentUserDisplayName, `Reordenó y colocó el requerimiento por arrastre.`);
   };
 
   const handleDragOverRow = (e: React.DragEvent<HTMLTableRowElement>, targetItem: WBSItem) => {
@@ -876,7 +939,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       });
       return handleRecalculateProgress(list);
     });
-    addLog('Carlos Pérez (PM)', `Convertió el tipo de elemento del cronograma a ${newLevel}.`);
+    addLog(currentUserDisplayName, `Convertió el tipo de elemento del cronograma a ${newLevel}.`);
   };
 
   // Indent and Outdent structural buttons/menu
@@ -885,6 +948,16 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       alert('Modificación de WBS bloqueada en base a privilegios de Desarrollo.');
       return;
     }
+
+    let prevIdToExpand: string | null = null;
+    const idx = items.findIndex(it => it.id === id);
+    if (idx !== -1 && action === 'indent' && idx > 0) {
+      const prevItem = items[idx - 1];
+      if (prevItem.id !== id && !isDescendant(id, prevItem.id)) {
+        prevIdToExpand = prevItem.id;
+      }
+    }
+
     setItems(prev => {
       const idx = prev.findIndex(it => it.id === id);
       if (idx === -1) return prev;
@@ -901,7 +974,6 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             else if (prevItem.level === 'TAREA') item.level = 'SUBTAREA';
             else if (prevItem.level === 'SUBTAREA' || prevItem.level === 'SUBSUBTAREA') item.level = 'SUBSUBTAREA';
             list[idx] = item;
-            setExpandedItemIds(ex => ({ ...ex, [prevItem.id]: true }));
           }
         }
       } else {
@@ -927,12 +999,30 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return handleRecalculateProgress(list);
     });
     
-    addLog('Carlos Pérez (PM)', `Ajustó el nivel jerárquico del elemento con acción: ${action}.`);
+    if (prevIdToExpand) {
+      setExpandedItemIds(ex => ({ ...ex, [prevIdToExpand!]: true }));
+    }
+    
+    addLog(currentUserDisplayName, `Ajustó el nivel jerárquico del elemento con acción: ${action}.`);
   };
 
-  // Save WBS items state to localStorage whenever it changes
+  // Save WBS items state to localStorage whenever it changes (pruning rawBase64 to keep size within quota)
   useEffect(() => {
-    localStorage.setItem(`wbs_tasks_${projectId}`, JSON.stringify(items));
+    try {
+      const prunedItems = items.map(it => {
+        if (!it.evidenceFiles || it.evidenceFiles.length === 0) return it;
+        return {
+          ...it,
+          evidenceFiles: it.evidenceFiles.map(ev => ({
+            ...ev,
+            rawBase64: undefined
+          }))
+        };
+      });
+      localStorage.setItem(`wbs_tasks_${projectId}`, JSON.stringify(prunedItems));
+    } catch (err) {
+      console.error("Failed to save pruned WBS tasks:", err);
+    }
   }, [items, projectId]);
 
   // Load and recalculate items when projectId changes or on initial mount to align subtask dates
@@ -1225,43 +1315,72 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       return;
     }
 
+    const targetItem = items.find(it => it.id === id);
+    if (!targetItem) return;
+
     // Validation: End date (fecha fin) must be greater than or equal to start date (fecha de inicio)
     if (field === 'startDate' || field === 'endDate') {
-      const item = items.find(it => it.id === id);
-      if (item) {
-        const newStart = field === 'startDate' ? value : item.startDate;
-        const newEnd = field === 'endDate' ? value : item.endDate;
+      if (targetItem.sprintId) {
+        alert('Error: Las fechas de ejecución de este elemento están bloqueadas porque se encuentran vinculadas al Sprint asociado.');
+        return; // Block the update
+      }
+      const newStart = field === 'startDate' ? value : targetItem.startDate;
+      const newEnd = field === 'endDate' ? value : targetItem.endDate;
 
-        if (newStart && newEnd) {
-          const parseDateString = (str: string): Date => {
-            if (!str) return new Date();
-            let parts = str.split('-');
-            if (parts.length === 3) {
-              if (parts[0].length === 4) {
-                return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-              } else if (parts[2].length === 4) {
-                return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-              }
+      if (newStart && newEnd) {
+        const parseDateString = (str: string): Date => {
+          if (!str) return new Date();
+          let parts = str.split('-');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            } else if (parts[2].length === 4) {
+              return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
             }
-            parts = str.split('/');
-            if (parts.length === 3) {
-              if (parts[0].length === 4) {
-                return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-              } else if (parts[2].length === 4) {
-                return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-              }
+          }
+          parts = str.split('/');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            } else if (parts[2].length === 4) {
+              return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
             }
-            return new Date(str);
-          };
+          }
+          return new Date(str);
+        };
 
-          const sTime = parseDateString(newStart).getTime();
-          const eTime = parseDateString(newEnd).getTime();
+        const sTime = parseDateString(newStart).getTime();
+        const eTime = parseDateString(newEnd).getTime();
 
-          if (!isNaN(sTime) && !isNaN(eTime) && eTime < sTime) {
-            alert('Error: La fecha de entrega (fecha fin) debe ser mayor o igual a la fecha de inicio.');
-            return; // Block the update
+        if (!isNaN(sTime) && !isNaN(eTime) && eTime < sTime) {
+          alert('Error: La fecha de entrega (fecha fin) debe ser mayor o igual a la fecha de inicio.');
+          return; // Block the update
+        }
+      }
+    }
+
+    // Safe outer logging before state update
+    if (field === 'sprintId') {
+      if (value) {
+        const sprint = projectSprints.find(s => s.id === value);
+        if (sprint) {
+          if (addLog) {
+            addLog(currentUserDisplayName, `Vinculó actividad "${targetItem.name}" al Sprint "${sprint.name}". Fechas sincronizadas a ${sprint.start_date} al ${sprint.end_date}.`);
           }
         }
+      } else {
+        if (addLog) {
+          addLog(currentUserDisplayName, `Desvinculó la actividad "${targetItem.name}" del Sprint.`);
+        }
+      }
+    } else if (field === 'dependsOnIds') {
+      const arr = Array.isArray(value) ? value : [];
+      if (addLog) {
+        const depNames = arr.map(depId => {
+          const found = items.find(p => p.id === depId);
+          return found ? found.name : depId;
+        }).join(', ');
+        addLog(currentUserDisplayName, `Actualizó pre-requisitos de dependencia para "${targetItem.name}": [${depNames || 'Ninguno'}].`);
       }
     }
 
@@ -1288,6 +1407,18 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
             } else if (val === 100) {
               updatedItem.status = 'COMPLETADA';
             }
+          } else if (field === 'sprintId') {
+            if (value) {
+              const sprint = projectSprints.find(s => s.id === value);
+              if (sprint) {
+                updatedItem.startDate = sprint.start_date;
+                updatedItem.endDate = sprint.end_date;
+              }
+            }
+          } else if (field === 'dependsOnIds') {
+            const arr = Array.isArray(value) ? value : [];
+            updatedItem.dependsOnIds = arr;
+            updatedItem.dependsOnId = arr.length > 0 ? arr[0] : undefined;
           }
           return updatedItem;
         }
@@ -1333,14 +1464,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
     setItems(prev => {
       const updated = [...prev, newItem];
-      // Expand the parent automatically
-      if (parentId) {
-        setExpandedItemIds(ex => ({ ...ex, [parentId]: true }));
-      }
       return handleRecalculateProgress(updated);
     });
 
-    addLog('Carlos Pérez (PM)', `Añadió un elemento de nivel ${level} al plan de trabajo.`);
+    // Expand the parent automatically outside of setItems updater
+    if (parentId) {
+      setExpandedItemIds(ex => ({ ...ex, [parentId]: true }));
+    }
+
+    addLog(currentUserDisplayName, `Añadió un elemento de nivel ${level} al plan de trabajo.`);
     setActiveItemId(newItem.id); // open detail drawer to immediately edit it
   };
 
@@ -1381,7 +1513,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           setActiveItemId(null);
         }
 
-        addLog('Carlos Pérez (PM)', `Eliminó elemento del gestor de tareas junto a sus sub-elementos filiales (${targetIds.length} eliminados).`);
+        addLog(currentUserDisplayName, `Eliminó elemento del gestor de tareas junto a sus sub-elementos filiales (${targetIds.length} eliminados).`);
       }
     });
   };
@@ -1422,8 +1554,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     }
     const newBaseline: WBSBaseline = {
       id: `bs-${Date.now()}`,
-      savedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      savedBy: 'Carlos Pérez (PM)',
+      savedAt: getTransactionDateTime(),
+      savedBy: currentUserDisplayName,
       itemsSnapshot: items.map(it => ({
         id: it.id,
         startDate: it.startDate,
@@ -1434,7 +1566,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
     setBaselines(prev => [newBaseline, ...prev]);
     setSelectedBaselineId(newBaseline.id);
-    addLog('Carlos Pérez (PM)', `Guardó línea base de planificación "${newBaseline.savedAt}" para auditoría.`);
+    addLog(currentUserDisplayName, `Guardó línea base de planificación "${newBaseline.savedAt}" para auditoría.`);
   };
 
   // Delete baseline
@@ -1592,11 +1724,11 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
     const newComment: WBSComment = {
       id: `c-gen-${Date.now()}`,
-      userId: 'u-2',
-      userName: 'Carlos Pérez',
-      userRole: 'Analista DevOps / PM',
+      userId: loggedInUser?.id || 'u-2',
+      userName: loggedInUser ? `${loggedInUser.first_name} ${loggedInUser.last_name}` : 'Carlos Pérez',
+      userRole: loggedInUser ? loggedInUser.role : 'Analista DevOps / PM',
       text: newCommentText,
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16)
+      timestamp: getTransactionDateTime()
     };
 
     setItems(prev => {
@@ -1612,7 +1744,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     });
 
     setNewCommentText('');
-    addLog('Carlos Pérez (PM)', `Agregó un comentario técnico en la tarea activa.`);
+    addLog(currentUserDisplayName, `Agregó un comentario técnico en la tarea activa.`);
   };
 
   // --- Simulated File Upload Handlers ---
@@ -1662,8 +1794,8 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       id: `ev-gen-${Date.now()}`,
       fileName: namePart,
       fileSize: 'Enlace Web',
-      uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      uploadedBy: 'Carlos Pérez (PM)',
+      uploadedAt: getTransactionDateTime(),
+      uploadedBy: currentUserDisplayName,
       externalUrl: urlStr
     };
 
@@ -1701,17 +1833,17 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         name: namePart,
         size: 'Enlace Web',
         url: urlStr,
-        uploadedAt: new Date().toISOString().substring(0, 10),
+        uploadedAt: getTransactionDateTime().substring(0, 10),
         type: 'text/html'
       };
 
       custom.push(newObject);
-      localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+      saveCustomFilesToLocalStorage(custom);
     } catch (err) {
       console.error("Error writing WBS evidence link to simulated storage", err);
     }
 
-    addLog('Carlos Pérez (PM)', `Vinculó el enlace de evidencia "${namePart}" de forma segura en el repositorio virtual S3.`);
+    addLog(currentUserDisplayName, `Vinculó el enlace de evidencia "${namePart}" de forma segura en el repositorio virtual S3.`);
     setWbsSupportUrl('');
     setWbsAttachmentMode('file');
   };
@@ -1731,9 +1863,14 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         id: `ev-gen-${Date.now()}`,
         fileName: file.name,
         fileSize: sizeStr,
-        uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        uploadedBy: 'Carlos Pérez (PM)'
+        uploadedAt: getTransactionDateTime(),
+        uploadedBy: currentUserDisplayName,
+        rawBase64: base64Data
       };
+
+      // Store in memory cache to bypass storage quota limits and avoid file corruption
+      wbsFileInMemoryCache.set(newEvidence.id, base64Data);
+      wbsFileInMemoryCache.set(file.name, base64Data);
 
       setItems(prev => {
         return prev.map(it => {
@@ -1776,21 +1913,138 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           name: file.name,
           size: sizeStr,
           url: `http://localhost:9000/soporte-pmo-storage/${cleanKey}`,
-          uploadedAt: new Date().toISOString().substring(0, 10),
+          uploadedAt: getTransactionDateTime().substring(0, 10),
           type: mime,
           raw_base64: base64Data
         };
 
         custom.push(newObject);
-        localStorage.setItem('gcp_storage_custom_files', JSON.stringify(custom));
+        saveCustomFilesToLocalStorage(custom);
       } catch (err) {
         console.error("Error writing WBS evidence file to simulated storage bucket", err);
       }
 
-      addLog('Carlos Pérez (PM)', `Subió archivo de evidencia "${file.name}" de forma segura al repositorio 'soporte-pmo-storage' en Docker.`);
+      addLog(currentUserDisplayName, `Subió archivo de evidencia "${file.name}" de forma segura al repositorio 'soporte-pmo-storage' en Docker.`);
     };
 
     reader.readAsDataURL(file);
+  };
+
+  const handleDownloadEvidence = (ev: WBSEvidence) => {
+    const isLink = ev.externalUrl || ev.fileName.startsWith('http://') || ev.fileName.startsWith('https://');
+    if (isLink) {
+      window.open(ev.externalUrl || ev.fileName, '_blank');
+      addLog(currentUserDisplayName, `Abrió enlace externo de evidencia: ${ev.fileName}`);
+      return;
+    }
+
+    const downloadName = ev.fileName;
+
+    const triggerDownload = (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addLog(currentUserDisplayName, `Descargó el archivo de evidencia: ${downloadName}`);
+    };
+
+    // 1. Check in-memory caches first (which bypass localStorage quota limits completely)
+    const cachedBase64 = ev.rawBase64 || wbsFileInMemoryCache.get(ev.id) || wbsFileInMemoryCache.get(ev.fileName);
+    if (cachedBase64) {
+      try {
+        const parts = cachedBase64.split(';base64,');
+        const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+        const base64Str = parts.length > 1 ? parts[1] : parts[0];
+        const raw = window.atob(base64Str);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const exactBlob = new Blob([uInt8Array], { type: contentType });
+        triggerDownload(exactBlob);
+        return;
+      } catch (err) {
+        console.error("Failed decoding cached base64 file", err);
+      }
+    }
+
+    // 2. Try to find the file in simulated Docker storage (localstorage 'gcp_storage_custom_files')
+    try {
+      const customLocal = localStorage.getItem('gcp_storage_custom_files');
+      if (customLocal && customLocal !== "undefined" && customLocal !== "null") {
+        const custom = JSON.parse(customLocal);
+        if (Array.isArray(custom)) {
+          // Find by name or key
+          const found = custom.find(f => f.name === ev.fileName || (f.key && f.key.endsWith(ev.fileName)));
+          if (found && found.raw_base64) {
+            const parts = found.raw_base64.split(';base64,');
+            const contentType = parts.length > 1 ? parts[0].split(':')[1] : 'application/octet-stream';
+            const base64Str = parts.length > 1 ? parts[1] : parts[0];
+            const raw = window.atob(base64Str);
+            const rawLength = raw.length;
+            const uInt8Array = new Uint8Array(rawLength);
+            for (let i = 0; i < rawLength; ++i) {
+              uInt8Array[i] = raw.charCodeAt(i);
+            }
+            const exactBlob = new Blob([uInt8Array], { type: contentType });
+            triggerDownload(exactBlob);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error reading from simulated Docker storage", err);
+    }
+
+    // 3. Fallback if not found in custom files or if pruned (produces clean compatible formats instead of plain text that triggers corruption)
+    let fallbackContent: any = `SOPORTE PMO VIRTUAL\n\nNombre del Archivo: ${ev.fileName}\nTamaño: ${ev.fileSize}\nFecha de Carga: ${ev.uploadedAt}\nSubido Por: ${ev.uploadedBy}\n\nDescarga exitosa desde el almacenamiento seguro simulado en Docker.`;
+    let fallbackMime = 'text/plain';
+
+    const lowerName = ev.fileName.toLowerCase();
+    if (lowerName.endsWith('.sql')) {
+      fallbackContent = `-- ESQUEMA DE BASE DE DATOS POSTGRESQL (SOPORTE PMO)\n-- Archivo: ${ev.fileName}\n-- Cargado el: ${ev.uploadedAt} por ${ev.uploadedBy}\n\nCREATE TABLE IF NOT EXISTS projects (\n  id SERIAL PRIMARY KEY,\n  code VARCHAR(50) UNIQUE NOT NULL,\n  name VARCHAR(255) NOT NULL\n);`;
+      fallbackMime = 'text/plain';
+    } else if (lowerName.endsWith('.pdf')) {
+      fallbackContent = `%PDF-1.4\n% MOCK PDF FILE GENERATED BY PMO WORKSPACE\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << >> /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 100 >>\nstream\nBT\n/F1 12 Tf\n72 712 Td\n(APROBACION DE ALCANCE: ${ev.fileName}) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f\ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n310\n%%EOF`;
+      fallbackMime = 'application/pdf';
+    } else if (lowerName.endsWith('.docx')) {
+      fallbackContent = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Soporte WBS PMO</title></head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+  <h2 style="color: #1e3a8a;">SOPORTE PMO VIRTUAL - EVIDENCIA WBS</h2>
+  <hr/>
+  <p><b>Archivo de Evidencia:</b> ${ev.fileName}</p>
+  <p><b>Tamaño:</b> ${ev.fileSize}</p>
+  <p><b>Fecha de Carga:</b> ${ev.uploadedAt}</p>
+  <p><b>Subido Por:</b> ${ev.uploadedBy}</p>
+  <br/>
+  <p style="color: #475569;">Este documento ha sido generado y recuperado de manera segura desde el simulador de almacenamiento del proyecto.</p>
+</body>
+</html>`;
+      fallbackMime = 'application/msword';
+    } else if (lowerName.endsWith('.xlsx')) {
+      fallbackContent = `sep=,\n"SOPORTE PMO VIRTUAL","EVIDENCIA WBS"\n"Archivo:","${ev.fileName}"\n"Tamaño:","${ev.fileSize}"\n"Fecha:","${ev.uploadedAt}"\n"Subido Por:","${ev.uploadedBy}"\n\n"Estado","Simulación segura de almacenamiento Docker exitosa"`;
+      fallbackMime = 'text/csv';
+    } else if (lowerName.endsWith('.pptx')) {
+      fallbackContent = `SOPORTE PMO VIRTUAL - PRESENTACION\n\nArchivo: ${ev.fileName}\nTamaño: ${ev.fileSize}\nCargado por: ${ev.uploadedBy}\n\nEste archivo es una simulación de PowerPoint generada localmente. Para presentaciones interactivas completas, recomendamos adjuntar la URL del enlace web real de su Drive o SharePoint.`;
+      fallbackMime = 'text/plain';
+    } else if (['png', 'jpg', 'jpeg', 'gif', 'svg'].some(ext => lowerName.endsWith(ext))) {
+      fallbackContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
+  <rect width="100%" height="100%" fill="#f1f5f9"/>
+  <text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#1e3a8a" font-weight="bold">Evidencia de Soporte PMO</text>
+  <text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#64748b">${ev.fileName}</text>
+  <text x="50%" y="75%" dominant-baseline="middle" text-anchor="middle" font-family="mono" font-size="10" fill="#94a3b8">${ev.fileSize} • ${ev.uploadedBy}</text>
+</svg>`;
+      fallbackMime = 'image/svg+xml';
+    }
+
+    const fallbackBlob = new Blob([fallbackContent], { type: fallbackMime });
+    triggerDownload(fallbackBlob);
   };
 
   const handleDeleteEvidence = (evId: string) => {
@@ -1802,7 +2056,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
 
     const activeItem = items.find(it => it.id === activeItemId);
     const ev = activeItem?.evidenceFiles.find(e => e.id === evId);
-    const evName = ev ? ev.name : 'este archivo de evidencia';
+    const evName = ev ? ev.fileName : 'este archivo de evidencia';
 
     setDeleteConfirmState({
       isOpen: true,
@@ -1858,7 +2112,11 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         it.progress,
         it.priority,
         it.status,
-        it.dependsOnId || ''
+        (() => {
+          const deps = it.dependsOnIds || (it.dependsOnId ? [it.dependsOnId] : []);
+          const wbsCodes = deps.map(depId => wbsNumbers[depId]).filter(Boolean);
+          return wbsCodes.join('; ');
+        })()
       ];
       csvRows.push(row.join(','));
     });
@@ -1951,7 +2209,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
     if (!element) return;
 
     setIsExportingPDF(true);
-    addLog('Carlos Pérez (PM)', 'Inició la exportación del Diagrama Gantt en formato PDF.');
+    addLog(currentUserDisplayName, 'Inició la exportación del Diagrama Gantt en formato PDF.');
 
     // Inner helper functions for oklch and oklab support
     const oklchToRgb = (lStr: string, cStr: string, hStr: string, alphaStr?: string): string => {
@@ -2312,10 +2570,10 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
       }
 
       pdf.save(`Cronograma Gantt.pdf`);
-      addLog('Carlos Pérez (PM)', 'Se completó la exportación del Diagrama Gantt de forma exitosa.');
+      addLog(currentUserDisplayName, 'Se completó la exportación del Diagrama Gantt de forma exitosa.');
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      addLog('Carlos Pérez (PM)', 'Falló la exportación del Diagrama Gantt a PDF.');
+      addLog(currentUserDisplayName, 'Falló la exportación del Diagrama Gantt a PDF.');
     } finally {
       window.getComputedStyle = originalGetComputedStyle;
       setIsExportingPDF(false);
@@ -2617,21 +2875,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
           )}
         </div>
 
-        {/* Visualizer Mode tabs (Cuadrícula / Gantt) */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg shrink-0 w-full lg:w-auto font-mono">
-          <button
-            onClick={() => setWbsTab('grid')}
-            className={`flex-1 lg:flex-none text-[11px] font-bold px-3.5 py-1.5 rounded-md transition-all cursor-pointer ${wbsTab === 'grid' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-600 hover:text-slate-950'}`}
-          >
-            📋 Cuadrícula de Trabajo
-          </button>
-          <button
-            onClick={() => setWbsTab('gantt')}
-            className={`flex-1 lg:flex-none text-[11px] font-bold px-3.5 py-1.5 rounded-md transition-all cursor-pointer ${wbsTab === 'gantt' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-600 hover:text-slate-950'}`}
-          >
-            📊 Gantt Integrado
-          </button>
-        </div>
+
 
         {/* Global reset & downloads */}
         <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
@@ -2780,10 +3024,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                       className={`group cursor-pointer hover:bg-slate-50 transition-all ${bannerColor} ${activeItemId === it.id ? 'bg-blue-100/40' : ''} ${draggedItemId === it.id ? 'opacity-40' : ''}${dragOverStyles}`}
                       onClick={() => setActiveItemId(it.id)}
                       onDoubleClick={() => {
-                        if (it.level !== 'MODULO') {
-                          setEditingSubtaskId(it.id);
-                          setDraftSubtask({ ...it });
-                        }
+                        setActiveItemId(it.id);
                       }}
                       draggable={!isDevRole}
                       onDragStart={(e) => {
@@ -2918,11 +3159,11 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                         <input
                           type="date"
                           value={it.startDate}
-                          disabled={hasChildren || isDevRole}
+                          disabled={hasChildren || isDevRole || !!it.sprintId}
                           onChange={(e) => handleUpdateItemField(it.id, 'startDate', e.target.value)}
-                          title={hasChildren ? "Calculado automáticamente de elementos secundarios" : undefined}
+                          title={hasChildren ? "Calculado automáticamente de elementos secundarios" : it.sprintId ? "Bloqueado: La fecha está determinada por el Sprint asociado" : undefined}
                           className={`bg-transparent font-semibold font-mono text-[11px] p-1 rounded outline-none w-full ${
-                            hasChildren ? 'text-slate-400 bg-slate-50/20 cursor-not-allowed selection:bg-transparent' : 'text-slate-700 cursor-pointer hover:bg-slate-100 focus:bg-white'
+                            hasChildren || it.sprintId ? 'text-slate-450 bg-slate-50/20 cursor-not-allowed selection:bg-transparent' : 'text-slate-700 cursor-pointer hover:bg-slate-100 focus:bg-white'
                           }`}
                         />
                       </td>
@@ -2932,15 +3173,15 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                         <input
                           type="date"
                           value={it.endDate}
-                          disabled={hasChildren || isDevRole}
+                          disabled={hasChildren || isDevRole || !!it.sprintId}
                           onChange={(e) => handleUpdateItemField(it.id, 'endDate', e.target.value)}
-                          title={hasChildren ? "Calculado automáticamente de elementos secundarios" : undefined}
+                          title={hasChildren ? "Calculado automáticamente de elementos secundarios" : it.sprintId ? "Bloqueado: La fecha está determinada por el Sprint asociado" : undefined}
                           className={`bg-transparent font-semibold font-mono text-[11px] p-1 rounded outline-none w-full ${
-                            hasChildren ? 'text-slate-400 bg-slate-50/20 cursor-not-allowed selection:bg-transparent' : 'text-slate-700 cursor-pointer hover:bg-slate-100 focus:bg-white'
+                            hasChildren || it.sprintId ? 'text-slate-450 bg-slate-50/20 cursor-not-allowed selection:bg-transparent' : 'text-slate-700 cursor-pointer hover:bg-slate-100 focus:bg-white'
                           } ${
-                            !hasChildren && it.endDate < todayStr && it.progress < 100
+                            !hasChildren && !it.sprintId && it.endDate < todayStr && it.progress < 100
                               ? 'text-rose-700 bg-rose-100/60 font-extrabold border border-rose-200/80'
-                              : !hasChildren && it.endDate === todayStr && it.progress < 100
+                              : !hasChildren && !it.sprintId && it.endDate === todayStr && it.progress < 100
                               ? 'text-amber-850 bg-amber-100/60 font-extrabold border border-amber-250/80'
                               : ''
                           }`}
@@ -3054,185 +3295,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
         </div>
       )}
 
-      {/* --- TAB VIEW 2: Integrated Double-Line Gantt Chart (Baseline vs Real) --- */}
-      {wbsTab === 'gantt' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs p-6 animate-fadeIn">
-          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4 pb-3 border-b border-slate-100">
-            <div>
-              <h4 className="font-bold text-slate-900 text-sm flex flex-wrap items-center gap-2">
-                <span>Cronograma Gantt Comparativo de Línea Base</span>
-                {overdueTasksCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>{overdueTasksCount} {overdueTasksCount === 1 ? 'Vencida' : 'Vencidas'}</span>
-                  </span>
-                )}
-                {dueTodayTasksCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black animate-pulse">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>{dueTodayTasksCount} Para Hoy</span>
-                  </span>
-                )}
-              </h4>
-              <p className="text-xs text-slate-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <span>
-                  La barra <span className="inline-block w-3.5 h-2 rounded bg-blue-600 align-middle"></span> superior representa la planificación real actual.
-                </span>
-                <span>
-                  La barra <span className="inline-block w-3.5 h-2 rounded bg-slate-200 border border-slate-350 align-middle"></span> inferior representa la línea base guardada.
-                </span>
-                <span className="text-rose-600 font-semibold flex items-center gap-1">
-                  Las tareas <span className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-200 text-rose-700 text-[9px] px-1 py-0.5 rounded font-black font-mono"><AlertTriangle className="w-2.5 h-2.5" /> VENCIDAS</span> se destacan en rojo <span className="inline-block w-3.5 h-2 rounded bg-rose-500 align-middle"></span>.
-                </span>
-                <span className="text-amber-600 font-semibold flex items-center gap-1">
-                  Las tareas de <span className="inline-flex items-center gap-0.5 bg-amber-50 border border-amber-200 text-amber-800 text-[9px] px-1 py-0.5 rounded font-black font-mono"><Clock className="w-2.5 h-2.5" /> HOY</span> se destacan en amarillo <span className="inline-block w-3.5 h-2 rounded bg-amber-400 align-middle"></span>.
-                </span>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Target/Scale visual selection */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/40 shadow-3xs">
-                <span className="text-[9px] font-black font-mono uppercase text-slate-400 px-2 tracking-wider">Escala</span>
-                <button
-                  type="button"
-                  onClick={() => setGanttScale('dias')}
-                  className={`px-3 py-1 text-xs font-black rounded-md cursor-pointer transition-all duration-150 ${
-                    ganttScale === 'dias'
-                      ? 'bg-white text-blue-600 shadow-3xs border border-slate-200/50'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Días
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGanttScale('semanas')}
-                  className={`px-3 py-1 text-xs font-black rounded-md cursor-pointer transition-all duration-150 ${
-                    ganttScale === 'semanas'
-                      ? 'bg-white text-indigo-600 shadow-3xs border border-slate-200/50'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Semanas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGanttScale('meses')}
-                  className={`px-3 py-1 text-xs font-black rounded-md cursor-pointer transition-all duration-150 ${
-                    ganttScale === 'meses'
-                      ? 'bg-white text-violet-600 shadow-3xs border border-slate-200/50'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Meses
-                </button>
-              </div>
 
-              <button
-                onClick={handleExportPDF}
-                disabled={isExportingPDF}
-                className={`flex items-center gap-2 font-bold text-xs px-4 py-2 rounded-lg border transition-all cursor-pointer shadow-3xs hover:shadow-xs active:translate-y-0 ${
-                  isExportingPDF
-                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-red-50 border-red-200 hover:bg-red-100 text-red-700 hover:-translate-y-0.5'
-                }`}
-              >
-                <span>{isExportingPDF ? '⏳ Generando PDF...' : '📋 Exportar PDF'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <div id="wbs-gantt-chart-container" className="min-w-[900px] border border-slate-200 rounded-xl p-4 bg-slate-50/50">
-              {/* Timeline headers */}
-              <div className="flex border-b border-slate-300 pb-3 pt-1 font-bold text-slate-500 uppercase tracking-wide text-[10px] font-mono select-none items-center">
-                <div className="w-2/5 flex justify-between pr-4 items-center">
-                  <span>Estructura de Tareas</span>
-                  <span className="text-right">Fechas / Duración</span>
-                </div>
-                <div className="w-3/5 relative flex justify-between px-2 text-[9px] whitespace-nowrap items-center">
-                  {getGanttHeaderLabels().map((lbl, idx) => (
-                    <span key={idx} className="shrink-0">{lbl}</span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Rows */}
-              <div className="mt-3 flex flex-col gap-1">
-                {items.map(it => {
-                  const realPos = getBarPosition(it.startDate, it.endDate);
-
-                  const indentClass = 
-                  it.level === 'TAREA' ? 'pl-4' : 
-                  it.level === 'SUBTAREA' ? 'pl-8' : 
-                  it.level === 'SUBSUBTAREA' ? 'pl-12' : '';
-
-                  const isOverdue = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate < todayStr && it.progress < 100;
-                  const isDueToday = (it.level === 'TAREA' || it.level === 'SUBTAREA' || it.level === 'SUBSUBTAREA') && it.endDate === todayStr && it.progress < 100;
-
-                  const barBgColor = 
-                    isOverdue ? 'bg-rose-500 border border-rose-600 shadow-sm shadow-rose-100 text-white' :
-                    isDueToday ? 'bg-amber-400 border border-amber-500 shadow-sm shadow-amber-100 text-amber-950' :
-                    it.level === 'MODULO' ? 'bg-blue-600 text-white' :
-                    it.level === 'TAREA' ? 'bg-indigo-500 text-white' :
-                    it.level === 'SUBTAREA' ? 'bg-violet-500 text-white' : 'bg-slate-400 text-white';
-
-                   return (
-                    <div key={it.id} className={`gantt-task-row flex items-center py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition duration-150 ${isOverdue ? 'bg-rose-50/20' : isDueToday ? 'bg-amber-50/20' : ''}`}>
-                      {/* Meta left info */}
-                      <div className="gantt-task-meta w-2/5 pr-4 flex items-center select-none py-0">
-                        {/* Column 1: Task structure & name */}
-                        <div className={`gantt-task-name-container ${indentClass} flex items-center gap-2 min-w-0 flex-1`} style={{ flex: '1 1 auto', minWidth: 0 }}>
-                          <span className="text-[10px] font-extrabold text-slate-500 font-mono select-none shrink-0" title={`WBS: ${wbsNumbers[it.id]}`}>
-                            {wbsNumbers[it.id]}
-                          </span>
-                          <span className="gantt-task-name font-bold text-slate-800 text-[11px] truncate flex flex-wrap items-center gap-1.5" title={it.name} style={{ flexShrink: 1, minWidth: 0, maxWidth: 'calc(100% - 70px)' }}>
-                            <span className="truncate">{it.name}</span>
-                            {isOverdue && (
-                              <span className="gantt-task-overdue-badge inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-rose-100 border border-rose-200 text-rose-700 text-[8px] font-black uppercase select-none shrink-0 font-mono tracking-tight leading-none">
-                                <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
-                                <span>Vencida</span>
-                              </span>
-                            )}
-                            {isDueToday && (
-                              <span className="gantt-task-today-badge inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-100 border border-amber-200 text-amber-800 text-[8px] font-black uppercase select-none shrink-0 font-mono tracking-tight leading-none">
-                                <Clock className="w-2.5 h-2.5 text-amber-600" />
-                                <span>Hoy</span>
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {/* Column 2: Date & duration (single line) */}
-                        <div className="text-[9px] text-slate-500 font-mono font-bold text-right whitespace-nowrap" style={{ flexShrink: 0, marginLeft: '12px' }}>
-                          <span className={isOverdue ? 'text-rose-600 font-black' : isDueToday ? 'text-amber-600 font-black' : ''}>{it.startDate} al {it.endDate} ({it.durationDays}d)</span>
-                        </div>
-                      </div>
-
-                      {/* Bar graphical mapping */}
-                      <div className="w-3/5 h-6 relative bg-white border border-slate-200/40 rounded p-0.5 flex items-center">
-                        {/* 1. Real Current progress bar */}
-                        <div className="h-4 relative w-full">
-                          <div
-                            className={`absolute top-0 h-full rounded-full ${barBgColor} flex items-center justify-center text-[8px] font-extrabold font-mono select-none overflow-hidden whitespace-nowrap`}
-                            style={{ left: realPos.left, width: realPos.width }}
-                            title={`Real: ${it.startDate} a ${it.endDate} (${it.progress}% completado) ${isOverdue ? '¡VENCIDA!' : isDueToday ? '¡ENTREGA HOY!' : ''}`}
-                          >
-                            <span className="px-1 select-none leading-none flex items-center gap-0.5">
-                              {isOverdue && <AlertTriangle className="w-2.5 h-2.5 text-white shrink-0" />}
-                              {isDueToday && <Clock className="w-2.5 h-2.5 text-amber-950 shrink-0" />}
-                              <span>{it.progress}%</span>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
 
       {/* 5. RIGHT DRAWER DETAILS SIDE PANEL */}
@@ -3266,7 +3329,7 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                   type="text"
                   value={selectedItem.name}
                   onChange={(e) => handleUpdateItemField(selectedItem.id, 'name', e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-105 rounded-lg px-3 py-2 text-xs text-slate-800 font-bold"
+                  className="w-full bg-slate-50 border border-slate-250 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg px-3 py-2 text-xs text-slate-800 font-bold"
                 />
               </div>
 
@@ -3276,11 +3339,11 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                   <input
                     type="date"
                     value={selectedItem.startDate}
-                    disabled={items.some(child => child.parentId === selectedItem.id) || isDevRole}
+                    disabled={items.some(child => child.parentId === selectedItem.id) || isDevRole || !!selectedItem.sprintId}
                     onChange={(e) => handleUpdateItemField(selectedItem.id, 'startDate', e.target.value)}
-                    title={items.some(child => child.parentId === selectedItem.id) ? "Calculado automáticamente de elementos secundarios" : undefined}
+                    title={items.some(child => child.parentId === selectedItem.id) ? "Calculado automáticamente de elementos secundarios" : selectedItem.sprintId ? "Bloqueado por Sprint asociado" : undefined}
                     className={`w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono font-semibold ${
-                      items.some(child => child.parentId === selectedItem.id) ? 'text-slate-450 bg-slate-100 opacity-70 cursor-not-allowed' : ''
+                      items.some(child => child.parentId === selectedItem.id) || selectedItem.sprintId ? 'text-slate-450 bg-slate-100 opacity-70 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
@@ -3289,14 +3352,19 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                   <input
                     type="date"
                     value={selectedItem.endDate}
-                    disabled={items.some(child => child.parentId === selectedItem.id) || isDevRole}
+                    disabled={items.some(child => child.parentId === selectedItem.id) || isDevRole || !!selectedItem.sprintId}
                     onChange={(e) => handleUpdateItemField(selectedItem.id, 'endDate', e.target.value)}
-                    title={items.some(child => child.parentId === selectedItem.id) ? "Calculado automáticamente de elementos secundarios" : undefined}
+                    title={items.some(child => child.parentId === selectedItem.id) ? "Calculado automáticamente de elementos secundarios" : selectedItem.sprintId ? "Bloqueado por Sprint asociado" : undefined}
                     className={`w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono font-semibold ${
-                      items.some(child => child.parentId === selectedItem.id) ? 'text-slate-450 bg-slate-100 opacity-70 cursor-not-allowed' : ''
+                      items.some(child => child.parentId === selectedItem.id) || selectedItem.sprintId ? 'text-slate-450 bg-slate-100 opacity-70 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
+                {selectedItem.sprintId && (
+                  <div className="col-span-2 text-[10px] text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-250 flex items-center gap-1 font-medium select-none">
+                    <span>⚡ Fechas bloqueadas y sincronizadas con el Sprint.</span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -3376,23 +3444,115 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                 </div>
               )}
 
-              {/* Pre-requisite Dependency selector */}
+              {/* Pre-requisite Dependency selector (Multiple) */}
               <div>
-                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Pre-requisito De Dependencia</label>
-                <select
-                  value={selectedItem.dependsOnId || ''}
-                  onChange={(e) => handleUpdateItemField(selectedItem.id, 'dependsOnId', e.target.value || undefined)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-lg px-3 py-2 text-xs text-slate-800"
-                >
-                  <option value="">Ninguno (Tarea independiente)</option>
-                  {items
-                    .filter(it => it.id !== selectedItem.id && it.level !== 'MODULO')
-                    .map(it => (
-                      <option key={it.id} value={it.id}>
-                        [{wbsNumbers[it.id] || ''}] {it.name}
-                      </option>
-                    ))}
-                </select>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Pre-requisitos De Dependencia (Múltiples)</label>
+                
+                {(() => {
+                  const currentDeps = selectedItem.dependsOnIds || (selectedItem.dependsOnId ? [selectedItem.dependsOnId] : []);
+                  return (
+                    <div className="space-y-2">
+                      {currentDeps.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-lg min-h-[38px]">
+                          {currentDeps.map(depId => {
+                            const depItem = items.find(it => it.id === depId);
+                            if (!depItem) return null;
+                            return (
+                              <span 
+                                key={depId} 
+                                className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-150 px-2 py-0.5 rounded text-[10px] font-bold font-mono"
+                              >
+                                <span>[{wbsNumbers[depId] || ''}] {depItem.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextDeps = currentDeps.filter(id => id !== depId);
+                                    handleUpdateItemField(selectedItem.id, 'dependsOnIds', nextDeps);
+                                  }}
+                                  className="text-violet-400 hover:text-violet-600 focus:outline-none font-black text-[10px] px-0.5"
+                                  title="Quitar dependencia"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-center select-none">
+                          Ninguna (Tarea independiente)
+                        </div>
+                      )}
+
+                      {/* Dropdown list of potential dependencies with scroll & search */}
+                      <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+                        <div className="bg-slate-50 border-b border-slate-150 p-1.5 flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={sidebarDepSearch}
+                            onChange={(e) => setSidebarDepSearch(e.target.value)}
+                            placeholder="Buscar dependencia..."
+                            className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-[11px] placeholder-slate-400 focus:outline-hidden"
+                          />
+                          {sidebarDepSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setSidebarDepSearch('')}
+                              className="text-xs text-slate-400 hover:text-slate-600 px-1 font-bold"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="max-h-36 overflow-y-auto divide-y divide-slate-100">
+                          {(() => {
+                            const eligibleItems = items.filter(it => it.id !== selectedItem.id && it.level !== 'MODULO');
+                            const searchLower = sidebarDepSearch.toLowerCase();
+                            const filteredEligible = eligibleItems.filter(it => {
+                              const wbs = wbsNumbers[it.id] || '';
+                              return it.name.toLowerCase().includes(searchLower) || wbs.includes(searchLower);
+                            });
+
+                            if (filteredEligible.length === 0) {
+                              return (
+                                <div className="text-[10px] text-slate-400 italic p-3 text-center">
+                                  No se encontraron actividades
+                                </div>
+                              );
+                            }
+
+                            return filteredEligible.map(it => {
+                              const isChecked = currentDeps.includes(it.id);
+                              return (
+                                <label 
+                                  key={it.id} 
+                                  className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 cursor-pointer text-[11px] text-slate-700 font-medium select-none"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      const nextDeps = isChecked 
+                                        ? currentDeps.filter(id => id !== it.id)
+                                        : [...currentDeps, it.id];
+                                      handleUpdateItemField(selectedItem.id, 'dependsOnIds', nextDeps);
+                                    }}
+                                    className="rounded border-slate-300 text-violet-600 focus:ring-violet-500 h-3.5 w-3.5 shrink-0"
+                                  />
+                                  <span className="font-bold text-slate-400 font-mono text-[9px] shrink-0">
+                                    {wbsNumbers[it.id] || ''}
+                                  </span>
+                                  <span className="truncate">{it.name}</span>
+                                </label>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -3487,7 +3647,14 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                                 {ev.fileName} ↗
                               </a>
                             ) : (
-                              <span className="block text-[11px] font-bold text-slate-700 truncate">{ev.fileName}</span>
+                              <button 
+                                onClick={() => handleDownloadEvidence(ev)}
+                                className="block text-[11px] font-bold text-slate-700 hover:text-blue-600 hover:underline truncate text-left cursor-pointer flex items-center gap-1.5"
+                                title="Haga clic para descargar este archivo de evidencia"
+                              >
+                                <span className="truncate">{ev.fileName}</span>
+                                <Download className="w-3 h-3 text-slate-400 hover:text-blue-600 shrink-0 inline-block" />
+                              </button>
                             )}
                             <span className="block text-[9px] text-slate-400 font-mono font-medium">{ev.fileSize} • Subido por: {ev.uploadedBy}</span>
                           </div>
@@ -3861,6 +4028,118 @@ export default function ProjectWBSManager({ projectId, users, addLog, isDevRole 
                     <option value="BLOQUEADO">BLOQUEADO</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Pre-requisito De Dependencia (Múltiples) */}
+              <div className="border-t border-slate-100 pt-4 mt-2">
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1 font-mono">Pre-requisitos De Dependencia (Múltiples)</label>
+                
+                {(() => {
+                  const currentDeps = draftSubtask.dependsOnIds || (draftSubtask.dependsOnId ? [draftSubtask.dependsOnId] : []);
+                  return (
+                    <div className="space-y-2">
+                      {/* Selected badges */}
+                      {currentDeps.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-lg min-h-[38px]">
+                          {currentDeps.map(depId => {
+                            const depItem = items.find(it => it.id === depId);
+                            if (!depItem) return null;
+                            return (
+                              <span 
+                                key={depId} 
+                                className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-150 px-2 py-0.5 rounded text-[10px] font-bold font-mono"
+                              >
+                                <span>[{wbsNumbers[depId] || ''}] {depItem.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextDeps = currentDeps.filter(id => id !== depId);
+                                    handleUpdateDraftField('dependsOnIds', nextDeps);
+                                  }}
+                                  className="text-violet-400 hover:text-violet-600 focus:outline-none font-black text-[10px] px-0.5"
+                                  title="Quitar dependencia"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-center select-none">
+                          Ninguna (Tarea independiente)
+                        </div>
+                      )}
+
+                      {/* Dropdown filter box */}
+                      <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+                        <div className="bg-slate-50 border-b border-slate-150 p-1.5 flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={modalDepSearch}
+                            onChange={(e) => setModalDepSearch(e.target.value)}
+                            placeholder="Buscar dependencia..."
+                            className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-[11px] placeholder-slate-400 focus:outline-hidden"
+                          />
+                          {modalDepSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setModalDepSearch('')}
+                              className="text-xs text-slate-400 hover:text-slate-600 px-1 font-bold"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="max-h-36 overflow-y-auto divide-y divide-slate-100">
+                          {(() => {
+                            const eligibleItems = items.filter(it => it.id !== draftSubtask.id && it.level !== 'MODULO');
+                            const searchLower = modalDepSearch.toLowerCase();
+                            const filteredEligible = eligibleItems.filter(it => {
+                              const wbs = wbsNumbers[it.id] || '';
+                              return it.name.toLowerCase().includes(searchLower) || wbs.includes(searchLower);
+                            });
+
+                            if (filteredEligible.length === 0) {
+                              return (
+                                <div className="text-[10px] text-slate-400 italic p-3 text-center">
+                                  No se encontraron actividades
+                                </div>
+                              );
+                            }
+
+                            return filteredEligible.map(it => {
+                              const isChecked = currentDeps.includes(it.id);
+                              return (
+                                <label 
+                                  key={it.id} 
+                                  className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 cursor-pointer text-[11px] text-slate-700 font-medium select-none"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      const nextDeps = isChecked 
+                                        ? currentDeps.filter(id => id !== it.id)
+                                        : [...currentDeps, it.id];
+                                      handleUpdateDraftField('dependsOnIds', nextDeps);
+                                    }}
+                                    className="rounded border-slate-300 text-violet-600 focus:ring-violet-500 h-3.5 w-3.5 shrink-0"
+                                  />
+                                  <span className="font-bold text-slate-400 font-mono text-[9px] shrink-0">
+                                    {wbsNumbers[it.id] || ''}
+                                  </span>
+                                  <span className="truncate">{it.name}</span>
+                                </label>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
             </div>

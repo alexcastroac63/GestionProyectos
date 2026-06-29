@@ -2,6 +2,38 @@ import React, { useState } from 'react';
 import { Users2, UserPlus, Search, Edit2, Mail, UserCheck, X, Key } from 'lucide-react';
 import { User } from '../../../types';
 
+const getProfileNames = (): { id: string; name: string }[] => {
+  const saved = localStorage.getItem('gcp_profile_permissions');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((p: any) => ({ id: p.id, name: p.name }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return [
+    { id: 'Administrador', name: 'Administrador' },
+    { id: 'Director', name: 'Director / Ejecutiva' },
+    { id: 'Project Manager', name: 'Project Manager' },
+    { id: 'Scrum Master', name: 'Scrum Master' },
+    { id: 'Product Owner', name: 'Product Owner' },
+    { id: 'Líder Técnico', name: 'Líder Técnico' },
+    { id: 'Ingeniero de Software', name: 'Ingeniero de Software' },
+    { id: 'QA Lead', name: 'QA Lead' },
+    { id: 'Consultor', name: 'Consultor / Auditor' },
+    { id: 'Sponsor / Directora', name: 'Sponsor / Directora' },
+    { id: 'Desarrollador Backend', name: 'Desarrollador Backend' },
+    { id: 'Desarrollador Frontend', name: 'Desarrollador Frontend' },
+    { id: 'DBA / Arquitecto de Datos', name: 'DBA / Arquitecto de Datos' },
+    { id: 'DevOps / Infraestructura Cloud', name: 'DevOps / Infraestructura Cloud' },
+    { id: 'UI/UX Designer', name: 'UI/UX Designer' },
+  ];
+};
+
+
 interface TeamDirectoryProps {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
@@ -143,12 +175,9 @@ export const TeamDirectory: React.FC<TeamDirectoryProps> = ({
                             }
                             className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg py-1.5 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer font-medium"
                           >
-                            <option value="Líder Técnico">Líder Técnico</option>
-                            <option value="Ingeniero de Software">Ingeniero de Software</option>
-                            <option value="Planificador">Planificador</option>
-                            <option value="Consultor">Consultor</option>
-                            <option value="Director">Director</option>
-                            <option value="Administrador">Administrador (Acceso Completo)</option>
+                            {getProfileNames().map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="flex gap-2">
