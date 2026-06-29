@@ -2,6 +2,7 @@ import React from 'react';
 import { useSystemStore } from '../AppProviders';
 import { menuRegistry } from '../menuRegistry';
 import { X, ChevronDown, ChevronRight, History, LogOut } from 'lucide-react';
+import { hasTabAccess } from '../utils/permissions';
 
 interface SidebarProps {
   handleLogout: () => void;
@@ -21,7 +22,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ handleLogout }) => {
     logs
   } = useSystemStore();
 
-  const menuItems = menuRegistry;
+  const menuItems = menuRegistry.map(item => {
+    if (item.isGroup) {
+      const allowedChildren = item.children?.filter(child => 
+        hasTabAccess(loggedInUser?.role, child.id)
+      ) || [];
+      return { ...item, children: allowedChildren };
+    }
+    return item;
+  }).filter(item => {
+    if (item.isGroup) {
+      return item.children && item.children.length > 0;
+    }
+    return hasTabAccess(loggedInUser?.role, item.id);
+  });
 
   return (
     <>
